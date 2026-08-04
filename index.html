@@ -29,21 +29,25 @@
             --font-scale-back: 1;
             --logo-scale-front: 1;
             --logo-scale-back: 1;
+            --card-bg-1: #0a1a3f;
+            --card-bg-2: #1d4ed8;
+            --card-text-color: #ffffff;
+            --card-accent-color: #d4af37;
         }
 
         .card-wrapper {
             width: 85.6mm;
             height: 53.98mm;
-            background: linear-gradient(135deg, #0a1a3f 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, var(--card-bg-1) 0%, var(--card-bg-2) 100%);
             position: relative;
             overflow: hidden;
             border-radius: var(--card-radius);
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
             font-family: 'Poppins', sans-serif;
-            color: #ffffff;
-            border: 1px solid rgba(212, 175, 55, 0.3);
+            color: var(--card-text-color);
+            border: 1px solid var(--card-accent-color);
             transform-origin: top center;
-            transition: border-radius 0.3s ease;
+            transition: border-radius 0.3s ease, background 0.3s ease;
         }
 
         .print-mode {
@@ -57,7 +61,7 @@
         
         .front-content { position: absolute; bottom: 4mm; left: 4mm; z-index: 10; width: 55%; }
         .front-name { font-size: calc(15pt * var(--font-scale-front)); font-weight: 800; line-height: 1.1; margin-bottom: 1mm; text-shadow: 0 2px 4px rgba(0,0,0,0.8); transition: font-size 0.3s ease; }
-        .front-role { font-size: calc(6pt * var(--font-scale-front)); font-weight: 600; color: #d4af37; text-transform: uppercase; letter-spacing: 1px; transition: font-size 0.3s ease;}
+        .front-role { font-size: calc(6pt * var(--font-scale-front)); font-weight: 600; color: var(--card-accent-color); text-transform: uppercase; letter-spacing: 1px; transition: font-size 0.3s ease;}
 
         /* Desain Lengkungan Foto */
         .photo-curve-container {
@@ -67,18 +71,18 @@
             width: 55%;
             height: 120%;
             border-radius: 50% 0 0 50%;
-            border-left: 2.5mm solid #d4af37;
+            border-left: 2.5mm solid var(--card-accent-color);
             overflow: hidden;
             z-index: 5;
             background-color: transparent;
             box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            transition: border-left 0.3s ease;
         }
         .photo-curve-container img {
             width: 110%;
             height: 100%;
             object-fit: cover;
             object-position: top center;
-            /* Default transform, akan di-update oleh JS saat zoom */
             transform: translateX(-5%) scale(1);
             transition: transform 0.2s ease;
         }
@@ -90,21 +94,21 @@
 
         /* --- TAMPILAN BELAKANG --- */
         .back-container { padding: 3mm 5mm; height: 100%; display: flex; flex-direction: column; position: relative; z-index: 10; }
-        .back-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2.5mm; border-bottom: 0.5px solid rgba(212, 175, 55, 0.3); padding-bottom: 1.5mm; }
-        .back-title { font-size: calc(11pt * var(--font-scale-back)); font-weight: 800; color: #d4af37; letter-spacing: 0.5px; transition: font-size 0.3s ease;}
+        .back-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2.5mm; border-bottom: 0.5px solid var(--card-accent-color); padding-bottom: 1.5mm; transition: border-bottom 0.3s ease; }
+        .back-title { font-size: calc(11pt * var(--font-scale-back)); font-weight: 800; color: var(--card-accent-color); letter-spacing: 0.5px; transition: font-size 0.3s ease, color 0.3s ease;}
         .back-subtitle { font-size: calc(6.5pt * var(--font-scale-back)); font-weight: 400; color: #e4e4e7; transition: font-size 0.3s ease;}
         
         .back-data-grid { display: flex; flex-direction: column; gap: 0.8mm; font-size: calc(6.5pt * var(--font-scale-back)); line-height: 1.25; flex-grow: 1; transition: font-size 0.3s ease;}
         .grid-row { display: flex; align-items: flex-start; transition: order 0.3s ease; }
-        .back-label { color: #d4af37; font-weight: 400; width: 24mm; flex-shrink: 0; }
-        .back-value { color: #ffffff; font-weight: 600; flex-grow: 1; }
+        .back-label { color: var(--card-accent-color); font-weight: 400; width: 24mm; flex-shrink: 0; transition: color 0.3s ease; }
+        .back-value { color: var(--card-text-color); font-weight: 600; flex-grow: 1; }
         .back-value-address { line-height: 1.15; height: 7mm; overflow: hidden; }
         
         /* Utility class untuk hide element dalam grid */
         .row-hidden { display: none !important; }
 
         .back-footer { margin-top: auto; flex-shrink: 0; }
-        .back-footer-title { font-size: calc(6pt * var(--font-scale-back)); font-weight: 700; color: #d4af37; margin-bottom: 0.5mm; transition: font-size 0.3s ease;}
+        .back-footer-title { font-size: calc(6pt * var(--font-scale-back)); font-weight: 700; color: var(--card-accent-color); margin-bottom: 0.5mm; transition: font-size 0.3s ease, color 0.3s ease;}
         .back-footer-text { font-size: calc(4.5pt * var(--font-scale-back)); color: #a1a1aa; line-height: 1.2; transition: font-size 0.3s ease;}
 
         #logo-belakang { height: calc(4mm * var(--logo-scale-back)); width: auto; object-fit: contain; transition: height 0.3s ease; }
@@ -143,6 +147,23 @@
         <!-- Kolom Kiri: Form & Settings (7 Kolom) -->
         <div class="lg:col-span-7 space-y-6">
             
+            <!-- Panel Import Data (Paling Atas) -->
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-file-excel text-emerald-600 mr-2 text-xl"></i> Import Data Massal</h2>
+                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-lg bg-white">
+                    <div id="excel-status" class="text-xs mt-3 text-gray-500 font-medium">Upload file Excel untuk melihat daftar jemaat dan mengisi form otomatis. (Kolom: Nama, Jabatan, No KTJ, Tgl Lahir, Alamat, Telepon, Tahun, dll)</div>
+                    
+                    <!-- Dropdown Pilihan Jemaat (Hidden by default) -->
+                    <div id="dropdown-jemaat-container" class="mt-4 hidden border-t border-gray-200 pt-3">
+                        <label class="block text-xs font-semibold text-gray-600 mb-2">Pilih Jemaat dari Data Excel:</label>
+                        <select id="select-jemaat" class="form-input block w-full rounded-lg border-gray-300 shadow-sm border p-2 text-sm focus:ring-emerald-500 focus:border-emerald-500 font-medium bg-white">
+                            <option value="">-- Pilih Nama Jemaat --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <!-- Panel Input Manual -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                 <h2 class="text-lg font-bold text-gray-800 mb-5 flex items-center"><i class="fa-solid fa-pen-to-square text-purple-600 mr-2 text-xl"></i> Data Jemaat</h2>
@@ -174,7 +195,7 @@
                     
                     <div class="md:col-span-2">
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal Lahir</label>
-                        <input type="text" id="input-tgllahir" class="form-input block w-full rounded-lg border-gray-300 shadow-sm border p-2.5 text-sm focus:ring-yellow-500 focus:border-yellow-500 font-medium" value="29 Januari 1971">
+                        <input type="date" id="input-tgllahir" class="form-input block w-full rounded-lg border-gray-300 shadow-sm border p-2.5 text-sm focus:ring-yellow-500 focus:border-yellow-500 font-medium" value="1971-01-29">
                     </div>
                     
                     <div>
@@ -208,6 +229,40 @@
                         <span id="val-radius" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">3.18mm</span>
                     </div>
                     <input type="range" id="setting-radius" min="0" max="10" step="0.5" value="3.18" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                </div>
+
+                <!-- General Background Color & Font Color -->
+                <div class="mb-6 pb-4 border-b grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <label class="block text-xs font-bold text-gray-700">Warna Latar Kartu (Gradasi)</label>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="setting-bg-1" value="#0a1a3f" class="w-8 h-8 p-0 border-0 rounded cursor-pointer">
+                                <span class="text-[11px] text-gray-600 font-semibold">Atas/Kiri</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="setting-bg-2" value="#1d4ed8" class="w-8 h-8 p-0 border-0 rounded cursor-pointer">
+                                <span class="text-[11px] text-gray-600 font-semibold">Bawah/Kanan</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <label class="block text-xs font-bold text-gray-700">Warna Teks Kartu</label>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="setting-text-color" value="#ffffff" class="w-8 h-8 p-0 border-0 rounded cursor-pointer">
+                                <span class="text-[11px] text-gray-600 font-semibold">Utama</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="setting-accent-color" value="#d4af37" class="w-8 h-8 p-0 border-0 rounded cursor-pointer">
+                                <span class="text-[11px] text-gray-600 font-semibold">Aksen / Label</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
@@ -349,15 +404,6 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Panel Import Data -->
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-file-excel text-emerald-600 mr-2 text-xl"></i> Import Data Massal</h2>
-                <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                    <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-lg bg-white">
-                    <div id="excel-status" class="text-xs mt-3 text-gray-500 font-medium">Upload file Excel untuk mengisi form secara otomatis dari baris pertama. (Kolom: Nama, Jabatan, No KTJ, Tgl Lahir, Alamat, Telepon, Tahun, dll)</div>
-                </div>
-            </div>
 
         </div>
 
@@ -452,6 +498,9 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             
+            // Variabel Global untuk menyimpan data excel
+            let excelDataGlobal = [];
+
             const inputs = {
                 nama: document.getElementById('input-nama'),
                 role: document.getElementById('input-role'),
@@ -474,11 +523,54 @@
                 tahun: document.getElementById('preview-tahun')
             };
 
+            // Fungsi untuk memformat YYYY-MM-DD ke string lokal untuk tampilan ID
+            function formatTglTampil(dateStr) {
+                if(!dateStr) return '-';
+                const parts = dateStr.split('-');
+                if(parts.length === 3 && parts[0].length === 4) {
+                    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                    const day = parseInt(parts[2], 10);
+                    const month = months[parseInt(parts[1], 10) - 1];
+                    const year = parts[0];
+                    return `${day} ${month} ${year}`;
+                }
+                return dateStr;
+            }
+
+            // Fungsi untuk membaca/mengkonversi text/excel date ke YYYY-MM-DD untuk input type=date
+            function parseIndoDateToYMD(val) {
+                if (!val) return '';
+                if (typeof val === 'number') {
+                    const date = new Date(Math.round((val - 25569)*86400*1000));
+                    return date.toISOString().split('T')[0];
+                }
+                
+                val = val.toString().trim();
+                if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+                
+                const months = { 'januari':'01', 'jan':'01', 'februari':'02', 'feb':'02', 'maret':'03', 'mar':'03', 'april':'04', 'apr':'04', 'mei':'05', 'juni':'06', 'jun':'06', 'juli':'07', 'jul':'07', 'agustus':'08', 'agu':'08', 'ags':'08', 'september':'09', 'sep':'09', 'oktober':'10', 'okt':'10', 'november':'11', 'nov':'11', 'desember':'12', 'des':'12'};
+                const match = val.toLowerCase().match(/(\d{1,2})\s+([a-z]+)\s+(\d{4})/);
+                if(match) {
+                    let d = match[1].padStart(2, '0');
+                    let m = months[match[2]];
+                    let y = match[3];
+                    if(m) return `${y}-${m}-${d}`;
+                }
+                
+                const dObj = new Date(val);
+                if(!isNaN(dObj)) return dObj.toISOString().split('T')[0];
+                
+                return '';
+            }
+
             function updatePreview() {
                 previews.namaFront.textContent = inputs.nama.value || '-';
                 previews.role.textContent = inputs.role.value;
                 previews.noBack.textContent = ': ' + (inputs.no.value || '-');
-                previews.tgllahir.textContent = ': ' + (inputs.tglLahir.value || '-');
+                
+                // Format tanggal untuk preview
+                previews.tgllahir.textContent = ': ' + formatTglTampil(inputs.tglLahir.value);
+                
                 previews.jk.textContent = ': ' + (inputs.jk.value || '-');
                 
                 // Mengganti newline menjadi <br> untuk alamat
@@ -506,6 +598,32 @@
                     const radiusValue = e.target.value;
                     valRadius.textContent = `${radiusValue}mm`;
                     document.documentElement.style.setProperty('--card-radius', `${radiusValue}mm`);
+                });
+            }
+
+            // Warna Latar Kartu (Gradasi)
+            const colorBg1 = document.getElementById('setting-bg-1');
+            const colorBg2 = document.getElementById('setting-bg-2');
+            if(colorBg1 && colorBg2) {
+                colorBg1.addEventListener('input', (e) => {
+                    document.documentElement.style.setProperty('--card-bg-1', e.target.value);
+                });
+                colorBg2.addEventListener('input', (e) => {
+                    document.documentElement.style.setProperty('--card-bg-2', e.target.value);
+                });
+            }
+
+            // Warna Teks Kartu (Utama & Aksen/Label)
+            const colorTextColor = document.getElementById('setting-text-color');
+            const colorAccentColor = document.getElementById('setting-accent-color');
+            if(colorTextColor) {
+                colorTextColor.addEventListener('input', (e) => {
+                    document.documentElement.style.setProperty('--card-text-color', e.target.value);
+                });
+            }
+            if(colorAccentColor) {
+                colorAccentColor.addEventListener('input', (e) => {
+                    document.documentElement.style.setProperty('--card-accent-color', e.target.value);
                 });
             }
 
@@ -573,7 +691,6 @@
                 sliderZoomPhoto.addEventListener('input', (e) => {
                     const val = e.target.value;
                     valZoomPhoto.textContent = `${Math.round(val * 100)}%`;
-                    // Gunakan gabungan translateX (untuk posisi awal/centering) dan scale (untuk zoom)
                     previewPhoto.style.transform = `translateX(-5%) scale(${val})`;
                 });
             }
@@ -662,6 +779,8 @@
 
             const excelUpload = document.getElementById('file-upload');
             const excelStatus = document.getElementById('excel-status');
+            const dropdownJemaatContainer = document.getElementById('dropdown-jemaat-container');
+            const selectJemaat = document.getElementById('select-jemaat');
             
             if(excelUpload && excelStatus) {
                 excelUpload.addEventListener('change', function(e) {
@@ -669,6 +788,8 @@
                     if (!file) return;
 
                     excelStatus.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-blue-500"></i> Membaca file...';
+                    
+                    if(dropdownJemaatContainer) dropdownJemaatContainer.classList.add('hidden');
 
                     const reader = new FileReader();
                     reader.onload = function(event) {
@@ -680,27 +801,21 @@
                             const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
                             if (jsonData.length > 0) {
-                                const row = jsonData[0]; // Ambil baris data pertama
+                                excelDataGlobal = jsonData;
                                 
-                                inputs.nama.value = row['Nama'] || row['Nama Lengkap'] || inputs.nama.value;
-                                inputs.role.value = row['Jabatan'] || row['Role'] || inputs.role.value;
-                                inputs.no.value = row['No KTJ'] || row['Nomor KTJ'] || row['No'] || inputs.no.value;
+                                selectJemaat.innerHTML = '<option value="">-- Pilih Nama Jemaat --</option>';
                                 
-                                // Parse Jenis Kelamin
-                                let excelJk = row['Jenis Kelamin'] || row['Gender'] || row['JK'];
-                                if(excelJk) {
-                                    let jkStr = excelJk.toString().toUpperCase();
-                                    if(jkStr.startsWith('P') || jkStr === 'WANITA') inputs.jk.value = 'PEREMPUAN';
-                                    else inputs.jk.value = 'LAKI-LAKI';
-                                }
+                                excelDataGlobal.forEach((row, index) => {
+                                    const nama = row['Nama'] || row['Nama Lengkap'] || `Baris ${index + 1}`;
+                                    const option = document.createElement('option');
+                                    option.value = index;
+                                    option.textContent = nama;
+                                    selectJemaat.appendChild(option);
+                                });
 
-                                inputs.tglLahir.value = row['Tgl Lahir'] || row['Tanggal Lahir'] || inputs.tglLahir.value;
-                                inputs.alamat.value = row['Alamat'] || inputs.alamat.value;
-                                inputs.telepon.value = row['Telepon'] || row['No Telp'] || row['No Telepon'] || inputs.telepon.value;
-                                inputs.tahun.value = row['Tahun'] || row['Tahun Bergabung'] || inputs.tahun.value;
-                                
-                                updatePreview();
-                                excelStatus.innerHTML = `<span class="text-green-600 font-semibold"><i class="fa-solid fa-check"></i> Data sukses dimuat: ${inputs.nama.value}</span>`;
+                                dropdownJemaatContainer.classList.remove('hidden');
+
+                                excelStatus.innerHTML = `<span class="text-green-600 font-semibold"><i class="fa-solid fa-check"></i> ${jsonData.length} Data sukses dimuat. Silakan pilih nama jemaat di bawah.</span>`;
                             } else {
                                 excelStatus.innerHTML = `<span class="text-red-500"><i class="fa-solid fa-triangle-exclamation"></i> File Excel kosong!</span>`;
                             }
@@ -710,6 +825,36 @@
                         }
                     };
                     reader.readAsArrayBuffer(file);
+                });
+            }
+
+            // Event listener ketika nama jemaat di-select
+            if(selectJemaat) {
+                selectJemaat.addEventListener('change', function(e) {
+                    const selectedIndex = e.target.value;
+                    if (selectedIndex === "") return;
+                    
+                    const row = excelDataGlobal[selectedIndex];
+                    
+                    inputs.nama.value = row['Nama'] || row['Nama Lengkap'] || '';
+                    inputs.role.value = row['Jabatan'] || row['Role'] || inputs.role.options[0].value;
+                    inputs.no.value = row['No KTJ'] || row['Nomor KTJ'] || row['No'] || '';
+                    
+                    let excelJk = row['Jenis Kelamin'] || row['Gender'] || row['JK'];
+                    if(excelJk) {
+                        let jkStr = excelJk.toString().toUpperCase();
+                        if(jkStr.startsWith('P') || jkStr === 'WANITA') inputs.jk.value = 'PEREMPUAN';
+                        else inputs.jk.value = 'LAKI-LAKI';
+                    }
+
+                    let rawTglLahir = row['Tgl Lahir'] || row['Tanggal Lahir'] || '';
+                    inputs.tglLahir.value = parseIndoDateToYMD(rawTglLahir);
+
+                    inputs.alamat.value = row['Alamat'] || '';
+                    inputs.telepon.value = row['Telepon'] || row['No Telp'] || row['No Telepon'] || '';
+                    inputs.tahun.value = row['Tahun'] || row['Tahun Bergabung'] || '';
+                    
+                    updatePreview();
                 });
             }
 
@@ -754,7 +899,7 @@
                         };
 
                         triggerDownload(canvasFront, `KTJ_${nama}_Depan.jpg`);
-                        await new Promise(r => setTimeout(r, 800)); // Jeda anti-block
+                        await new Promise(r => setTimeout(r, 800));
                         triggerDownload(canvasBack, `KTJ_${nama}_Belakang.jpg`);
                         
                         btnExportPng.innerHTML = `<i class="fa-solid fa-check text-green-600 mr-2"></i> Berhasil`;
