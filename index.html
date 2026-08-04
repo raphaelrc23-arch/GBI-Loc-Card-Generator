@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Cetak KTJ - GBI Light of the City</title>
     
-    <!-- Tailwind CSS (dikunci ke v3 agar kompatibel dengan html2canvas) -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com/3.4.16"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous">
@@ -37,7 +37,7 @@
             background: linear-gradient(135deg, #0a1a3f 0%, #1d4ed8 100%);
             position: relative;
             overflow: hidden;
-            border-radius: var(--card-radius); /* Menggunakan variabel untuk setting */
+            border-radius: var(--card-radius);
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
             font-family: 'Poppins', sans-serif;
             color: #ffffff;
@@ -54,7 +54,6 @@
         /* --- TAMPILAN DEPAN --- */
         .front-logo-area { position: absolute; top: 4mm; left: 4mm; z-index: 10; display: flex; flex-direction: column; align-items: flex-start; gap: 1mm; }
         .gbi-logo { width: calc(35mm * var(--logo-scale-front)); height: auto; object-fit: contain; transition: width 0.3s ease; }
-        .front-header-text { display: none; }
         
         .front-content { position: absolute; bottom: 4mm; left: 4mm; z-index: 10; width: 55%; }
         .front-name { font-size: calc(15pt * var(--font-scale-front)); font-weight: 800; line-height: 1.1; margin-bottom: 1mm; text-shadow: 0 2px 4px rgba(0,0,0,0.8); transition: font-size 0.3s ease; }
@@ -79,10 +78,12 @@
             height: 100%;
             object-fit: cover;
             object-position: top center;
-            transform: translateX(-5%);
+            /* Default transform, akan di-update oleh JS saat zoom */
+            transform: translateX(-5%) scale(1);
+            transition: transform 0.2s ease;
         }
 
-        /* Elemen Dekoratif Depan */
+        /* Elemen Dekoratif */
         .deco-circle { position: absolute; border-radius: 50%; background: rgba(212, 175, 55, 0.05); z-index: 1; }
         .deco-1 { width: 40mm; height: 40mm; top: -10mm; left: -10mm; }
         .deco-2 { width: 30mm; height: 30mm; bottom: -5mm; left: 20mm; }
@@ -99,7 +100,7 @@
         .back-value { color: #ffffff; font-weight: 600; flex-grow: 1; }
         .back-value-address { line-height: 1.15; height: 7mm; overflow: hidden; }
         
-        /* Utility class untuk hide element dalam grid tapi tetap support contents */
+        /* Utility class untuk hide element dalam grid */
         .row-hidden { display: none !important; }
 
         .back-footer { margin-top: auto; flex-shrink: 0; }
@@ -107,9 +108,6 @@
         .back-footer-text { font-size: calc(4.5pt * var(--font-scale-back)); color: #a1a1aa; line-height: 1.2; transition: font-size 0.3s ease;}
 
         #logo-belakang { height: calc(4mm * var(--logo-scale-back)); width: auto; object-fit: contain; transition: height 0.3s ease; }
-
-        /* Container khusus print agar tidak kepotong */
-        #print-container { position: absolute; left: -9999px; top: -9999px; }
 
         /* Scrollbar */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -173,6 +171,7 @@
                             <option value="PEREMPUAN">Perempuan</option>
                         </select>
                     </div>
+                    
                     <div class="md:col-span-2">
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal Lahir</label>
                         <input type="text" id="input-tgllahir" class="form-input block w-full rounded-lg border-gray-300 shadow-sm border p-2.5 text-sm focus:ring-yellow-500 focus:border-yellow-500 font-medium" value="29 Januari 1971">
@@ -198,7 +197,7 @@
                 </div>
             </div>
 
-            <!-- Panel Pengaturan (Baru) -->
+            <!-- Panel Pengaturan -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                 <h2 class="text-lg font-bold text-gray-800 mb-5 flex items-center"><i class="fa-solid fa-sliders text-blue-600 mr-2 text-xl"></i> Pengaturan Spesifik Desain</h2>
                 
@@ -237,6 +236,15 @@
                             <input type="file" id="logo-depan-upload" accept="image/*" class="block w-full text-[11px] text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-white file:text-blue-700 hover:file:bg-blue-50 cursor-pointer">
                         </div>
                         
+                        <!-- Zoom Foto -->
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="block text-[11px] font-semibold text-gray-600">Zoom Foto Profil</label>
+                                <span id="val-zoom-photo" class="text-[11px] font-bold text-blue-600">100%</span>
+                            </div>
+                            <input type="range" id="setting-zoom-photo" min="1" max="3" step="0.1" value="1" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                        </div>
+                        
                         <!-- Toggle Foto -->
                         <div class="pt-2 border-t">
                             <label class="flex items-center space-x-2 cursor-pointer group">
@@ -271,7 +279,23 @@
                             <input type="file" id="logo-belakang-upload" accept="image/*" class="block w-full text-[11px] text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-white file:text-green-700 hover:file:bg-green-50 cursor-pointer">
                         </div>
 
-                        <!-- Toggle Fields Belakang -->
+                        <!-- Teks Dinamis Belakang -->
+                        <div class="pt-2 border-t space-y-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Teks Subtitle (Nama Institusi)</label>
+                                <input type="text" id="setting-text-subtitle" class="form-input block w-full rounded-md border-gray-300 shadow-sm border p-1.5 text-[11px] focus:ring-green-500 focus:border-green-500 font-medium" value="GBI LIGHT OF THE CITY">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Judul Catatan Bawah</label>
+                                <input type="text" id="setting-text-footer-title" class="form-input block w-full rounded-md border-gray-300 shadow-sm border p-1.5 text-[11px] focus:ring-green-500 focus:border-green-500 font-medium" value="PENTING:">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-gray-600 mb-1">Isi Catatan Bawah</label>
+                                <textarea id="setting-text-footer-content" rows="3" class="form-input block w-full rounded-md border-gray-300 shadow-sm border p-1.5 text-[11px] focus:ring-green-500 focus:border-green-500 font-medium">Kartu ini adalah milik GBI Light of the City.&#10;Harap dibawa setiap kali mengikuti ibadah atau kegiatan gereja.&#10;Jika menemukan kartu ini, mohon kembalikan ke sekretariat gereja.</textarea>
+                            </div>
+                        </div>
+
+                        <!-- Toggle & Order Fields Belakang -->
                         <div class="pt-2 border-t">
                             <div class="flex justify-between items-center mb-2">
                                 <label class="block text-[11px] font-bold text-gray-700">Tampilkan Info:</label>
@@ -326,12 +350,12 @@
                 </div>
             </div>
             
-            <!-- Panel Import Data (Tetap ada sebagai referensi pengembangan lanjutan) -->
+            <!-- Panel Import Data -->
             <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
                 <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center"><i class="fa-solid fa-file-excel text-emerald-600 mr-2 text-xl"></i> Import Data Massal</h2>
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-4">
                     <input type="file" id="file-upload" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-lg bg-white">
-                    <div id="excel-status" class="text-xs mt-3 text-gray-500 font-medium">Upload file Excel untuk mengisi form secara otomatis dari baris pertama. (Kolom: Nama, Jabatan, No KTJ, dll)</div>
+                    <div id="excel-status" class="text-xs mt-3 text-gray-500 font-medium">Upload file Excel untuk mengisi form secara otomatis dari baris pertama. (Kolom: Nama, Jabatan, No KTJ, Tgl Lahir, Alamat, Telepon, Tahun, dll)</div>
                 </div>
             </div>
 
@@ -376,7 +400,7 @@
                                 <div class="back-header">
                                     <div>
                                         <div class="back-title">KARTU TANDA JEMAAT</div>
-                                        <div class="back-subtitle">GBI LIGHT OF THE CITY</div>
+                                        <div class="back-subtitle" id="preview-back-subtitle">GBI LIGHT OF THE CITY</div>
                                     </div>
                                     <img id="logo-belakang" src="https://placehold.co/100x30/transparent/white?text=LOGO" alt="Logo LOC">
                                 </div>
@@ -409,8 +433,8 @@
                                 </div>
 
                                 <div class="back-footer">
-                                    <div class="back-footer-title">PENTING:</div>
-                                    <div class="back-footer-text">
+                                    <div class="back-footer-title" id="preview-back-footer-title">PENTING:</div>
+                                    <div class="back-footer-text" id="preview-back-footer-text">
                                         Kartu ini adalah milik GBI Light of the City.<br>
                                         Harap dibawa setiap kali mengikuti ibadah atau kegiatan gereja.<br>
                                         Jika menemukan kartu ini, mohon kembalikan ke sekretariat gereja.
@@ -428,7 +452,6 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             
-            // --- 1. HANDLING LIVE PREVIEW DARI FORM INPUT ---
             const inputs = {
                 nama: document.getElementById('input-nama'),
                 role: document.getElementById('input-role'),
@@ -455,9 +478,7 @@
                 previews.namaFront.textContent = inputs.nama.value || '-';
                 previews.role.textContent = inputs.role.value;
                 previews.noBack.textContent = ': ' + (inputs.no.value || '-');
-                
                 previews.tgllahir.textContent = ': ' + (inputs.tglLahir.value || '-');
-                
                 previews.jk.textContent = ': ' + (inputs.jk.value || '-');
                 
                 // Mengganti newline menjadi <br> untuk alamat
@@ -467,64 +488,77 @@
                 previews.tahun.textContent = ': ' + (inputs.tahun.value || '-');
             }
 
-            // Bind semua input form dengan event listener
+            // Bind semua input form dasar dengan event listener
             Object.values(inputs).forEach(input => {
-                input.addEventListener('input', updatePreview);
-                if(input.tagName === 'SELECT') {
-                    input.addEventListener('change', updatePreview);
+                if(input) {
+                    input.addEventListener('input', updatePreview);
+                    if(input.tagName === 'SELECT') {
+                        input.addEventListener('change', updatePreview);
+                    }
                 }
             });
 
-            // --- 2. HANDLING PENGATURAN (SETTINGS) ---
-            
             // Radius Lengkungan Kartu
             const sliderRadius = document.getElementById('setting-radius');
             const valRadius = document.getElementById('val-radius');
-            
-            sliderRadius.addEventListener('input', (e) => {
-                const radiusValue = e.target.value;
-                valRadius.textContent = `${radiusValue}mm`;
-                document.documentElement.style.setProperty('--card-radius', `${radiusValue}mm`);
-            });
+            if (sliderRadius) {
+                sliderRadius.addEventListener('input', (e) => {
+                    const radiusValue = e.target.value;
+                    valRadius.textContent = `${radiusValue}mm`;
+                    document.documentElement.style.setProperty('--card-radius', `${radiusValue}mm`);
+                });
+            }
 
             // Ukuran Font & Logo Depan
             const sliderFontFront = document.getElementById('setting-fontsize-front');
             const valFontFront = document.getElementById('val-fontsize-front');
-            sliderFontFront.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                valFontFront.textContent = `${Math.round(val * 100)}%`;
-                document.documentElement.style.setProperty('--font-scale-front', val);
-            });
+            if(sliderFontFront) {
+                sliderFontFront.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    valFontFront.textContent = `${Math.round(val * 100)}%`;
+                    document.documentElement.style.setProperty('--font-scale-front', val);
+                });
+            }
 
             const sliderLogoFront = document.getElementById('setting-logo-front');
             const valLogoFront = document.getElementById('val-logo-front');
-            sliderLogoFront.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                valLogoFront.textContent = `${Math.round(val * 100)}%`;
-                document.documentElement.style.setProperty('--logo-scale-front', val);
-            });
+            if(sliderLogoFront) {
+                sliderLogoFront.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    valLogoFront.textContent = `${Math.round(val * 100)}%`;
+                    document.documentElement.style.setProperty('--logo-scale-front', val);
+                });
+            }
 
             // Ukuran Font & Logo Belakang
             const sliderFontBack = document.getElementById('setting-fontsize-back');
             const valFontBack = document.getElementById('val-fontsize-back');
-            sliderFontBack.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                valFontBack.textContent = `${Math.round(val * 100)}%`;
-                document.documentElement.style.setProperty('--font-scale-back', val);
-            });
+            if(sliderFontBack) {
+                sliderFontBack.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    valFontBack.textContent = `${Math.round(val * 100)}%`;
+                    document.documentElement.style.setProperty('--font-scale-back', val);
+                });
+            }
 
             const sliderLogoBack = document.getElementById('setting-logo-back');
             const valLogoBack = document.getElementById('val-logo-back');
-            sliderLogoBack.addEventListener('input', (e) => {
-                const val = parseFloat(e.target.value);
-                valLogoBack.textContent = `${Math.round(val * 100)}%`;
-                document.documentElement.style.setProperty('--logo-scale-back', val);
-            });
+            if(sliderLogoBack) {
+                sliderLogoBack.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    valLogoBack.textContent = `${Math.round(val * 100)}%`;
+                    document.documentElement.style.setProperty('--logo-scale-back', val);
+                });
+            }
 
             // Parameterisasi Foto Depan
             const togglePhoto = document.getElementById('toggle-photo');
             const photoContainer = document.getElementById('photo-container-front');
-            if (togglePhoto) {
+            const sliderZoomPhoto = document.getElementById('setting-zoom-photo');
+            const valZoomPhoto = document.getElementById('val-zoom-photo');
+            const previewPhoto = document.getElementById('preview-photo');
+
+            if (togglePhoto && photoContainer) {
                 togglePhoto.addEventListener('change', (e) => {
                     if (e.target.checked) {
                         photoContainer.classList.remove('row-hidden');
@@ -534,17 +568,44 @@
                 });
             }
 
-            // Parameterisasi Field (Menyembunyikan & Mengurutkan baris di kartu belakang)
+            // Zoom Foto Logic - Fix translateX issue
+            if (sliderZoomPhoto && previewPhoto) {
+                sliderZoomPhoto.addEventListener('input', (e) => {
+                    const val = e.target.value;
+                    valZoomPhoto.textContent = `${Math.round(val * 100)}%`;
+                    // Gunakan gabungan translateX (untuk posisi awal/centering) dan scale (untuk zoom)
+                    previewPhoto.style.transform = `translateX(-5%) scale(${val})`;
+                });
+            }
+
+            // Parameterisasi Teks Statis Belakang
+            const inputBackSubtitle = document.getElementById('setting-text-subtitle');
+            const inputBackFooterTitle = document.getElementById('setting-text-footer-title');
+            const inputBackFooterText = document.getElementById('setting-text-footer-content');
+            
+            const prevBackSubtitle = document.getElementById('preview-back-subtitle');
+            const prevBackFooterTitle = document.getElementById('preview-back-footer-title');
+            const prevBackFooterText = document.getElementById('preview-back-footer-text');
+
+            if(inputBackSubtitle && prevBackSubtitle) {
+                inputBackSubtitle.addEventListener('input', (e) => { prevBackSubtitle.textContent = e.target.value; });
+            }
+            if(inputBackFooterTitle && prevBackFooterTitle) {
+                inputBackFooterTitle.addEventListener('input', (e) => { prevBackFooterTitle.textContent = e.target.value; });
+            }
+            if(inputBackFooterText && prevBackFooterText) {
+                inputBackFooterText.addEventListener('input', (e) => { prevBackFooterText.innerHTML = e.target.value.replace(/\n/g, '<br>'); });
+            }
+
+            // Parameterisasi Field (Sembunyikan & Urutan)
             const fieldToggles = document.querySelectorAll('.field-toggle');
             fieldToggles.forEach(toggle => {
                 toggle.addEventListener('change', (e) => {
                     const targetId = e.target.getAttribute('data-target');
                     const targetElement = document.getElementById(targetId);
-                    
-                    if (e.target.checked) {
-                        targetElement.classList.remove('row-hidden');
-                    } else {
-                        targetElement.classList.add('row-hidden');
+                    if(targetElement) {
+                        if (e.target.checked) targetElement.classList.remove('row-hidden');
+                        else targetElement.classList.add('row-hidden');
                     }
                 });
             });
@@ -560,28 +621,24 @@
                 });
             });
 
-            // --- 3. HANDLING UPLOAD FOTO ---
             const photoUpload = document.getElementById('photo-upload');
-            const previewPhoto = document.getElementById('preview-photo');
+            if(photoUpload && previewPhoto) {
+                photoUpload.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) { previewPhoto.src = event.target.result; };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
 
-            photoUpload.addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(event) {
-                        previewPhoto.src = event.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                }
-            });
-
-            // --- 3B. HANDLING UPLOAD LOGO ---
             const logoDepanUpload = document.getElementById('logo-depan-upload');
             const logoBelakangUpload = document.getElementById('logo-belakang-upload');
             const logoDepan = document.getElementById('logo-depan');
             const logoBelakang = document.getElementById('logo-belakang');
 
-            if(logoDepanUpload) {
+            if(logoDepanUpload && logoDepan) {
                 logoDepanUpload.addEventListener('change', function(e) {
                     const file = e.target.files[0];
                     if (file) {
@@ -591,7 +648,8 @@
                     }
                 });
             }
-            if(logoBelakangUpload) {
+            
+            if(logoBelakangUpload && logoBelakang) {
                 logoBelakangUpload.addEventListener('change', function(e) {
                     const file = e.target.files[0];
                     if (file) {
@@ -602,10 +660,10 @@
                 });
             }
 
-            // --- 3C. HANDLING EXCEL UPLOAD ---
             const excelUpload = document.getElementById('file-upload');
             const excelStatus = document.getElementById('excel-status');
-            if(excelUpload) {
+            
+            if(excelUpload && excelStatus) {
                 excelUpload.addEventListener('change', function(e) {
                     const file = e.target.files[0];
                     if (!file) return;
@@ -655,13 +713,11 @@
                 });
             }
 
-            // --- 4. EXPORT BUTTONS (Fungsionalitas Nyata) ---
             const btnExportPng = document.getElementById('btn-export-png');
             const btnExportPdf = document.getElementById('btn-export-pdf');
             const cardFront = document.getElementById('card-front');
             const cardBack = document.getElementById('card-back');
 
-            // Fungsi untuk menghapus bayangan sementara sebelum di-capture
             function prepareForExport() {
                 cardFront.classList.add('print-mode');
                 cardBack.classList.add('print-mode');
@@ -672,105 +728,95 @@
                 cardBack.classList.remove('print-mode');
             }
 
-            // EXPORT KE JPG (DUA FILE)
-            btnExportPng.addEventListener('click', async () => {
-                const originalText = btnExportPng.innerHTML;
-                btnExportPng.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Memproses...`;
-                btnExportPng.disabled = true;
-                
-                prepareForExport();
+            // Export JPG (Dua File)
+            if(btnExportPng) {
+                btnExportPng.addEventListener('click', async () => {
+                    const originalText = btnExportPng.innerHTML;
+                    btnExportPng.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Memproses...`;
+                    btnExportPng.disabled = true;
+                    
+                    prepareForExport();
 
-                try {
-                    // Render elemen ke kanvas menggunakan html2canvas
-                    const canvasFront = await html2canvas(cardFront, { scale: 3, useCORS: true, backgroundColor: null });
-                    const canvasBack = await html2canvas(cardBack, { scale: 3, useCORS: true, backgroundColor: null });
-                    
-                    const nama = inputs.nama.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'jemaat';
-                    
-                    // Fungsi pembantu untuk memicu download
-                    const triggerDownload = (canvas, filename) => {
-                        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-                        const link = document.createElement('a');
-                        link.download = filename;
-                        link.href = imgData;
-                        document.body.appendChild(link); // Append sementara
-                        link.click();
-                        document.body.removeChild(link); // Bersihkan kembali
-                    };
+                    try {
+                        const canvasFront = await html2canvas(cardFront, { scale: 3, useCORS: true, backgroundColor: null });
+                        const canvasBack = await html2canvas(cardBack, { scale: 3, useCORS: true, backgroundColor: null });
+                        
+                        const nama = inputs.nama.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'jemaat';
+                        
+                        const triggerDownload = (canvas, filename) => {
+                            const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                            const link = document.createElement('a');
+                            link.download = filename;
+                            link.href = imgData;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        };
 
-                    // Download Depan
-                    triggerDownload(canvasFront, `KTJ_${nama}_Depan.jpg`);
+                        triggerDownload(canvasFront, `KTJ_${nama}_Depan.jpg`);
+                        await new Promise(r => setTimeout(r, 800)); // Jeda anti-block
+                        triggerDownload(canvasBack, `KTJ_${nama}_Belakang.jpg`);
+                        
+                        btnExportPng.innerHTML = `<i class="fa-solid fa-check text-green-600 mr-2"></i> Berhasil`;
+                    } catch (error) {
+                        console.error("Gagal export JPG:", error);
+                        btnExportPng.innerHTML = `<i class="fa-solid fa-xmark text-red-600 mr-2"></i> Gagal`;
+                    }
                     
-                    // Jeda sejenak untuk menghindari masalah block multiple-download dari Browser
-                    await new Promise(r => setTimeout(r, 800));
-
-                    // Download Belakang
-                    triggerDownload(canvasBack, `KTJ_${nama}_Belakang.jpg`);
-                    
-                    btnExportPng.innerHTML = `<i class="fa-solid fa-check text-green-600 mr-2"></i> Berhasil`;
-                } catch (error) {
-                    console.error("Gagal export JPG:", error);
-                    btnExportPng.innerHTML = `<i class="fa-solid fa-xmark text-red-600 mr-2"></i> Gagal`;
-                }
-                
-                // Kembalikan status tombol dan tampilan kartu
-                restoreAfterExport();
-                setTimeout(() => {
-                    btnExportPng.innerHTML = originalText;
-                    btnExportPng.disabled = false;
-                }, 2000);
-            });
+                    restoreAfterExport();
+                    setTimeout(() => {
+                        btnExportPng.innerHTML = originalText;
+                        btnExportPng.disabled = false;
+                    }, 2000);
+                });
+            }
             
-            // EXPORT KE PDF
-            btnExportPdf.addEventListener('click', async () => {
-                const originalText = btnExportPdf.innerHTML;
-                btnExportPdf.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Memproses...`;
-                btnExportPdf.disabled = true;
-                
-                prepareForExport();
+            // Export PDF (Landscape ID Card)
+            if(btnExportPdf) {
+                btnExportPdf.addEventListener('click', async () => {
+                    const originalText = btnExportPdf.innerHTML;
+                    btnExportPdf.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i> Memproses...`;
+                    btnExportPdf.disabled = true;
+                    
+                    prepareForExport();
 
-                try {
-                    // Render kartu
-                    const canvasFront = await html2canvas(cardFront, { scale: 3, useCORS: true, backgroundColor: null });
-                    const canvasBack = await html2canvas(cardBack, { scale: 3, useCORS: true, backgroundColor: null });
-                    
-                    const { jsPDF } = window.jspdf;
-                    
-                    // Format fisik Kartu ID standar CR-80: 85.6mm x 53.98mm
-                    const pdf = new jsPDF({
-                        orientation: 'landscape',
-                        unit: 'mm',
-                        format: [85.6, 53.98]
-                    });
-                    
-                    const imgDataFront = canvasFront.toDataURL('image/jpeg', 1.0);
-                    const imgDataBack = canvasBack.toDataURL('image/jpeg', 1.0);
-                    
-                    // Halaman 1: Kartu Depan
-                    pdf.addImage(imgDataFront, 'JPEG', 0, 0, 85.6, 53.98);
-                    
-                    // Halaman 2: Kartu Belakang
-                    pdf.addPage();
-                    pdf.addImage(imgDataBack, 'JPEG', 0, 0, 85.6, 53.98);
-                    
-                    // Proses download PDF
-                    const nama = inputs.nama.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'jemaat';
-                    pdf.save(`KTJ_${nama}.pdf`);
-                    
-                    btnExportPdf.innerHTML = `<i class="fa-solid fa-check text-green-600 mr-2"></i> Berhasil`;
-                } catch (error) {
-                    console.error("Gagal export PDF:", error);
-                    btnExportPdf.innerHTML = `<i class="fa-solid fa-xmark text-red-600 mr-2"></i> Gagal`;
-                }
+                    try {
+                        const canvasFront = await html2canvas(cardFront, { scale: 3, useCORS: true, backgroundColor: null });
+                        const canvasBack = await html2canvas(cardBack, { scale: 3, useCORS: true, backgroundColor: null });
+                        
+                        const { jsPDF } = window.jspdf;
+                        
+                        const pdf = new jsPDF({
+                            orientation: 'landscape',
+                            unit: 'mm',
+                            format: [85.6, 53.98]
+                        });
+                        
+                        const imgDataFront = canvasFront.toDataURL('image/jpeg', 1.0);
+                        const imgDataBack = canvasBack.toDataURL('image/jpeg', 1.0);
+                        
+                        pdf.addImage(imgDataFront, 'JPEG', 0, 0, 85.6, 53.98);
+                        pdf.addPage();
+                        pdf.addImage(imgDataBack, 'JPEG', 0, 0, 85.6, 53.98);
+                        
+                        const nama = inputs.nama.value.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'jemaat';
+                        pdf.save(`KTJ_${nama}.pdf`);
+                        
+                        btnExportPdf.innerHTML = `<i class="fa-solid fa-check text-green-600 mr-2"></i> Berhasil`;
+                    } catch (error) {
+                        console.error("Gagal export PDF:", error);
+                        btnExportPdf.innerHTML = `<i class="fa-solid fa-xmark text-red-600 mr-2"></i> Gagal`;
+                    }
 
-                restoreAfterExport();
-                setTimeout(() => {
-                    btnExportPdf.innerHTML = originalText;
-                    btnExportPdf.disabled = false;
-                }, 2000);
-            });
+                    restoreAfterExport();
+                    setTimeout(() => {
+                        btnExportPdf.innerHTML = originalText;
+                        btnExportPdf.disabled = false;
+                    }, 2000);
+                });
+            }
 
-            // Inisialisasi awal preview data
+            // Inisialisasi awal
             updatePreview();
         });
     </script>
