@@ -8,31 +8,6 @@
 -->
 <html lang="id">
 <head>
-
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
-  authDomain: "dbjemaatloc.firebaseapp.com",
-  projectId: "dbjemaatloc",
-  storageBucket: "dbjemaatloc.firebasestorage.app",
-  messagingSenderId: "927587348267",
-  appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
-  measurementId: "G-H7Y4N30PER"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-
-
-  
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Database Jemaat Gereja - Enterprise</title>
@@ -55,6 +30,41 @@ const analytics = getAnalytics(app);
             .no-print { display: none !important; }
         }
     </style>
+
+
+
+    <!-- MULAI DARI SINI: Kode Firebase yang Benar untuk HTML murni -->
+    <script type="module">
+        // Import Firebase App dan layanan yang dibutuhkan dari CDN (link gstatic)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Konfigurasi Firebase Anda
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.firebasestorage.app",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N30PER"
+        };
+
+        // Inisialisasi Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        
+        // Inisialisasi Database (Firestore)
+        const db = getFirestore(app);
+
+        // Daftarkan 'db' ke window agar bisa dipanggil oleh kode Javascript Anda yang lain
+        window.db = db;
+        console.log("Firebase Database Terhubung!");
+    </script>
+    <!-- SELESAI: Batas Kode Firebase -->
+
+  
 </head>
 <body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
 
