@@ -59,9 +59,6 @@
             border-bottom: 3px solid #e8913a;
             margin-bottom: -2px;
         }
-        .tab:hover {
-            color: #e8913a;
-        }
         input {
             width: 100%;
             padding: 12px;
@@ -92,26 +89,16 @@
             background-color: #d07a2a;
         }
         .hidden {
-            display: none !important;
+            display: none;
         }
         .message {
             text-align: center;
             font-size: 14px;
             margin-bottom: 15px;
             min-height: 20px;
-            padding: 8px;
-            border-radius: 4px;
         }
-        .error { 
-            color: #721c24; 
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-        }
-        .success { 
-            color: #155724; 
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-        }
+        .error { color: #e74c3c; }
+        .success { color: #27ae60; }
     </style>
 </head>
 <body>
@@ -120,188 +107,157 @@
         <h2>Light of the City</h2>
         
         <div class="tabs">
-            <div class="tab active" id="tab-login" onclick="showLogin()">Login</div>
-            <div class="tab" id="tab-register" onclick="showRegister()">Register</div>
+            <div class="tab active" onclick="toggleForm('login')">Login</div>
+            <div class="tab" onclick="toggleForm('register')">Register</div>
         </div>
 
         <!-- FORM LOGIN -->
         <div id="login-section">
-            <div id="login-msg" class="message" style="display:none;"></div>
-            <form id="login-form" onsubmit="handleLogin(event)">
-                <input type="text" id="login-username" placeholder="Username" required autocomplete="username">
-                <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+            <p id="login-msg" class="message"></p>
+            <form id="login-form">
+                <input type="text" id="login-username" placeholder="Username" required>
+                <input type="password" id="login-password" placeholder="Password" required>
                 <button type="submit">Masuk</button>
             </form>
         </div>
 
         <!-- FORM REGISTER -->
         <div id="register-section" class="hidden">
-            <div id="register-msg" class="message" style="display:none;"></div>
-            <form id="register-form" onsubmit="handleRegister(event)">
-                <input type="text" id="reg-name" placeholder="Nama Lengkap" required autocomplete="name">
-                <input type="text" id="reg-username" placeholder="Username" required autocomplete="username">
-                <input type="password" id="reg-password" placeholder="Password" required autocomplete="new-password">
+            <p id="register-msg" class="message"></p>
+            <form id="register-form">
+                <input type="text" id="reg-name" placeholder="Nama Lengkap" required>
+                <input type="text" id="reg-username" placeholder="Username" required>
+                <input type="password" id="reg-password" placeholder="Password" required>
                 <button type="submit">Daftar</button>
             </form>
         </div>
     </div>
 
-    <script>
-        // Fungsi untuk menampilkan form Login
-        function showLogin() {
-            document.getElementById('login-section').classList.remove('hidden');
-            document.getElementById('register-section').classList.add('hidden');
-            document.getElementById('tab-login').classList.add('active');
-            document.getElementById('tab-register').classList.remove('active');
-            clearMessages();
-        }
+    <!-- Script Firestore -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, 
+            doc, 
+            setDoc, 
+            getDocs, 
+            query, 
+            where 
+        } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-firestore.js";
 
-        // Fungsi untuk menampilkan form Register
-        function showRegister() {
-            document.getElementById('register-section').classList.remove('hidden');
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('tab-register').classList.add('active');
-            document.getElementById('tab-login').classList.remove('active');
-            clearMessages();
-        }
+        // Konfigurasi Firebase Anda yang asli
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.appspot.com",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N3OPER"
+        };
 
-        // Clear semua pesan
-        function clearMessages() {
-            const loginMsg = document.getElementById('login-msg');
-            const registerMsg = document.getElementById('register-msg');
-            loginMsg.style.display = 'none';
-            loginMsg.className = 'message';
-            registerMsg.style.display = 'none';
-            registerMsg.className = 'message';
-        }
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
-        // Show message helper
-        function showMessage(elementId, text, type) {
-            const msgEl = document.getElementById(elementId);
-            msgEl.textContent = text;
-            msgEl.className = 'message ' + type;
-            msgEl.style.display = 'block';
-        }
+        // Fungsi Toggle Form (Login / Register)
+        window.toggleForm = function(form) {
+            const loginSec = document.getElementById('login-section');
+            const registerSec = document.getElementById('register-section');
+            const tabs = document.querySelectorAll('.tab');
 
-        // HANDLE REGISTER
-        function handleRegister(e) {
-            e.preventDefault();
-            
-            const name = document.getElementById('reg-name').value.trim();
-            const username = document.getElementById('reg-username').value.trim();
-            const password = document.getElementById('reg-password').value;
+            document.getElementById('login-msg').innerText = '';
+            document.getElementById('register-msg').innerText = '';
 
-            console.log('Register attempt:', { name, username });
-
-            // Ambil data user dari localStorage
-            let users = [];
-            try {
-                const storedUsers = localStorage.getItem('users');
-                if (storedUsers) {
-                    users = JSON.parse(storedUsers);
-                }
-            } catch (error) {
-                console.error('Error reading localStorage:', error);
-                users = [];
-            }
-
-            // Cek apakah username sudah ada
-            const userExists = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-            
-            if (userExists) {
-                showMessage('register-msg', '❌ Username sudah digunakan! Coba username lain.', 'error');
-                return;
-            }
-
-            // Simpan user baru
-            users.push({ 
-                name: name, 
-                username: username, 
-                password: password,
-                createdAt: new Date().toISOString()
-            });
-            
-            localStorage.setItem('users', JSON.stringify(users));
-            
-            console.log('User registered successfully. Total users:', users.length);
-            
-            showMessage('register-msg', '✅ Registrasi berhasil! Silakan login.', 'success');
-            
-            // Reset form
-            document.getElementById('register-form').reset();
-            
-            // Pindah ke login setelah 2 detik
-            setTimeout(() => {
-                showLogin();
-            }, 2000);
-        }
-
-        // HANDLE LOGIN
-        function handleLogin(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('login-username').value.trim();
-            const password = document.getElementById('login-password').value;
-
-            console.log('Login attempt:', username);
-
-            // Ambil data user
-            let users = [];
-            try {
-                const storedUsers = localStorage.getItem('users');
-                if (storedUsers) {
-                    users = JSON.parse(storedUsers);
-                }
-            } catch (error) {
-                console.error('Error reading localStorage:', error);
-            }
-
-            console.log('Total users in database:', users.length);
-
-            // Cari user
-            const user = users.find(u => 
-                u.username.toLowerCase() === username.toLowerCase() && 
-                u.password === password
-            );
-
-            if (user) {
-                showMessage('login-msg', `✅ Login berhasil! Selamat datang, ${user.name}!`, 'success');
-                console.log('Login successful:', user.name);
-                
-                // Simpan user yang sedang login
-                localStorage.setItem('currentUser', JSON.stringify(user));
-                
-                // Optional: Redirect setelah 1 detik
-                // setTimeout(() => {
-                //     window.location.href = 'dashboard.html';
-                // }, 1000);
+            if (form === 'register') {
+                loginSec.classList.add('hidden');
+                registerSec.classList.remove('hidden');
+                tabs[0].classList.remove('active');
+                tabs[1].classList.add('active');
             } else {
-                showMessage('login-msg', '❌ Username atau password salah!', 'error');
-                console.log('Login failed: User not found or wrong password');
-                
-                // Shake effect untuk feedback visual
-                const container = document.querySelector('.container');
-                container.style.animation = 'shake 0.5s';
-                setTimeout(() => {
-                    container.style.animation = '';
-                }, 500);
+                registerSec.classList.add('hidden');
+                loginSec.classList.remove('hidden');
+                tabs[1].classList.remove('active');
+                tabs[0].classList.add('active');
             }
+        };
+
+        // REGISTER: Simpan langsung ke Firestore collection "users"
+        const regForm = document.getElementById('register-form');
+        if (regForm) {
+            regForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const name = document.getElementById('reg-name').value;
+                const username = document.getElementById('reg-username').value;
+                const password = document.getElementById('reg-password').value;
+                const msg = document.getElementById('register-msg');
+
+                try {
+                    const q = query(collection(db, "users"), where("username", "==", username));
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        msg.className = 'message error';
+                        msg.innerText = 'Username sudah digunakan!';
+                        return;
+                    }
+
+                    await setDoc(doc(db, "users", username), {
+                        name: name,
+                        username: username,
+                        password: password,
+                        createdAt: new Date()
+                    });
+
+                    msg.className = 'message success';
+                    msg.innerText = 'Registrasi berhasil! Silakan login.';
+                    this.reset();
+                    setTimeout(() => window.toggleForm('login'), 1500);
+
+                } catch (error) {
+                    msg.className = 'message error';
+                    msg.innerText = 'Gagal Daftar: ' + error.message;
+                }
+            });
         }
 
-        // Add shake animation
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes shake {
-                0%, 100% { transform: translateX(0); }
-                25% { transform: translateX(-10px); }
-                75% { transform: translateX(10px); }
-            }
-        `;
-        document.head.appendChild(style);
+        // LOGIN: Cek pencocokan username & password langsung ke Firestore
+        const loginForm = document.getElementById('login-form');
+        if (loginForm) {
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const username = document.getElementById('login-username').value;
+                const password = document.getElementById('login-password').value;
+                const msg = document.getElementById('login-msg');
 
-        // Debug: Tampilkan data users di console
-        console.log('=== LIGHT OF THE CITY LOGIN SYSTEM ===');
-        console.log('LocalStorage users:', localStorage.getItem('users'));
+                try {
+                    const q = query(
+                        collection(db, "users"), 
+                        where("username", "==", username),
+                        where("password", "==", password)
+                    );
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        msg.className = 'message success';
+                        msg.innerText = 'Login berhasil! Mengalihkan...';
+
+                        sessionStorage.setItem('loggedUser', username);
+
+                        setTimeout(() => {
+                            window.location.href = 'homepage.html';
+                        }, 1000);
+                    } else {
+                        msg.className = 'message error';
+                        msg.innerText = 'Username atau Password salah!';
+                    }
+
+                } catch (error) {
+                    msg.className = 'message error';
+                    msg.innerText = 'Terjadi kesalahan: ' + error.message;
+                }
+            });
+        }
     </script>
 </body>
 </html>
