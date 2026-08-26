@@ -149,15 +149,19 @@
         // ==========================================
         // MASUKKAN KONFIGURASI FIREBASE ANDA DI SINI
         // ==========================================
-        const firebaseConfig = {
-            apiKey: "GANTI_DENGAN_API_KEY_ANDA",
-            authDomain: "GANTI_DENGAN_AUTH_DOMAIN_ANDA",
-            projectId: "GANTI_DENGAN_PROJECT_ID_ANDA",
-            storageBucket: "GANTI_DENGAN_STORAGE_BUCKET_ANDA",
-            messagingSenderId: "GANTI_DENGAN_MESSAGING_SENDER_ID_ANDA",
-            appId: "GANTI_DENGAN_APP_ID_ANDA"
-        };
+        
 
+const firebaseConfig = {
+  apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
+  authDomain: "dbjemaatloc.firebaseapp.com",
+  projectId: "dbjemaatloc",
+  storageBucket: "dbjemaatloc.appspot.com",
+  messagingSenderId: "927587348267",
+  appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+  measurementId: "G-H7Y4N3OPER"
+};
+
+        
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
