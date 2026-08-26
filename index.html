@@ -103,6 +103,119 @@
 </head>
 <body>
 
+
+<!-- Script Firebase SDK (Modular Version) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-app.js";
+        import { 
+            getAuth, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword 
+        } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            setDoc 
+        } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-firestore.js";
+
+        // ==========================================
+        // MASUKKAN KONFIGURASI FIREBASE ANDA DI SINI
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "GANTI_DENGAN_API_KEY_ANDA",
+            authDomain: "GANTI_DENGAN_AUTH_DOMAIN_ANDA",
+            projectId: "GANTI_DENGAN_PROJECT_ID_ANDA",
+            storageBucket: "GANTI_DENGAN_STORAGE_BUCKET_ANDA",
+            messagingSenderId: "GANTI_DENGAN_MESSAGING_SENDER_ID_ANDA",
+            appId: "GANTI_DENGAN_APP_ID_ANDA"
+        };
+
+        // Inisialisasi Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Fungsi Toggle Form (Login / Register)
+        window.toggleForm = function(form) {
+            const loginSec = document.getElementById('login-section');
+            const registerSec = document.getElementById('register-section');
+            const tabs = document.querySelectorAll('.tab');
+
+            document.getElementById('login-msg').innerText = '';
+            document.getElementById('register-msg').innerText = '';
+
+            if (form === 'register') {
+                loginSec.classList.add('hidden');
+                registerSec.classList.remove('hidden');
+                tabs[0].classList.remove('active');
+                tabs[1].classList.add('active');
+            } else {
+                registerSec.classList.add('hidden');
+                loginSec.classList.remove('hidden');
+                tabs[1].classList.remove('active');
+                tabs[0].classList.add('active');
+            }
+        }
+
+        // REGISTER DENGAN FIREBASE AUTH
+        document.getElementById('register-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const name = document.getElementById('reg-name').value;
+            // Catatan: Firebase Auth menggunakan format Email untuk username/login standar
+            const email = document.getElementById('reg-username').value; 
+            const password = document.getElementById('reg-password').value;
+            const msg = document.getElementById('register-msg');
+
+            try {
+                // 1. Buat akun di Firebase Authentication
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const user = userCredential.user;
+
+                // 2. Simpan nama lengkap tambahan ke Cloud Firestore
+                await setDoc(doc(db, "users", user.uid), {
+                    name: name,
+                    email: email,
+                    createdAt: new Date()
+                });
+
+                msg.className = 'message success';
+                msg.innerText = 'Registrasi berhasil! Silakan login.';
+                this.reset();
+                setTimeout(() => window.toggleForm('login'), 1500);
+
+            } catch (error) {
+                msg.className = 'message error';
+                msg.innerText = 'Gagal Daftar: ' + error.message;
+            }
+        });
+
+        // LOGIN DENGAN FIREBASE AUTH
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const msg = document.getElementById('login-msg');
+
+            try {
+                // Proses login ke Firebase
+                await signInWithEmailAndPassword(auth, email, password);
+                
+                msg.className = 'message success';
+                msg.innerText = 'Login berhasil! Mengalihkan...';
+
+                // Pindah ke homepage.html setelah berhasil login
+                setTimeout(() => {
+                    window.location.href = 'homepage.html';
+                }, 1000);
+
+            } catch (error) {
+                msg.className = 'message error';
+                msg.innerText = 'Username atau Password salah!';
+            }
+        });
+    </script>
+
+
     <div class="container">
         <h2>Light of the City</h2>
         
