@@ -231,8 +231,10 @@ html[data-theme="light"] .icon-moon{display:none}
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { 
     getFirestore, 
-    doc, 
-    getDoc 
+    collection,
+    query,
+    where,
+    getDocs
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -259,10 +261,12 @@ html[data-theme="light"] .icon-moon{display:none}
     window.location.href = "index.html";
   } else {
     userNameDisplay.textContent = "Hi, " + loggedUser;
-    const docRef = doc(db, "users", loggedUser);
-    getDoc(docRef).then((docSnap) => {
-        if (docSnap.exists()) {
-            const data = docSnap.data();
+    // Document ID di koleksi 'users' itu auto-generated, BUKAN username.
+    // Jadi harus dicari lewat query berdasarkan field 'username', bukan doc(db,"users", loggedUser).
+    const q = query(collection(db, "users"), where("username", "==", loggedUser));
+    getDocs(q).then((snap) => {
+        if (!snap.empty) {
+            const data = snap.docs[0].data();
             if (data.name) {
                 userNameDisplay.textContent = "Hi " + data.name;
             }
