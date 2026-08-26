@@ -199,8 +199,8 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="idcard.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
-    <!-- MODUL 3: USER MATRIX -->
-    <article class="card" style="--d:.45s">
+    <!-- MODUL 3: USER MATRIX (hanya utk role admin, disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardUserMatrix" style="--d:.45s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
         <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -250,6 +250,7 @@ html[data-theme="light"] .icon-moon{display:none}
 
   const userNameDisplay = document.getElementById('userNameDisplay');
   const logoutBtn = document.getElementById('logoutBtn');
+  const cardUserMatrix = document.getElementById('cardUserMatrix');
 
   // CEK SESSION STORAGE
   const loggedUser = sessionStorage.getItem('loggedUser');
@@ -260,10 +261,18 @@ html[data-theme="light"] .icon-moon{display:none}
     userNameDisplay.textContent = "Hi, " + loggedUser;
     const docRef = doc(db, "users", loggedUser);
     getDoc(docRef).then((docSnap) => {
-        if (docSnap.exists() && docSnap.data().name) {
-            userNameDisplay.textContent = "Hi " + docSnap.data().name;
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.name) {
+                userNameDisplay.textContent = "Hi " + data.name;
+            }
+            // Tampilkan menu User Matrix HANYA jika role = admin.
+            // Default tetap hidden (di HTML) kalau field role tidak ada / gagal diambil / bukan admin.
+            if (data.role === 'admin') {
+                cardUserMatrix.style.display = '';
+            }
         }
-    }).catch(err => console.log("Gagal ambil nama:", err));
+    }).catch(err => console.log("Gagal ambil data user:", err));
   }
 
   logoutBtn.onclick = () => {
