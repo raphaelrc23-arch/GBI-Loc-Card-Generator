@@ -133,7 +133,7 @@
         </div>
     </div>
 
-    <!-- Script Firestore dengan Versi 10.8.0 yang Valid -->
+    <!-- Script Firestore dengan Versi 10.8.0 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { 
@@ -146,7 +146,6 @@
             where 
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Konfigurasi Firebase Anda yang asli
         const firebaseConfig = {
             apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
             authDomain: "dbjemaatloc.firebaseapp.com",
@@ -160,7 +159,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Fungsi Toggle Form (Login / Register)
         window.toggleForm = function(form) {
             const loginSec = document.getElementById('login-section');
             const registerSec = document.getElementById('register-section');
@@ -182,7 +180,6 @@
             }
         };
 
-        // REGISTER: Simpan langsung ke Firestore collection "users"
         const regForm = document.getElementById('register-form');
         if (regForm) {
             regForm.addEventListener('submit', async function(e) {
@@ -221,7 +218,6 @@
             });
         }
 
-        // LOGIN: Cek pencocokan username & password langsung ke Firestore
         const loginForm = document.getElementById('login-form');
         if (loginForm) {
             loginForm.addEventListener('submit', async function(e) {
