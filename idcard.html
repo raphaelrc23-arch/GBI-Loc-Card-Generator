@@ -17,6 +17,31 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+    <!-- MULAI: Kode Firebase (sama dengan dbJemaat.html) agar bisa membaca data jemaat -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.firebasestorage.app",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N30PER"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Dokumen utama yang sama dipakai dbJemaat.html: koleksi "gerejaData", dokumen "main"
+        window.mainDocRef = doc(db, "gerejaData", "main");
+        window.firestoreGetDoc = getDoc;
+        window.firebaseReady = true;
+    </script>
+    <!-- SELESAI: Kode Firebase -->
+
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
         
@@ -140,6 +165,11 @@
             </button>
         </div>
     </nav>
+
+    <!-- Banner status pengambilan data otomatis dari Database Jemaat (Firebase) -->
+    <div id="auto-load-banner" class="hidden max-w-[1400px] mx-auto w-full px-6 pt-4">
+        <div id="auto-load-banner-inner" class="rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2"></div>
+    </div>
 
     <!-- Main Content -->
     <main class="flex-1 p-6 max-w-[1400px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -495,6 +525,10 @@
         </div>
     </main>
 
+    <footer class="text-center py-4 text-[11px] text-slate-400 border-t border-slate-200 bg-white">
+        Powered by <a href="https://jemaatid.com" target="_blank" rel="noopener" class="text-indigo-500 hover:text-indigo-600 font-medium">jemaatid.com</a>
+    </footer>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             
@@ -589,6 +623,101 @@
                     }
                 }
             });
+
+            // ==================================================================
+            // AMBIL DATA OTOMATIS DARI DATABASE JEMAAT (FIREBASE) VIA ?id=...
+            // Dipicu saat tombol "Cetak ID Card" di dbJemaat.html diklik.
+            // Semua field terisi otomatis KECUALI foto (harus diunggah manual).
+            // ==================================================================
+            function waitForFirebaseReady() {
+                return new Promise((resolve) => {
+                    if (window.firebaseReady && window.mainDocRef) return resolve();
+                    const check = setInterval(() => {
+                        if (window.firebaseReady && window.mainDocRef) {
+                            clearInterval(check);
+                            resolve();
+                        }
+                    }, 50);
+                });
+            }
+
+            function showAutoLoadBanner(message, type) {
+                const banner = document.getElementById('auto-load-banner');
+                const inner = document.getElementById('auto-load-banner-inner');
+                if (!banner || !inner) return;
+                const styles = {
+                    success: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                    error: 'bg-red-50 text-red-700 border border-red-200',
+                    loading: 'bg-blue-50 text-blue-700 border border-blue-200'
+                };
+                const icons = {
+                    success: 'fa-solid fa-circle-check',
+                    error: 'fa-solid fa-triangle-exclamation',
+                    loading: 'fa-solid fa-spinner fa-spin'
+                };
+                inner.className = 'rounded-xl px-4 py-3 text-sm font-medium flex items-center gap-2 ' + (styles[type] || styles.loading);
+                inner.innerHTML = `<i class="${icons[type] || icons.loading}"></i><span>${message}</span>`;
+                banner.classList.remove('hidden');
+            }
+
+            async function autoLoadFromDatabase() {
+                const params = new URLSearchParams(window.location.search);
+                const jemaatId = params.get('id');
+                if (!jemaatId) return; // Tidak ada id di URL -> mode manual/excel seperti biasa
+
+                showAutoLoadBanner('Mengambil data jemaat dari Database Jemaat...', 'loading');
+
+                try {
+                    await waitForFirebaseReady();
+                    const snap = await window.firestoreGetDoc(window.mainDocRef);
+                    if (!snap.exists()) {
+                        showAutoLoadBanner('Data belum tersedia di Firebase. Isi form secara manual.', 'error');
+                        return;
+                    }
+                    const data = snap.data();
+                    const list = Array.isArray(data.dataJemaat) ? data.dataJemaat : [];
+                    const j = list.find(item => item.id === jemaatId);
+                    if (!j) {
+                        showAutoLoadBanner('Data jemaat dengan ID tersebut tidak ditemukan. Isi form secara manual.', 'error');
+                        return;
+                    }
+
+                    // Mapping data Database Jemaat -> Form Cetak KTJ (kecuali foto)
+                    if (j.nama_lengkap) inputs.nama.value = j.nama_lengkap;
+                    if (j.nij) inputs.no.value = j.nij;
+
+                    if (j.jenis_kelamin) {
+                        const jkUpper = String(j.jenis_kelamin).toUpperCase();
+                        inputs.jk.value = jkUpper.startsWith('P') ? 'PEREMPUAN' : 'LAKI-LAKI';
+                    }
+
+                    if (j.tanggal_lahir) inputs.tglLahir.value = parseIndoDateToYMD(j.tanggal_lahir);
+                    if (j.alamat) inputs.alamat.value = j.alamat;
+                    if (j.no_telepon) inputs.telepon.value = j.no_telepon;
+
+                    if (j.tanggal_bergabung) {
+                        const tahunMatch = String(j.tanggal_bergabung).match(/\d{4}/);
+                        if (tahunMatch) inputs.tahun.value = tahunMatch[0];
+                    }
+
+                    // Jabatan/Peran ditebak dari data pelayanan (tidak ada field pasti di Database Jemaat)
+                    if (j.bidang_pelayanan && /gembala/i.test(j.bidang_pelayanan)) {
+                        inputs.role.value = 'GEMBALA JEMAAT';
+                    } else if (j.sudah_berpelayanan === 'Ya') {
+                        inputs.role.value = 'PENGERJA';
+                    } else {
+                        inputs.role.value = 'JEMAAT';
+                    }
+
+                    updatePreview();
+                    showAutoLoadBanner(`Data "${j.nama_lengkap}" berhasil dimuat otomatis dari Database Jemaat. Foto tetap perlu diunggah manual di bawah.`, 'success');
+                } catch (e) {
+                    console.error('Gagal mengambil data dari Firebase:', e);
+                    showAutoLoadBanner('Gagal terhubung ke Firebase. Periksa koneksi internet Anda, lalu muat ulang halaman.', 'error');
+                }
+            }
+
+            autoLoadFromDatabase();
 
             // Radius Lengkungan Kartu
             const sliderRadius = document.getElementById('setting-radius');
