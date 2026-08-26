@@ -115,8 +115,7 @@
         <div id="login-section">
             <p id="login-msg" class="message"></p>
             <form id="login-form">
-                <!-- Diubah menjadi type="email" karena Firebase Auth menggunakan email -->
-                <input type="email" id="login-username" placeholder="Email" required>
+                <input type="text" id="login-username" placeholder="Username" required>
                 <input type="password" id="login-password" placeholder="Password" required>
                 <button type="submit">Masuk</button>
             </form>
@@ -127,26 +126,24 @@
             <p id="register-msg" class="message"></p>
             <form id="register-form">
                 <input type="text" id="reg-name" placeholder="Nama Lengkap" required>
-                <!-- Diubah menjadi type="email" -->
-                <input type="email" id="reg-username" placeholder="Email" required>
+                <input type="text" id="reg-username" placeholder="Username" required>
                 <input type="password" id="reg-password" placeholder="Password" required>
                 <button type="submit">Daftar</button>
             </form>
         </div>
     </div>
 
-    <!-- Script Firebase & Logika Utama -->
+    <!-- Script Firestore (Tanpa Firebase Auth) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-app.js";
         import { 
-            getAuth, 
-            createUserWithEmailAndPassword, 
-            signInWithEmailAndPassword 
-        } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-auth.js";
-        import { 
             getFirestore, 
+            collection, 
             doc, 
-            setDoc 
+            setDoc, 
+            getDocs, 
+            query, 
+            where 
         } from "https://www.gstatic.com/firebasejs/10.x.x/firebase-firestore.js";
 
         // ==========================================
@@ -161,9 +158,7 @@
             appId: "GANTI_DENGAN_APP_ID_ANDA"
         };
 
-        // Inisialisasi Firebase
         const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
         const db = getFirestore(app);
 
         // Fungsi Toggle Form (Login / Register)
@@ -188,22 +183,31 @@
             }
         }
 
-        // REGISTER DENGAN FIREBASE
+        // REGISTER: Simpan langsung ke Firestore collection "users"
         document.getElementById('register-form').addEventListener('submit', async function(e) {
             e.preventDefault();
             const name = document.getElementById('reg-name').value;
-            const email = document.getElementById('reg-username').value; 
+            const username = document.getElementById('reg-username').value;
             const password = document.getElementById('reg-password').value;
             const msg = document.getElementById('register-msg');
 
             try {
-                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+                // Cek apakah username sudah dipakai
+                const q = query(collection(db, "users"), where("username", "==", username));
+                const querySnapshot = await getDocs(q);
 
-                // Simpan profil tambahan ke Firestore
-                await setDoc(doc(db, "users", user.uid), {
+                if (!querySnapshot.empty) {
+                    msg.className = 'message error';
+                    msg.innerText = 'Username sudah digunakan!';
+                    return;
+                }
+
+                // Simpan data user baru ke Firestore
+                // Menggunakan username sebagai ID dokumen agar unik
+                await setDoc(doc(db, "users", username), {
                     name: name,
-                    email: email,
+                    username: username,
+                    password: password, // Catatan: untuk produksi asli sebaiknya di-hash, tapi untuk uji coba lokal ini aman
                     createdAt: new Date()
                 });
 
@@ -218,27 +222,41 @@
             }
         });
 
-        // LOGIN DENGAN FIREBASE & PINDAH KE HOMEPAGE
+        // LOGIN: Cek pencocokan username & password langsung ke Firestore
         document.getElementById('login-form').addEventListener('submit', async function(e) {
             e.preventDefault();
-            const email = document.getElementById('login-username').value;
+            const username = document.getElementById('login-username').value;
             const password = document.getElementById('login-password').value;
             const msg = document.getElementById('login-msg');
 
             try {
-                await signInWithEmailAndPassword(auth, email, password);
-                
-                msg.className = 'message success';
-                msg.innerText = 'Login berhasil! Mengalihkan...';
+                // Cari data berdasarkan username dan password
+                const q = query(
+                    collection(db, "users"), 
+                    where("username", "==", username),
+                    where("password", "==", password)
+                );
+                const querySnapshot = await getDocs(q);
 
-                // Pindah ke homepage.html setelah berhasil login
-                setTimeout(() => {
-                    window.location.href = 'homepage.html';
-                }, 1000);
+                if (!querySnapshot.empty) {
+                    msg.className = 'message success';
+                    msg.innerText = 'Login berhasil! Mengalihkan...';
+
+                    // Simpan status login sederhana di session storage browser
+                    sessionStorage.setItem('loggedUser', username);
+
+                    // Pindah ke homepage.html setelah berhasil login
+                    setTimeout(() => {
+                        window.location.href = 'homepage.html';
+                    }, 1000);
+                } else {
+                    msg.className = 'message error';
+                    msg.innerText = 'Username atau Password salah!';
+                }
 
             } catch (error) {
                 msg.className = 'message error';
-                msg.innerText = 'Email atau Password salah!';
+                msg.innerText = 'Terjadi kesalahan: ' + error.message;
             }
         });
     </script>
