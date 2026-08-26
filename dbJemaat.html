@@ -92,9 +92,6 @@
                 <div>
                     <div class="flex items-center space-x-2">
                         <h1 id="nav-church-name" class="text-sm md:text-lg font-bold tracking-wide truncate">GBI Light of the City</h1>
-                        <button onclick="editChurchName()" class="text-indigo-200 hover:text-white text-[10px] bg-black/10 hover:bg-black/20 px-1.5 py-0.5 rounded transition cursor-pointer flex-shrink-0" title="Ubah Nama Gereja">
-                            <i class="fa-solid fa-pen"></i>
-                        </button>
                     </div>
                     <p class="text-[10px] md:text-xs text-indigo-200">Database Jemaat</p>
                 </div>
@@ -529,8 +526,12 @@
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label class="block font-medium text-slate-700 mb-1">No Induk Jemaat (NIJ) *</label>
-                            <input type="text" id="nomorIndukJemaat" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Input NIJ manual">
+                            <label class="block font-medium text-slate-700 mb-1">No Induk Jemaat (NIJ)</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="nomorIndukJemaat" required readonly class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-100 font-mono font-semibold text-indigo-700 tracking-wide" placeholder="Otomatis oleh sistem">
+                                <button type="button" onclick="regenerateNIJ()" title="Buat Ulang NIJ" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-200 transition flex-shrink-0"><i class="fa-solid fa-arrows-rotate"></i></button>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-1">Digenerate otomatis oleh sistem (Prefix LOC + nomor urut).</p>
                         </div>
                         <div>
                             <label class="block font-medium text-slate-700 mb-1">Nomor Induk (NIK KTP)</label>
@@ -865,6 +866,10 @@
                         <div><span class="text-slate-400">Email</span><p id="detailEmail" class="text-slate-700"></p></div>
                         <div class="col-span-2"><span class="text-slate-400">Alamat</span><p id="detailAlamat" class="text-slate-700"></p></div>
                         <div class="col-span-2"><span class="text-slate-400">Kepala Keluarga (Anggota Utama KK)</span><p id="detailKepalaKeluarga" class="font-semibold text-slate-800"></p></div>
+                        <div class="col-span-2 pt-2 border-t border-dashed border-slate-200">
+                            <span class="text-slate-400">Tercatat di Sistem</span>
+                            <p id="detailTimestamp" class="text-slate-500 text-[10px] font-mono mt-0.5"></p>
+                        </div>
                     </div>
                 </div>
                 <div>
@@ -917,7 +922,7 @@
     </div>
 
     <script>
-        let churchName = 'GBI Light of the City';
+        const churchName = 'GBI Light of the City';
 
         // ========================================================================
         // PENYIMPANAN DATA: FIREBASE FIRESTORE
@@ -939,12 +944,11 @@
             });
         }
 
-        // Menyimpan SELURUH state (data jemaat, log, nama gereja, pengaturan) ke Firestore
+        // Menyimpan SELURUH state (data jemaat, log, pengaturan) ke Firestore
         async function saveAllToFirebase() {
             try {
                 await waitForFirebaseReady();
                 await window.firestoreSetDoc(window.mainDocRef, {
-                    churchName: churchName,
                     dataJemaat: dataJemaat,
                     auditLogs: auditLogs,
                     settings: {
@@ -981,7 +985,6 @@
                     const parsed = snap.data();
                     if (Array.isArray(parsed.dataJemaat)) dataJemaat = parsed.dataJemaat;
                     if (Array.isArray(parsed.auditLogs)) auditLogs = parsed.auditLogs;
-                    if (parsed.churchName) churchName = parsed.churchName;
                     if (parsed.settings) {
                         if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
                         if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
@@ -999,22 +1002,18 @@
             }
         }
 
-        function editChurchName() {
-            const newName = prompt('Ubah Nama Gereja:', churchName);
-            if (newName && newName.trim()) {
-                churchName = newName.trim();
-                document.getElementById('nav-church-name').innerText = churchName;
-                saveAllToFirebase();
-                if (typeof showAlert === 'function') showAlert('Tersimpan', 'Nama gereja diperbarui.', 'success');
-            }
-        }
-
         let dataJemaat = [];
         let auditLogs = []; 
 
-        function writeLog(nij, aksi, detail, oldVal = "-", newVal = "-") {
+        // Fungsi timestamp terpusat: dipakai untuk log audit trail (Waktu Kejadian)
+        // dan juga field createdAt/updatedAt pada setiap data jemaat, supaya formatnya konsisten.
+        function getTimestampString() {
             const now = new Date();
-            const timestamp = now.toLocaleDateString('id-ID') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+            return now.toLocaleDateString('id-ID') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+        }
+
+        function writeLog(nij, aksi, detail, oldVal = "-", newVal = "-") {
+            const timestamp = getTimestampString();
             auditLogs.push({
                 "Waktu Kejadian": timestamp,
                 "NIJ": nij,
@@ -1031,6 +1030,33 @@
                 return window.crypto.randomUUID();
             }
             return Date.now().toString() + '-' + Math.random().toString(36).slice(2, 8);
+        }
+
+        // ==========================================================================
+        // GENERATE NIJ OTOMATIS: Prefix "LOC" + 7 digit angka urut (total 10 karakter)
+        // Contoh: LOC0000001, LOC0000002, dst.
+        // ==========================================================================
+        const NIJ_PREFIX = 'LOC';
+        const NIJ_DIGIT_LENGTH = 7; // 3 (prefix) + 7 (digit) = 10 karakter total
+
+        function generateNextNIJ() {
+            let maxNumber = 0;
+            const pattern = new RegExp('^' + NIJ_PREFIX + '(\\d{' + NIJ_DIGIT_LENGTH + '})$');
+            dataJemaat.forEach(j => {
+                if (j.nij && typeof j.nij === 'string') {
+                    let match = j.nij.trim().toUpperCase().match(pattern);
+                    if (match) {
+                        let num = parseInt(match[1], 10);
+                        if (num > maxNumber) maxNumber = num;
+                    }
+                }
+            });
+            let nextNumber = maxNumber + 1;
+            return NIJ_PREFIX + String(nextNumber).padStart(NIJ_DIGIT_LENGTH, '0');
+        }
+
+        function regenerateNIJ() {
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
         }
 
         let selectedImportFile = null;
@@ -2056,6 +2082,7 @@
             document.getElementById('detailEmail').innerText = j.email || '-';
             document.getElementById('detailAlamat').innerText = j.alamat;
             document.getElementById('detailKepalaKeluarga').innerText = head ? `${head.nama_lengkap}${head.status_jemaat !== 'Aktif' ? ' (' + head.status_jemaat + ')' : ''}` : '-';
+            document.getElementById('detailTimestamp').innerText = `Dibuat: ${j.createdAt || '-'}  •  Terakhir diubah: ${j.updatedAt || '-'}`;
 
             let waBtnContainer = document.getElementById('detailWaBtnContainer');
             if(j.no_telepon) {
@@ -2241,6 +2268,7 @@
             document.getElementById('formJemaat').reset();
             document.getElementById('editIndex').value = "";
             document.getElementById('kepalaKeluargaId').value = "";
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
             
             let statusSelect = document.getElementById('statusKeluarga');
             statusSelect.innerHTML = `<option value="Anggota Utama">Anggota Utama</option>`;
@@ -2267,7 +2295,7 @@
             document.getElementById('formJemaat').reset();
             document.getElementById('editIndex').value = "";
             document.getElementById('kepalaKeluargaId').value = kkId;
-            document.getElementById('nomorIndukJemaat').value = "";
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
             
             let statusSelect = document.getElementById('statusKeluarga');
             statusSelect.disabled = false;
@@ -2474,7 +2502,7 @@
                 }
 
                 let idx = dataJemaat.findIndex(j => j.id === editId);
-                dataJemaat[idx] = { ...dataJemaat[idx], ...formData };
+                dataJemaat[idx] = { ...dataJemaat[idx], ...formData, updatedAt: getTimestampString() };
 
                 if (changedOld.length > 0) {
                     writeLog(finalNIJ, "Ubah Data", `Memperbarui profil data jemaat`, changedOld.join(', '), changedNew.join(', '));
@@ -2482,7 +2510,8 @@
 
                 showAlert("Berhasil", "Data jemaat berhasil diperbarui.", "success");
             } else {
-                dataJemaat.push({ id: generateUniqueId(), kepalaKeluargaId: kkId || null, ...formData });
+                let timestampNow = getTimestampString();
+                dataJemaat.push({ id: generateUniqueId(), kepalaKeluargaId: kkId || null, ...formData, createdAt: timestampNow, updatedAt: timestampNow });
                 let newSummary = `Nama: ${formData.nama_lengkap}, Kelamin: ${formData.jenis_kelamin}, Tgl Lahir: ${formData.tanggal_lahir}, Status: ${formData.status_keluarga}`;
                 
                 if (kkId) {
@@ -2754,7 +2783,7 @@
             
             let workbook = XLSX.utils.book_new();
 
-            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi"];
+            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi", "createdAt", "updatedAt"];
             let worksheetJemaat = XLSX.utils.json_to_sheet(dataJemaat, { header: headers });
             XLSX.utils.book_append_sheet(workbook, worksheetJemaat, "Data Jemaat");
 
@@ -2793,8 +2822,8 @@
         }
 
         function downloadTemplateCSV() {
-            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi"];
-            let sampleRow = { id: "101", kepalaKeluargaId: "", nij: "JMT-2026-0001", nomorInduk: "", email: "contoh@email.com", nama_lengkap: "Contoh Jemaat", status_keluarga: "Anggota Utama", jenis_kelamin: "L", status_pernikahan: "Menikah", tanggal_pernikahan: "2010-06-15", pendidikan: "Sarjana (S1)", pekerjaan: "Karyawan Swasta", sudah_berpelayanan: "Ya", bidang_pelayanan: "Pelayanan Musik / Worship", tanggal_lahir: "1985-05-12", alamat: "Jl. Contoh No. 1", no_telepon: "08123456789", status_jemaat: "Aktif", jalur_masuk: "Pindahan", tanggal_bergabung: "2026-01-01", jenis_baptis: "Baptis Selam", no_surat_baptis: "BPT-001/2026", tanggal_baptis: "2026-02-15", status_sidi: "Sudah Sidi" };
+            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi", "createdAt", "updatedAt"];
+            let sampleRow = { id: "101", kepalaKeluargaId: "", nij: "LOC0000001", nomorInduk: "", email: "contoh@email.com", nama_lengkap: "Contoh Jemaat", status_keluarga: "Anggota Utama", jenis_kelamin: "L", status_pernikahan: "Menikah", tanggal_pernikahan: "2010-06-15", pendidikan: "Sarjana (S1)", pekerjaan: "Karyawan Swasta", sudah_berpelayanan: "Ya", bidang_pelayanan: "Pelayanan Musik / Worship", tanggal_lahir: "1985-05-12", alamat: "Jl. Contoh No. 1", no_telepon: "08123456789", status_jemaat: "Aktif", jalur_masuk: "Pindahan", tanggal_bergabung: "2026-01-01", jenis_baptis: "Baptis Selam", no_surat_baptis: "BPT-001/2026", tanggal_baptis: "2026-02-15", status_sidi: "Sudah Sidi" };
             let worksheet = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
             let workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
@@ -2825,6 +2854,9 @@
                         Object.keys(row).forEach(h => { obj[h.trim()] = row[h] !== undefined && row[h] !== null ? String(row[h]).trim() : ""; });
                         if(obj.nama_lengkap) {
                             if(!obj.id) obj.id = generateUniqueId();
+                            if(!obj.nij) obj.nij = generateNextNIJ();
+                            if(!obj.createdAt) obj.createdAt = getTimestampString();
+                            obj.updatedAt = getTimestampString();
                             dataJemaat.push(obj);
                             importedCount++;
                         }
