@@ -38,7 +38,7 @@
         // Import Firebase App dan layanan yang dibutuhkan dari CDN (link gstatic)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // Konfigurasi Firebase Anda
         const firebaseConfig = {
@@ -54,12 +54,24 @@
         // Inisialisasi Firebase
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
-        
+
         // Inisialisasi Database (Firestore)
         const db = getFirestore(app);
 
         // Daftarkan 'db' ke window agar bisa dipanggil oleh kode Javascript Anda yang lain
         window.db = db;
+
+        // Referensi ke SATU dokumen utama yang menyimpan seluruh data jemaat,
+        // log aktivitas, nama gereja, dan parameter sistem.
+        // Koleksi: "gerejaData" -> Dokumen: "main"
+        window.mainDocRef = doc(db, "gerejaData", "main");
+
+        // Ekspor fungsi Firestore agar bisa dipanggil dari script biasa (non-module) di bawah
+        window.firestoreSetDoc = setDoc;
+        window.firestoreGetDoc = getDoc;
+
+        // Tandai bahwa Firebase sudah siap dipakai
+        window.firebaseReady = true;
         console.log("Firebase Database Terhubung!");
     </script>
     <!-- SELESAI: Batas Kode Firebase -->
@@ -901,55 +913,85 @@
     </div>
 
     <script>
-        const CHURCH_NAME_KEY = 'jemaatid_church_name_v2';
-        let churchName = localStorage.getItem(CHURCH_NAME_KEY) || 'Gereja JemaatID';
+        let churchName = 'Gereja JemaatID';
 
-        const LS_DATA_KEY = 'jemaatid_data_jemaat_v1';
-        const LS_LOG_KEY = 'jemaatid_audit_logs_v1';
-        const LS_SETTINGS_KEY = 'jemaatid_settings_v1';
+        // ========================================================================
+        // PENYIMPANAN DATA: FIREBASE FIRESTORE
+        // Seluruh data (nama gereja, data jemaat, log aktivitas, parameter sistem)
+        // disimpan dalam SATU dokumen Firestore: koleksi "gerejaData", dokumen "main"
+        // (referensi dokumennya sudah disiapkan di window.mainDocRef, lihat <head>)
+        // ========================================================================
 
-        function saveDataToLocalStorage() {
+        // Menunggu sampai Firebase (modul di <head>) benar-benar siap dipakai
+        function waitForFirebaseReady() {
+            return new Promise((resolve) => {
+                if (window.firebaseReady && window.mainDocRef) return resolve();
+                const check = setInterval(() => {
+                    if (window.firebaseReady && window.mainDocRef) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 50);
+            });
+        }
+
+        // Menyimpan SELURUH state (data jemaat, log, nama gereja, pengaturan) ke Firestore
+        async function saveAllToFirebase() {
             try {
-                localStorage.setItem(LS_DATA_KEY, JSON.stringify(dataJemaat));
-                localStorage.setItem(LS_LOG_KEY, JSON.stringify(auditLogs));
+                await waitForFirebaseReady();
+                await window.firestoreSetDoc(window.mainDocRef, {
+                    churchName: churchName,
+                    dataJemaat: dataJemaat,
+                    auditLogs: auditLogs,
+                    settings: {
+                        ucapanUlangTahun: settingsUcapanUlangTahun,
+                        ucapanAnniv: settingsUcapanAnniv,
+                        demographics: settingsDemographics
+                    },
+                    lastUpdated: new Date().toISOString()
+                });
             } catch (e) {
-                console.error('Gagal menyimpan data ke localStorage:', e);
+                console.error('Gagal menyimpan data ke Firebase:', e);
+                if (typeof showAlert === 'function') {
+                    showAlert('Gagal Sinkronisasi', 'Data gagal disimpan ke server Firebase. Periksa koneksi internet Anda lalu coba lagi.', 'error');
+                }
             }
+        }
+
+        // Dipertahankan dengan nama fungsi lama agar seluruh kode lain (yang memanggil
+        // saveDataToLocalStorage / saveSettingsToLocalStorage) tetap berjalan tanpa diubah.
+        function saveDataToLocalStorage() {
+            saveAllToFirebase();
         }
 
         function saveSettingsToLocalStorage() {
-            try {
-                localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify({
-                    ucapanUlangTahun: settingsUcapanUlangTahun,
-                    ucapanAnniv: settingsUcapanAnniv,
-                    demographics: settingsDemographics
-                }));
-            } catch (e) {
-                console.error('Gagal menyimpan pengaturan ke localStorage:', e);
-            }
+            saveAllToFirebase();
         }
 
-        function loadDataFromLocalStorage() {
+        // Memuat SELURUH state dari Firestore saat aplikasi pertama kali dibuka
+        async function loadDataFromLocalStorage() {
             try {
-                const rawData = localStorage.getItem(LS_DATA_KEY);
-                if (rawData) {
-                    const parsed = JSON.parse(rawData);
-                    if (Array.isArray(parsed)) dataJemaat = parsed;
-                }
-                const rawLog = localStorage.getItem(LS_LOG_KEY);
-                if (rawLog) {
-                    const parsed = JSON.parse(rawLog);
-                    if (Array.isArray(parsed)) auditLogs = parsed;
-                }
-                const rawSettings = localStorage.getItem(LS_SETTINGS_KEY);
-                if (rawSettings) {
-                    const parsed = JSON.parse(rawSettings);
-                    if (parsed.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.ucapanUlangTahun;
-                    if (parsed.ucapanAnniv) settingsUcapanAnniv = parsed.ucapanAnniv;
-                    if (Array.isArray(parsed.demographics)) settingsDemographics = parsed.demographics;
+                await waitForFirebaseReady();
+                const snap = await window.firestoreGetDoc(window.mainDocRef);
+                if (snap.exists()) {
+                    const parsed = snap.data();
+                    if (Array.isArray(parsed.dataJemaat)) dataJemaat = parsed.dataJemaat;
+                    if (Array.isArray(parsed.auditLogs)) auditLogs = parsed.auditLogs;
+                    if (parsed.churchName) churchName = parsed.churchName;
+                    if (parsed.settings) {
+                        if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
+                        if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
+                        if (Array.isArray(parsed.settings.demographics)) settingsDemographics = parsed.settings.demographics;
+                    }
+                } else {
+                    // Dokumen belum ada (pertama kali dipakai) -> buat dokumen awal yang kosong
+                    await saveAllToFirebase();
                 }
             } catch (e) {
-                console.error('Gagal memuat data dari localStorage:', e);
+                console.error('Gagal memuat data dari Firebase:', e);
+                if (typeof showAlert === 'function') {
+                    showAlert('Gagal Memuat Data', 'Tidak dapat terhubung ke server Firebase. Periksa koneksi internet Anda lalu muat ulang halaman.', 'error');
+                }
             }
         }
 
@@ -957,8 +999,8 @@
             const newName = prompt('Ubah Nama Gereja:', churchName);
             if (newName && newName.trim()) {
                 churchName = newName.trim();
-                localStorage.setItem(CHURCH_NAME_KEY, churchName);
                 document.getElementById('nav-church-name').innerText = churchName;
+                saveAllToFirebase();
                 if (typeof showAlert === 'function') showAlert('Tersimpan', 'Nama gereja diperbarui.', 'success');
             }
         }
@@ -1172,12 +1214,7 @@
                     dataJemaat = [];
                     auditLogs = [];
                     currentPage = 1;
-                    try {
-                        localStorage.removeItem(LS_DATA_KEY);
-                        localStorage.removeItem(LS_LOG_KEY);
-                    } catch(e) {
-                        console.error('Gagal menghapus data dari localStorage:', e);
-                    }
+                    saveAllToFirebase();
                     renderTableJemaat();
                     renderDashboard();
                     showAlert("Berhasil", "Seluruh data jemaat telah dihapus.", "success");
@@ -1218,8 +1255,9 @@
             }
         }
 
-        window.onload = function() {
-            loadDataFromLocalStorage();
+        window.onload = async function() {
+            document.getElementById('nav-church-name').innerText = 'Memuat data...';
+            await loadDataFromLocalStorage();
             document.getElementById('nav-church-name').innerText = churchName;
             // Default buka Tab 1: Data & Kartu Keluarga
             switchTab('jemaat');
