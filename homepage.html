@@ -33,6 +33,10 @@ body::before{content:"";position:fixed;inset:0;background-image:linear-gradient(
 .sys-id{font-family:Orbitron;font-size:.75rem;letter-spacing:.35em;color:#f5a947;display:flex;align-items:center;gap:10px}
 .sys-id svg{width:13px;height:13px}
 .controls{display:flex;gap:10px;align-items:center}
+.user-profile-display{display:flex;align-items:center;gap:12px;margin-right:4px}
+.user-name{font-family:Orbitron;font-size:.7rem;letter-spacing:.15em;color:#fff;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logout-btn{font-family:Orbitron;font-size:.62rem;letter-spacing:.15em;padding:8px 12px;background:transparent;color:#e63946;border:1px solid rgba(230,57,70,.45);cursor:pointer;transition:.3s}
+.logout-btn:hover{background:#e63946;color:#fff;box-shadow:0 0 14px rgba(230,57,70,.5)}
 .lang{display:flex;border:1px solid rgba(245,169,71,.45)}
 .lang-btn{font-family:Orbitron;font-size:.62rem;letter-spacing:.15em;padding:8px 13px;background:transparent;color:#9aa3b2;border:0;cursor:pointer;transition:.3s}
 .lang-btn:hover{color:#fff}
@@ -117,6 +121,10 @@ html[data-theme="light"] .icon-moon{display:none}
       GBI LOC
     </div>
     <div class="controls">
+      <div class="user-profile-display">
+        <span id="userNameDisplay" class="user-name">Loading...</span>
+      </div>
+      <button id="logoutBtn" class="logout-btn">LOGOUT</button>
       <div class="lang" role="group" aria-label="Language">
         <button id="btnId" class="lang-btn active">ID</button>
         <button id="btnEn" class="lang-btn">EN</button>
@@ -198,6 +206,48 @@ html[data-theme="light"] .icon-moon{display:none}
   <span class="sep">|</span>
   <span class="secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="secure">SECURE CONNECTION</span></span>
 </footer>
+
+<!-- ================= FIREBASE AUTH & SESSION SCRIPT ================= -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
+    authDomain: "dbjemaatloc.firebaseapp.com",
+    projectId: "dbjemaatloc",
+    storageBucket: "dbjemaatloc.appspot.com",
+    messagingSenderId: "927587348267",
+    appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+    measurementId: "G-H7Y4N3OPER"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  const userNameDisplay = document.getElementById('userNameDisplay');
+  const logoutBtn = document.getElementById('logoutBtn');
+
+  // Pengecekan Session Login & Ambil Nama Pengguna
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      const displayName = user.displayName || user.email.split('@')[0] || "Admin";
+      userNameDisplay.textContent = displayName;
+    } else {
+      // Jika belum login, arahkan kembali ke index.html (halaman login)
+      window.location.href = "index.html";
+    }
+  });
+
+  // Fungsi Tombol Logout
+  logoutBtn.onclick = () => {
+    signOut(auth).then(() => {
+      window.location.href = "index.html";
+    }).catch((error) => {
+      console.error("Gagal logout:", error);
+    });
+  };
+</script>
 
 <script>
 /* ---------- I18N ---------- */
