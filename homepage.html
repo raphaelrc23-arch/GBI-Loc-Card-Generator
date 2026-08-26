@@ -65,7 +65,7 @@ html[data-theme="light"] .icon-moon{display:none}
 .admin-note .txt{color:var(--muted);font-size:.96rem;line-height:1.55}
 
 /* ============ MODUL ============ */
-.modules{max-width:1020px;margin:0 auto;padding:48px 24px 74px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px;position:relative;z-index:1;perspective:1200px}
+.modules{max-width:1120px;margin:0 auto;padding:48px 24px 74px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px;position:relative;z-index:1;perspective:1200px}
 .card{--ty:0px;position:relative;background:var(--card);border:1px solid var(--card-border);padding:40px 30px 34px;text-align:center;backdrop-filter:blur(6px);box-shadow:var(--shadow);transition:transform .35s,box-shadow .35s,border-color .35s;transform:translateY(var(--ty)) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));animation:rise .8s cubic-bezier(.2,.8,.2,1) backwards;animation-delay:var(--d,0s)}
 .card:hover{--ty:-8px;border-color:var(--accent);box-shadow:var(--glow)}
 .c{position:absolute;width:12px;height:12px;border:0 solid var(--accent);transition:.35s;opacity:.85}
@@ -162,7 +162,7 @@ html[data-theme="light"] .icon-moon{display:none}
   </section>
 
   <section class="modules">
-    <!-- MODUL 1 -->
+    <!-- MODUL 1: DATABASE -->
     <article class="card" style="--d:.15s">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
@@ -180,7 +180,7 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="dbJemaat.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
-    <!-- MODUL 2 -->
+    <!-- MODUL 2: ID CARD -->
     <article class="card" style="--d:.3s">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
@@ -198,6 +198,22 @@ html[data-theme="light"] .icon-moon{display:none}
       <p class="card-desc" data-i18n="mod2Desc">Modul pembuatan kartu identitas digital dan fisik untuk jemaat dan pelayan. Dilengkapi fitur generate QR code dan template khusus.</p>
       <a href="idcard.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
+
+    <!-- MODUL 3: USER MATRIX -->
+    <article class="card" style="--d:.45s">
+      <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
+      <div class="icon-frame">
+        <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M36 28c3.86 0 7-3.14 7-7s-3.14-7-7-7-7 3.14-7 7 3.14 7 7 7z"/>
+          <path d="M21 48c0-5 10-8 15-8s15 3 15 8v5H21v-5z"/>
+          <path class="cross" d="M16 20v-4h4M52 16h4v4M56 52v4h-4M20 56h-4v-4"/>
+          <circle class="orbit" cx="36" cy="36" r="24"/>
+        </svg>
+      </div>
+      <h2 class="card-title" data-i18n="mod3">User Matrix</h2>
+      <p class="card-desc" data-i18n="mod3Desc">Modul pengaturan hak akses dan manajemen pengguna sistem. Kelola peran dan kewenangan setiap admin GBI LOC.</p>
+      <a href="usermatrix.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </article>
   </section>
 </main>
 
@@ -210,7 +226,7 @@ html[data-theme="light"] .icon-moon{display:none}
   <span class="secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="secure">SECURE CONNECTION</span></span>
 </footer>
 
-<!-- ================= FIREBASE & SESSION SCRIPT (MENYESUAIKAN INDEX.HTML ANDA) ================= -->
+<!-- ================= FIREBASE & SESSION SCRIPT ================= -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { 
@@ -219,7 +235,6 @@ html[data-theme="light"] .icon-moon{display:none}
     getDoc 
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  // Konfigurasi asli Anda
   const firebaseConfig = {
     apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
     authDomain: "dbjemaatloc.firebaseapp.com",
@@ -242,19 +257,15 @@ html[data-theme="light"] .icon-moon{display:none}
   if (!loggedUser) {
     window.location.href = "index.html";
   } else {
-    // Tampilkan username sementara dengan format Hi, sambil mengambil nama dari Firestore
     userNameDisplay.textContent = "Hi, " + loggedUser;
-
     const docRef = doc(db, "users", loggedUser);
     getDoc(docRef).then((docSnap) => {
         if (docSnap.exists() && docSnap.data().name) {
-            // Ubah teks header menjadi "Hi [Nama]"
             userNameDisplay.textContent = "Hi " + docSnap.data().name;
         }
     }).catch(err => console.log("Gagal ambil nama:", err));
   }
 
-  // FUNGSI TOMBOL LOGOUT
   logoutBtn.onclick = () => {
     sessionStorage.removeItem('loggedUser');
     window.location.href = "index.html";
@@ -269,12 +280,14 @@ const I18N = {
     adminTitle:"KHUSUS ADMINISTRASI",adminNote:"Portal ini hanya untuk keperluan administrasi GBI Light of the City.",
     mod1:"Database Jemaat",mod1Desc:"Modul pengelolaan data lengkap jemaat GBI LOC. Tambah, edit, cari, dan kelola informasi demografis dengan sistem yang terintegrasi.",
     mod2:"ID Card Generator",mod2Desc:"Modul pembuatan kartu identitas digital dan fisik untuk jemaat dan pelayan. Dilengkapi fitur generate QR code dan template khusus.",
+    mod3:"User Matrix",mod3Desc:"Modul pengaturan hak akses dan manajemen pengguna sistem. Kelola peran dan kewenangan setiap admin GBI LOC.",
     access:"Akses Modul",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"},
   en:{portalTagText:"SYSTEM PORTAL",ver:"V 2.5.4",
     welcome:"Welcome to the GBI LOC Information System Portal. Please choose the access module you need to manage congregation data.",
     adminTitle:"ADMINISTRATION ONLY",adminNote:"This portal is provided solely for the administrative purposes of GBI Light of the City.",
     mod1:"Congregation Database",mod1Desc:"A complete congregation data management module for GBI LOC. Add, edit, search, and manage demographic information within an integrated system.",
     mod2:"ID Card Generator",mod2Desc:"A module for creating digital and physical ID cards for congregation members and servants. Equipped with QR code generation and exclusive templates.",
+    mod3:"User Matrix",mod3Desc:"System user management and access rights module. Manage roles and permissions for every GBI LOC admin.",
     access:"Access Module",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"}
 };
 const btnId=document.getElementById('btnId'),btnEn=document.getElementById('btnEn');
