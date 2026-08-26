@@ -8,6 +8,31 @@
 -->
 <html lang="id">
 <head>
+
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+  authDomain: "dbjemaatloc.firebaseapp.com",
+  projectId: "dbjemaatloc",
+  storageBucket: "dbjemaatloc.firebasestorage.app",
+  messagingSenderId: "927587348267",
+  appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+  measurementId: "G-H7Y4N30PER"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+
+  
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Database Jemaat Gereja - Enterprise</title>
