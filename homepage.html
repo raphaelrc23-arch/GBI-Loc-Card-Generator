@@ -121,10 +121,13 @@ html[data-theme="light"] .icon-moon{display:none}
       GBI LOC
     </div>
     <div class="controls">
+      <!-- TAMPILAN NAMA PENGGUNA -->
       <div class="user-profile-display">
         <span id="userNameDisplay" class="user-name">Loading...</span>
       </div>
+      <!-- TOMBOL LOGOUT -->
       <button id="logoutBtn" class="logout-btn">LOGOUT</button>
+      
       <div class="lang" role="group" aria-label="Language">
         <button id="btnId" class="lang-btn active">ID</button>
         <button id="btnEn" class="lang-btn">EN</button>
@@ -207,11 +210,16 @@ html[data-theme="light"] .icon-moon{display:none}
   <span class="secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span data-i18n="secure">SECURE CONNECTION</span></span>
 </footer>
 
-<!-- ================= FIREBASE AUTH & SESSION SCRIPT ================= -->
+<!-- ================= FIREBASE & SESSION SCRIPT (MENYESUAIKAN INDEX.HTML ANDA) ================= -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { 
+    getFirestore, 
+    doc, 
+    getDoc 
+  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+  // Konfigurasi asli Anda
   const firebaseConfig = {
     apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
     authDomain: "dbjemaatloc.firebaseapp.com",
@@ -223,29 +231,34 @@ html[data-theme="light"] .icon-moon{display:none}
   };
 
   const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+  const db = getFirestore(app);
 
   const userNameDisplay = document.getElementById('userNameDisplay');
   const logoutBtn = document.getElementById('logoutBtn');
 
-  // Pengecekan Session Login & Ambil Nama Pengguna
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      const displayName = user.displayName || user.email.split('@')[0] || "Admin";
-      userNameDisplay.textContent = displayName;
-    } else {
-      // Jika belum login, arahkan kembali ke index.html (halaman login)
-      window.location.href = "index.html";
-    }
-  });
+  // CEK SESSION STORAGE (Cara Anda menyimpan status login di index.html)
+  const loggedUser = sessionStorage.getItem('loggedUser');
 
-  // Fungsi Tombol Logout
+  if (!loggedUser) {
+    // Jika tidak ada data login di session, arahkan kembali ke index.html
+    window.location.href = "index.html";
+  } else {
+    // Tampilkan data ke layar (Sementara tampilkan username dulu sambil loading ke DB)
+    userNameDisplay.textContent = loggedUser;
+
+    // Ambil Nama Asli dari Firestore berdasarkan Username (opsional, agar lebih bagus)
+    const docRef = doc(db, "users", loggedUser);
+    getDoc(docRef).then((docSnap) => {
+        if (docSnap.exists() && docSnap.data().name) {
+            userNameDisplay.textContent = docSnap.data().name;
+        }
+    }).catch(err => console.log("Gagal ambil nama:", err));
+  }
+
+  // FUNGSI TOMBOL LOGOUT
   logoutBtn.onclick = () => {
-    signOut(auth).then(() => {
-      window.location.href = "index.html";
-    }).catch((error) => {
-      console.error("Gagal logout:", error);
-    });
+    sessionStorage.removeItem('loggedUser');
+    window.location.href = "index.html";
   };
 </script>
 
