@@ -96,6 +96,7 @@
             font-size: 14px;
             margin-bottom: 15px;
             min-height: 20px;
+            font-weight: 500;
         }
         .error { color: #e74c3c; }
         .success { color: #27ae60; }
@@ -126,14 +127,13 @@
             <p id="register-msg" class="message"></p>
             <form id="register-form">
                 <input type="text" id="reg-name" placeholder="Nama Lengkap" required>
-                <input type="text" id="reg-username" placeholder="Username" required>
+                <input type="text" id="reg-username" placeholder="Username (tanpa spasi)" required pattern="^\S+$" title="Username tidak boleh menggunakan spasi">
                 <input type="password" id="reg-password" placeholder="Password" required>
                 <button type="submit">Daftar</button>
             </form>
         </div>
     </div>
 
-    <!-- Script Firestore dengan Versi 10.8.0 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { 
@@ -143,7 +143,8 @@
             setDoc, 
             getDocs, 
             query, 
-            where 
+            where,
+            serverTimestamp // Mengimpor serverTimestamp
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -185,36 +186,52 @@
             regForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
                 const name = document.getElementById('reg-name').value;
-                const username = document.getElementById('reg-username').value;
+                // Ubah ke lowercase agar konsisten
+                const username = document.getElementById('reg-username').value.toLowerCase(); 
                 const password = document.getElementById('reg-password').value;
                 const msg = document.getElementById('register-msg');
+                const btn = this.querySelector('button');
 
                 try {
+                    btn.innerText = "Memproses...";
+                    btn.disabled = true;
+
+                    // Cek apakah username sudah ada
                     const q = query(collection(db, "users"), where("username", "==", username));
                     const querySnapshot = await getDocs(q);
 
                     if (!querySnapshot.empty) {
                         msg.className = 'message error';
                         msg.innerText = 'Username sudah digunakan!';
+                        btn.innerText = "Daftar";
+                        btn.disabled = false;
                         return;
                     }
 
+                    // Simpan data user ke Firestore beserta role-nya
                     await setDoc(doc(db, "users", username), {
                         name: name,
                         username: username,
                         password: password,
-                        role: "User Input", // Menambahkan role default di sini
-                        createdAt: new Date()
+                        role: "User Input", // Menambahkan role default yang valid
+                        createdAt: serverTimestamp() // Menggunakan timestamp asli Firestore
                     });
 
                     msg.className = 'message success';
                     msg.innerText = 'Registrasi berhasil! Silakan login.';
                     this.reset();
-                    setTimeout(() => window.toggleForm('login'), 1500);
+                    
+                    setTimeout(() => {
+                        window.toggleForm('login');
+                        btn.innerText = "Daftar";
+                        btn.disabled = false;
+                    }, 1500);
 
                 } catch (error) {
                     msg.className = 'message error';
                     msg.innerText = 'Gagal Daftar: ' + error.message;
+                    btn.innerText = "Daftar";
+                    btn.disabled = false;
                 }
             });
         }
@@ -223,11 +240,16 @@
         if (loginForm) {
             loginForm.addEventListener('submit', async function(e) {
                 e.preventDefault();
-                const username = document.getElementById('login-username').value;
+                // Ubah ke lowercase untuk pencocokan yang tepat
+                const username = document.getElementById('login-username').value.toLowerCase();
                 const password = document.getElementById('login-password').value;
                 const msg = document.getElementById('login-msg');
+                const btn = this.querySelector('button');
 
                 try {
+                    btn.innerText = "Mengecek...";
+                    btn.disabled = true;
+
                     const q = query(
                         collection(db, "users"), 
                         where("username", "==", username),
@@ -239,7 +261,15 @@
                         msg.className = 'message success';
                         msg.innerText = 'Login berhasil! Mengalihkan...';
 
-                        sessionStorage.setItem('loggedUser', username);
+                        // Ambil data user dari dokumen Firestore
+                        let userData = {};
+                        querySnapshot.forEach((doc) => {
+                            userData = doc.data();
+                        });
+
+                        // Simpan username dan ROLE ke sessionStorage
+                        sessionStorage.setItem('loggedUser', userData.username);
+                        sessionStorage.setItem('userRole', userData.role); 
 
                         setTimeout(() => {
                             window.location.href = 'homepage.html';
@@ -247,11 +277,15 @@
                     } else {
                         msg.className = 'message error';
                         msg.innerText = 'Username atau Password salah!';
+                        btn.innerText = "Masuk";
+                        btn.disabled = false;
                     }
 
                 } catch (error) {
                     msg.className = 'message error';
                     msg.innerText = 'Terjadi kesalahan: ' + error.message;
+                    btn.innerText = "Masuk";
+                    btn.disabled = false;
                 }
             });
         }
