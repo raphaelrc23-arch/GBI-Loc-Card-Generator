@@ -39,7 +39,7 @@
         // Import Firebase App dan layanan yang dibutuhkan dari CDN (link gstatic)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // Konfigurasi Firebase Anda
         const firebaseConfig = {
@@ -72,9 +72,25 @@
         // Koleksi: "gerejaData" -> Dokumen: "acara"
         window.acaraDocRef = doc(db, "gerejaData", "acara");
 
+        // ------------------------------------------------------------------
+        // PERBAIKAN: Firestore membatasi 1 dokumen maksimal 1 MB (1,048,576 byte).
+        // Data jemaat & log aktivitas yang jumlahnya banyak TIDAK BOLEH lagi
+        // disimpan langsung di dalam dokumen "main". Sebagai gantinya, data
+        // dipecah (chunked) ke beberapa dokumen kecil di dalam sub-collection:
+        // gerejaData/main/jemaatChunks/chunk_0, chunk_1, dst.
+        // gerejaData/main/auditChunks/chunk_0, chunk_1, dst.
+        // ------------------------------------------------------------------
+        window.jemaatChunksColRef = collection(db, "gerejaData", "main", "jemaatChunks");
+        window.auditChunksColRef = collection(db, "gerejaData", "main", "auditChunks");
+
         // Ekspor fungsi Firestore agar bisa dipanggil dari script biasa (non-module) di bawah
         window.firestoreSetDoc = setDoc;
         window.firestoreGetDoc = getDoc;
+        window.firestoreDoc = doc;
+        window.firestoreCollection = collection;
+        window.firestoreGetDocs = getDocs;
+        window.firestoreDeleteDoc = deleteDoc;
+        window.firestoreWriteBatch = writeBatch;
 
         // Tandai bahwa Firebase sudah siap dipakai
         window.firebaseReady = true;
@@ -982,13 +998,88 @@
             });
         }
 
-        // Menyimpan SELURUH state (data jemaat, log, pengaturan) ke Firestore
+        // ========================================================================
+        // PEMECAH DATA (CHUNKING) — supaya tidak melebihi batas 1 MB per dokumen
+        // Firestore. Array besar (dataJemaat / auditLogs) dipecah jadi beberapa
+        // dokumen kecil di sub-collection, masing-masing dijaga di bawah
+        // MAX_CHUNK_BYTES byte.
+        // ========================================================================
+        const MAX_CHUNK_BYTES = 700000; // aman di bawah batas 1,048,576 byte Firestore
+
+        function byteSizeOf(obj) {
+            return new TextEncoder().encode(JSON.stringify(obj)).length;
+        }
+
+        // Memecah sebuah array menjadi beberapa potongan (chunk) berdasarkan ukuran byte
+        function chunkArrayBySize(arr) {
+            const chunks = [];
+            let current = [];
+            let currentSize = 2; // perkiraan overhead untuk "[]"
+            for (const item of arr) {
+                const itemSize = byteSizeOf(item) + 1;
+                if (currentSize + itemSize > MAX_CHUNK_BYTES && current.length > 0) {
+                    chunks.push(current);
+                    current = [];
+                    currentSize = 2;
+                }
+                current.push(item);
+                currentSize += itemSize;
+            }
+            if (current.length > 0 || chunks.length === 0) chunks.push(current);
+            return chunks;
+        }
+
+        // Menyimpan sebuah array besar ke sub-collection, terpecah jadi beberapa
+        // dokumen kecil (chunk_0, chunk_1, dst), dan membersihkan chunk lama yang
+        // sudah tidak terpakai (misalnya karena jumlah data berkurang).
+        async function saveChunkedCollection(colRef, arr) {
+            const chunks = chunkArrayBySize(arr);
+            const existingSnap = await window.firestoreGetDocs(colRef);
+            const batch = window.firestoreWriteBatch(window.db);
+
+            chunks.forEach((chunk, i) => {
+                const chunkDocRef = window.firestoreDoc(colRef, 'chunk_' + i);
+                batch.set(chunkDocRef, { records: chunk, index: i });
+            });
+
+            existingSnap.docs.forEach((d) => {
+                const idx = parseInt(d.id.replace('chunk_', ''), 10);
+                if (isNaN(idx) || idx >= chunks.length) {
+                    batch.delete(d.ref);
+                }
+            });
+
+            await batch.commit();
+        }
+
+        // Memuat kembali array besar dari sub-collection yang terpecah, lalu
+        // menggabungkannya kembali sesuai urutan index chunk-nya.
+        async function loadChunkedCollection(colRef) {
+            const snap = await window.firestoreGetDocs(colRef);
+            const chunkDocs = snap.docs
+                .map((d) => {
+                    const data = d.data() || {};
+                    const idx = typeof data.index === 'number' ? data.index : parseInt(d.id.replace('chunk_', ''), 10) || 0;
+                    return { index: idx, records: Array.isArray(data.records) ? data.records : [] };
+                })
+                .sort((a, b) => a.index - b.index);
+
+            let result = [];
+            chunkDocs.forEach((c) => { result = result.concat(c.records); });
+            return result;
+        }
+
+        // Menyimpan SELURUH state (data jemaat, log, pengaturan) ke Firestore.
+        // Data jemaat & log aktivitas disimpan terpecah (chunked) agar tidak
+        // pernah melebihi batas ukuran 1 dokumen Firestore.
         async function saveAllToFirebase() {
             try {
                 await waitForFirebaseReady();
+                await Promise.all([
+                    saveChunkedCollection(window.jemaatChunksColRef, dataJemaat),
+                    saveChunkedCollection(window.auditChunksColRef, auditLogs)
+                ]);
                 await window.firestoreSetDoc(window.mainDocRef, {
-                    dataJemaat: dataJemaat,
-                    auditLogs: auditLogs,
                     settings: {
                         ucapanUlangTahun: settingsUcapanUlangTahun,
                         ucapanAnniv: settingsUcapanAnniv,
@@ -1014,22 +1105,47 @@
             saveAllToFirebase();
         }
 
-        // Memuat SELURUH state dari Firestore saat aplikasi pertama kali dibuka
+        // Memuat SELURUH state dari Firestore saat aplikasi pertama kali dibuka.
+        // Data jemaat & log aktivitas dibaca dari sub-collection yang terpecah
+        // (chunked). Jika masih ditemukan data format LAMA (tersimpan langsung
+        // di dokumen "main" dari versi sebelum perbaikan ini), data tersebut
+        // otomatis dimigrasikan ke format chunked yang baru.
         async function loadDataFromLocalStorage() {
             try {
                 await waitForFirebaseReady();
                 const snap = await window.firestoreGetDoc(window.mainDocRef);
+                let needsMigrationSave = false;
+
                 if (snap.exists()) {
                     const parsed = snap.data();
-                    if (Array.isArray(parsed.dataJemaat)) dataJemaat = parsed.dataJemaat;
-                    if (Array.isArray(parsed.auditLogs)) auditLogs = parsed.auditLogs;
                     if (parsed.settings) {
                         if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
                         if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
                         if (Array.isArray(parsed.settings.demographics)) settingsDemographics = parsed.settings.demographics;
                     }
-                } else {
-                    // Dokumen belum ada (pertama kali dipakai) -> buat dokumen awal yang kosong
+                    // Format lama: data jemaat/log tersimpan langsung di dokumen "main"
+                    if (Array.isArray(parsed.dataJemaat) && parsed.dataJemaat.length > 0) {
+                        dataJemaat = parsed.dataJemaat;
+                        needsMigrationSave = true;
+                    }
+                    if (Array.isArray(parsed.auditLogs) && parsed.auditLogs.length > 0) {
+                        auditLogs = parsed.auditLogs;
+                        needsMigrationSave = true;
+                    }
+                }
+
+                // Format baru: baca dari sub-collection yang terpecah (chunked)
+                const [jemaatFromChunks, auditFromChunks] = await Promise.all([
+                    loadChunkedCollection(window.jemaatChunksColRef),
+                    loadChunkedCollection(window.auditChunksColRef)
+                ]);
+                if (jemaatFromChunks.length > 0) dataJemaat = jemaatFromChunks;
+                if (auditFromChunks.length > 0) auditLogs = auditFromChunks;
+
+                if (!snap.exists() || needsMigrationSave) {
+                    // Dokumen belum ada (pertama kali dipakai), ATAU ditemukan data
+                    // format lama -> simpan ulang dalam format chunked yang baru
+                    // (setDoc di saveAllToFirebase otomatis membersihkan field lama).
                     await saveAllToFirebase();
                 }
             } catch (e) {
