@@ -199,8 +199,23 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="idcard.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
-    <!-- MODUL 3: USER MATRIX (hanya utk role admin, disembunyikan default sampai role terverifikasi) -->
-    <article class="card" id="cardUserMatrix" style="--d:.45s;display:none">
+    <!-- MODUL 3: LAPORAN KEUANGAN -->
+    <article class="card" style="--d:.45s">
+      <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
+      <div class="icon-frame">
+        <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path class="cross" d="M16 56V16M16 56h40"/>
+          <path d="M26 56V40M38 56V28M50 56V16"/>
+          <path class="scan" d="M16 44l10-8 12 6 16-20"/>
+        </svg>
+      </div>
+      <h2 class="card-title" data-i18n="mod4">Laporan Keuangan</h2>
+      <p class="card-desc" data-i18n="mod4Desc">Modul pengelolaan laporan keuangan gereja. Kelola transparansi dan rekapitulasi dana dengan aman.</p>
+      <a href="financial.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </article>
+
+    <!-- MODUL 4: USER MATRIX (hanya utk role admin, disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardUserMatrix" style="--d:.6s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
         <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -293,6 +308,7 @@ const I18N = {
     adminTitle:"KHUSUS ADMINISTRASI",adminNote:"Portal ini hanya untuk keperluan administrasi GBI Light of the City.",
     mod1:"Database Jemaat",mod1Desc:"Modul pengelolaan data lengkap jemaat GBI LOC. Tambah, edit, cari, dan kelola informasi demografis dengan sistem yang terintegrasi.",
     mod2:"ID Card Generator",mod2Desc:"Modul pembuatan kartu identitas digital dan fisik untuk jemaat dan pelayan. Dilengkapi fitur generate QR code dan template khusus.",
+    mod4:"Laporan Keuangan",mod4Desc:"Modul pengelolaan laporan keuangan gereja. Kelola transparansi dan rekapitulasi dana dengan aman.",
     mod3:"User Matrix",mod3Desc:"Modul pengaturan hak akses dan manajemen pengguna sistem. Kelola peran dan kewenangan setiap admin GBI LOC.",
     access:"Akses Modul",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"},
   en:{portalTagText:"SYSTEM PORTAL",ver:"V 2.5.4",
@@ -300,6 +316,7 @@ const I18N = {
     adminTitle:"ADMINISTRATION ONLY",adminNote:"This portal is provided solely for the administrative purposes of GBI Light of the City.",
     mod1:"Congregation Database",mod1Desc:"A complete congregation data management module for GBI LOC. Add, edit, search, and manage demographic information within an integrated system.",
     mod2:"ID Card Generator",mod2Desc:"A module for creating digital and physical ID cards for congregation members and servants. Equipped with QR code generation and exclusive templates.",
+    mod4:"Financial Reports",mod4Desc:"Church financial report management module. Securely manage transparency and fund recapitulation.",
     mod3:"User Matrix",mod3Desc:"System user management and access rights module. Manage roles and permissions for every GBI LOC admin.",
     access:"Access Module",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"}
 };
