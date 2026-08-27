@@ -214,8 +214,24 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="financial.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
-    <!-- MODUL 4: USER MATRIX (hanya utk role admin, disembunyikan default sampai role terverifikasi) -->
-    <article class="card" id="cardUserMatrix" style="--d:.6s;display:none">
+    <!-- MODUL 4: ACARA GEREJA (disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardAcaraGereja" style="--d:.6s;display:none">
+      <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
+      <div class="icon-frame">
+        <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="16" y="20" width="40" height="36" rx="4"/>
+          <path class="cross" d="M16 32h40"/>
+          <path d="M24 16v8M48 16v8"/>
+          <path class="scan" d="M26 42h8M26 48h20"/>
+        </svg>
+      </div>
+      <h2 class="card-title" data-i18n="mod5">Acara Gereja</h2>
+      <p class="card-desc" data-i18n="mod5Desc">Modul pemantauan acara gereja dan rekapitulasi jumlah kehadiran ibadah.</p>
+      <a href="acaraGereja.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </article>
+
+    <!-- MODUL 5: USER MATRIX (hanya utk role admin, disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardUserMatrix" style="--d:.75s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
         <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -269,6 +285,7 @@ html[data-theme="light"] .icon-moon{display:none}
   const logoutBtn = document.getElementById('logoutBtn');
   const cardUserMatrix = document.getElementById('cardUserMatrix');
   const cardFinance = document.getElementById('cardFinance');
+  const cardAcaraGereja = document.getElementById('cardAcaraGereja');
 
   // CEK SESSION STORAGE
   const loggedUser = sessionStorage.getItem('loggedUser');
@@ -277,8 +294,6 @@ html[data-theme="light"] .icon-moon{display:none}
     window.location.href = "index.html";
   } else {
     userNameDisplay.textContent = "Hi, " + loggedUser;
-    // Document ID di koleksi 'users' itu auto-generated, BUKAN username.
-    // Jadi harus dicari lewat query berdasarkan field 'username', bukan doc(db,"users", loggedUser).
     const q = query(collection(db, "users"), where("username", "==", loggedUser));
     getDocs(q).then((snap) => {
         if (!snap.empty) {
@@ -287,13 +302,13 @@ html[data-theme="light"] .icon-moon{display:none}
                 userNameDisplay.textContent = "Hi " + data.name;
             }
             // Tampilkan menu User Matrix HANYA jika role = admin.
-            // Default tetap hidden (di HTML) kalau field role tidak ada / gagal diambil / bukan admin.
             if (data.role === 'admin') {
                 cardUserMatrix.style.display = '';
             }
-            // Tampilkan menu Laporan Keuangan HANYA jika role = admin ATAU gembala.
+            // Tampilkan menu Laporan Keuangan dan Acara Gereja HANYA jika role = admin ATAU gembala.
             if (data.role === 'admin' || data.role === 'gembala') {
                 cardFinance.style.display = '';
+                cardAcaraGereja.style.display = '';
             }
         }
     }).catch(err => console.log("Gagal ambil data user:", err));
@@ -314,6 +329,7 @@ const I18N = {
     mod1:"Database Jemaat",mod1Desc:"Modul pengelolaan data lengkap jemaat GBI LOC. Tambah, edit, cari, dan kelola informasi demografis dengan sistem yang terintegrasi.",
     mod2:"ID Card Generator",mod2Desc:"Modul pembuatan kartu identitas digital dan fisik untuk jemaat dan pelayan. Dilengkapi fitur generate QR code dan template khusus.",
     mod4:"Laporan Keuangan",mod4Desc:"Modul pengelolaan laporan keuangan gereja. Kelola transparansi dan rekapitulasi dana dengan aman.",
+    mod5:"Acara Gereja",mod5Desc:"Modul pemantauan acara gereja dan rekapitulasi jumlah kehadiran ibadah.",
     mod3:"User Matrix",mod3Desc:"Modul pengaturan hak akses dan manajemen pengguna sistem. Kelola peran dan kewenangan setiap admin GBI LOC.",
     access:"Akses Modul",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"},
   en:{portalTagText:"SYSTEM PORTAL",ver:"V 2.5.4",
@@ -322,6 +338,7 @@ const I18N = {
     mod1:"Congregation Database",mod1Desc:"A complete congregation data management module for GBI LOC. Add, edit, search, and manage demographic information within an integrated system.",
     mod2:"ID Card Generator",mod2Desc:"A module for creating digital and physical ID cards for congregation members and servants. Equipped with QR code generation and exclusive templates.",
     mod4:"Financial Reports",mod4Desc:"Church financial report management module. Securely manage transparency and fund recapitulation.",
+    mod5:"Church Events",mod5Desc:"Church events monitoring and worship attendance recapitulation module.",
     mod3:"User Matrix",mod3Desc:"System user management and access rights module. Manage roles and permissions for every GBI LOC admin.",
     access:"Access Module",footer:"© 2026 GBI LOC System",status:"STATUS: ONLINE",secure:"SECURE CONNECTION"}
 };
