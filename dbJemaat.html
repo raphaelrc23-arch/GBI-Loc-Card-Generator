@@ -1041,6 +1041,41 @@
         let auditLogs = [];
 
         // ========================================================================
+        // ROBUST DATE PARSER
+        // (Menangani Tanggal Excel Serial, format DD/MM/YYYY, dan YYYY-MM-DD secara aman)
+        // ========================================================================
+        function parseRobustDate(tglStr) {
+            if(!tglStr) return null;
+            tglStr = String(tglStr).trim();
+            
+            // 1. Jika Excel Serial Date (angka 4-5 digit, contoh: 41234)
+            if(/^\d{4,5}$/.test(tglStr)) {
+                let serial = parseInt(tglStr);
+                if(serial > 10000 && serial < 90000) {
+                    let d = new Date(Math.round((serial - 25569) * 864e5));
+                    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+                }
+            }
+            
+            // 2. Jika format YYYY-MM-DD
+            let matchYMD = tglStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if(matchYMD) return { y: parseInt(matchYMD[1]), m: parseInt(matchYMD[2]), d: parseInt(matchYMD[3]) };
+            
+            // 3. Jika format DD-MM-YYYY atau DD/MM/YYYY
+            let matchDMY = tglStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if(matchDMY) return { y: parseInt(matchDMY[3]), m: parseInt(matchDMY[2]), d: parseInt(matchDMY[1]) };
+
+            // 4. Fallback (mengganti bulan bahasa indonesia agar JS Date bisa membaca jika user ngetik manual)
+            let strEn = tglStr.toLowerCase()
+                .replace(/januari/g, 'jan').replace(/februari/g, 'feb').replace(/maret/g, 'mar')
+                .replace(/agustus/g, 'aug').replace(/oktober/g, 'oct').replace(/desember/g, 'dec');
+            let d = new Date(strEn);
+            if(!isNaN(d.getTime())) return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+            
+            return null;
+        }
+
+        // ========================================================================
         // RIWAYAT KEHADIRAN ACARA GEREJA (dibaca read-only dari acaraGereja.html)
         // ========================================================================
         let acaraEventsCache = [];
@@ -1060,7 +1095,9 @@
 
         function formatTglIndoRingkas(iso) {
             if (!iso) return '-';
-            const d = new Date(iso + 'T00:00:00');
+            let p = parseRobustDate(iso);
+            if (!p) return '-';
+            const d = new Date(p.y, p.m - 1, p.d);
             if (isNaN(d)) return '-';
             return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
         }
@@ -1073,8 +1110,9 @@
             const events = (acaraEventsCache || []).filter(ev => {
                 if (!ev.date || ev.eventStatus === 'Terjadwal') return false;
                 if (!Array.isArray(ev.attendeeIds) || !ev.attendeeIds.includes(currentDetailJemaatId)) return false;
-                const d = new Date(ev.date + 'T00:00:00');
-                if (isNaN(d)) return false;
+                const p = parseRobustDate(ev.date);
+                if (!p) return false;
+                const d = new Date(p.y, p.m - 1, p.d);
                 if (period === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
                 if (period === 'year') return d.getFullYear() === now.getFullYear();
                 return true;
@@ -1441,9 +1479,9 @@
         }
 
         function parseTglBergabung(str) {
-            if(!str) return null;
-            let d = new Date(str);
-            return isNaN(d.getTime()) ? null : d;
+            let p = parseRobustDate(str);
+            if(p) return new Date(p.y, p.m - 1, p.d);
+            return null;
         }
 
         function getPeriodeFilteredAktif() {
@@ -1572,20 +1610,13 @@
             // ULANG TAHUN KELAHIRAN BULAN INI
             document.getElementById('currentMonthTitle').innerText = `Ulang Tahun Bulan ${monthNames[currentMonth - 1]}`;
             
-            let ultahBulanIni = aktifTerkini.filter(j => {
-                if(!j.tanggal_lahir) return false;
-                let parts = j.tanggal_lahir.split('-');
-                let m = parseInt(parts[1]);
-                let d = parseInt(parts[2]);
-                let dist = getEventDistance(m, d);
-                return (m === currentMonth) || (dist >= -3 && dist <= 0);
-            }).map(j => {
-                const parts = j.tanggal_lahir.split('-');
-                let m = parseInt(parts[1]);
-                let d = parseInt(parts[2]);
-                let dist = getEventDistance(m, d);
-                return { ...j, diffDays: dist, tgl: d, bln: m, thn: parseInt(parts[0]) };
-            }).sort((a,b) => a.tgl - b.tgl);
+            let ultahBulanIni = aktifTerkini.map(j => {
+                let parsed = parseRobustDate(j.tanggal_lahir);
+                if(!parsed) return null;
+                let dist = getEventDistance(parsed.m, parsed.d);
+                return { ...j, diffDays: dist, tgl: parsed.d, bln: parsed.m, thn: parsed.y };
+            }).filter(j => j && (j.bln === currentMonth || (j.diffDays >= -3 && j.diffDays <= 0)))
+              .sort((a,b) => a.tgl - b.tgl);
 
             document.getElementById('countUltahBulanIni').innerText = `${ultahBulanIni.length} Orang`;
             let tbodyUltah = document.getElementById('tableUltahBulanIniBody');
@@ -1629,28 +1660,30 @@
             
             aktifTerkini.forEach(j => {
                 if(j.status_pernikahan === 'Menikah' && j.tanggal_pernikahan) {
-                    let pParts = j.tanggal_pernikahan.split('-');
-                    let m = parseInt(pParts[1]);
-                    let d = parseInt(pParts[2]);
-                    let dist = getEventDistance(m, d);
-                    
-                    if(m === currentMonth || (dist >= -3 && dist <= 0)) {
-                        let kkId = j.kepalaKeluargaId || j.id;
-                        if(!processedKk.has(kkId)) {
-                            processedKk.add(kkId);
-                            
-                            let fam = aktifTerkini.filter(x => (x.id === kkId || x.kepalaKeluargaId === kkId));
-                            let suami = fam.find(x => x.jenis_kelamin === 'L' && x.status_pernikahan === 'Menikah');
-                            let istri = fam.find(x => x.jenis_kelamin === 'P' && x.status_pernikahan === 'Menikah');
-                            
-                            if(suami || istri) {
-                                couples.push({ 
-                                    suami, istri, 
-                                    tgl: d, 
-                                    tglStr: `${d} ${monthNames[m-1]}`, 
-                                    thn: parseInt(pParts[0]),
-                                    diffDays: dist
-                                });
+                    let parsed = parseRobustDate(j.tanggal_pernikahan);
+                    if(parsed) {
+                        let m = parsed.m;
+                        let d = parsed.d;
+                        let dist = getEventDistance(m, d);
+                        
+                        if(m === currentMonth || (dist >= -3 && dist <= 0)) {
+                            let kkId = j.kepalaKeluargaId || j.id;
+                            if(!processedKk.has(kkId)) {
+                                processedKk.add(kkId);
+                                
+                                let fam = aktifTerkini.filter(x => (x.id === kkId || x.kepalaKeluargaId === kkId));
+                                let suami = fam.find(x => x.jenis_kelamin === 'L' && x.status_pernikahan === 'Menikah');
+                                let istri = fam.find(x => x.jenis_kelamin === 'P' && x.status_pernikahan === 'Menikah');
+                                
+                                if(suami || istri) {
+                                    couples.push({ 
+                                        suami, istri, 
+                                        tgl: d, 
+                                        tglStr: `${d} ${monthNames[m-1]}`, 
+                                        thn: parsed.y,
+                                        diffDays: dist
+                                    });
+                                }
                             }
                         }
                     }
@@ -1708,10 +1741,10 @@
             let container = document.getElementById('countdownWidget');
             container.innerHTML = "";
             let list = aktifTerkini.map(j => {
-                if(!j.tanggal_lahir) return null;
-                const parts = j.tanggal_lahir.split('-');
-                let dist = getEventDistance(parseInt(parts[1]), parseInt(parts[2]));
-                return { ...j, diffDays: dist };
+                let parsed = parseRobustDate(j.tanggal_lahir);
+                if(!parsed) return null;
+                let dist = getEventDistance(parsed.m, parsed.d);
+                return { ...j, diffDays: dist, parsedTgl: parsed };
             }).filter(Boolean).sort((a,b) => a.diffDays - b.diffDays).slice(0, 3);
 
             if(list.length === 0) {
@@ -1730,8 +1763,7 @@
                         badge = `${item.diffDays} Hari Lagi`;
                     }
                     
-                    const parts = item.tanggal_lahir.split('-');
-                    const tgl = `${parts[2]} ${monthNames[parseInt(parts[1])-1]}`;
+                    const tgl = `${item.parsedTgl.d} ${monthNames[item.parsedTgl.m-1]}`;
                     let waButton = '';
                     if(item.diffDays >= -3 && item.diffDays <= 0 && item.no_telepon) {
                         waButton = `<button onclick="kirimUcapanWhatsApp('${item.id}', 'ultah')" title="Kirim WA" class="ml-2 text-emerald-600 hover:text-emerald-700"><i class="fa-brands fa-whatsapp text-base"></i></button>`;
@@ -1770,20 +1802,30 @@
                     </div>
                 `;
 
+                // =======================================================
+                // PERBAIKAN DEMOGRAFI USIA & CHART
+                // Menghitung murni Tahun Sekarang - Tahun Lahir
+                // TotalUsia hanya ditambahkan jika masuk ke kategori valid
+                // =======================================================
                 let totalUsia = 0;
                 let demographicCounts = settingsDemographics.map(cat => ({ ...cat, count: 0 }));
 
                 aktifTerkini.forEach(j => {
-                    if(j.tanggal_lahir) {
-                        totalUsia++;
-                        let y = parseInt(j.tanggal_lahir.split('-')[0]);
-                        let age = today.getFullYear() - y;
+                    let parsed = parseRobustDate(j.tanggal_lahir);
+                    if(parsed) {
+                        let age = today.getFullYear() - parsed.y; // murni Tahun Sekarang - Tahun Lahir
+                        let foundCategory = false;
                         
                         for(let cat of demographicCounts) {
                             if(age >= cat.minAge && age <= cat.maxAge) {
                                 cat.count++;
+                                foundCategory = true;
                                 break; 
                             }
+                        }
+                        
+                        if(foundCategory) {
+                            totalUsia++; 
                         }
                     }
                 });
@@ -2262,17 +2304,13 @@
             const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
 
             // --- Helper: hitung usia (Tahun) dari tanggal ISO (YYYY-MM-DD) ---
-            const hitungUsiaTahun = (tglIso) => {
-                if(!tglIso) return null;
-                let p = tglIso.split('-');
-                let ty = parseInt(p[0]), tm = parseInt(p[1]), td = parseInt(p[2]);
-                if(isNaN(ty)) return null;
+            const hitungUsiaTahun = (tglStr) => {
+                let p = parseRobustDate(tglStr);
+                if(!p) return null;
                 let now = new Date();
-                let age = now.getFullYear() - ty;
-                if(!isNaN(tm) && !isNaN(td)) {
-                    const bulanIni = now.getMonth(), tglIni = now.getDate();
-                    if(bulanIni < (tm - 1) || (bulanIni === (tm - 1) && tglIni < td)) age--;
-                }
+                let age = now.getFullYear() - p.y;
+                const bulanIni = now.getMonth() + 1, tglIni = now.getDate();
+                if(bulanIni < p.m || (bulanIni === p.m && tglIni < p.d)) age--;
                 return age;
             };
 
@@ -2282,8 +2320,12 @@
             let head = dataJemaat.find(item => item.id === headId);
             let familyMembers = getFamilyMembersSorted(headId);
             let usiaJ = hitungUsiaTahun(j.tanggal_lahir);
-            let usiaPernikahanJ = j.tanggal_pernikahan ? (new Date().getFullYear() - parseInt(j.tanggal_pernikahan.split('-')[0])) : null;
-            if(usiaPernikahanJ !== null && isNaN(usiaPernikahanJ)) usiaPernikahanJ = null;
+            
+            let usiaPernikahanJ = null;
+            if(j.tanggal_pernikahan) {
+                let p = parseRobustDate(j.tanggal_pernikahan);
+                if(p) usiaPernikahanJ = new Date().getFullYear() - p.y;
+            }
 
             // --- Header & footer berwarna, digambar ulang di setiap halaman ---
             const drawHeaderFooter = () => {
