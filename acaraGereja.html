@@ -31,6 +31,36 @@
     <!-- SweetAlert2 untuk Notifikasi -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+    <!-- MULAI DARI SINI: Koneksi Firebase (khusus MEMBACA Database Jemaat) -->
+    <!-- Modul ini hanya membaca data jemaat dari dokumen "gerejaData/main" (dipakai oleh
+         dbJemaat.html) supaya fitur Checklist Absensi & deteksi jemaat yang perlu dikunjungi
+         bisa memakai data jemaat yang sama. Data acara/kegiatan tetap tersimpan seperti biasa. -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.firebasestorage.app",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N30PER"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Referensi ke dokumen Database Jemaat (koleksi "gerejaData", dokumen "main")
+        window.jemaatDocRef = doc(db, "gerejaData", "main");
+        window.firestoreGetDocJemaat = getDoc;
+
+        window.firebaseReadyJemaat = true;
+        console.log("Firebase Terhubung! (Baca Database Jemaat dari Acara Gereja)");
+    </script>
+    <!-- SELESAI: Batas Kode Firebase -->
+
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         .modal-enter { animation: fadeIn 0.2s ease-out forwards; }
@@ -49,7 +79,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row justify-between items-center py-3 sm:py-0 sm:h-16 gap-4">
                 <div class="flex items-center self-start sm:self-auto gap-3 w-full sm:w-auto">
-                    <a href="homepage.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
+                    <a href="index.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
                         <i class="fa-solid fa-house text-lg"></i>
                     </a>
                     <div class="flex flex-col justify-center flex-1">
@@ -173,6 +203,27 @@
                 <div id="suggestion-content" class="text-sm text-gray-700 space-y-2 leading-relaxed">
                     <!-- Diisi via JS -->
                 </div>
+            </div>
+        </div>
+
+        <!-- SECTION 0: Jemaat Perlu Dikunjungi (dari absensi checklist ibadah reguler) -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="pastoral-visit-section">
+            <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-hand-holding-heart text-rose-600 mr-2"></i>Jemaat Perlu Dikunjungi</h2>
+                    <p class="text-xs text-gray-500">Jemaat aktif yang tidak tercatat hadir (mode checklist) pada <span id="visit-threshold-label">3</span> ibadah reguler berturut-turut.</p>
+                </div>
+                <button onclick="loadJemaatMasterData()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer flex-shrink-0">
+                    <i class="fa-solid fa-rotate"></i> Muat Ulang Data Jemaat
+                </button>
+            </div>
+            <div class="p-5">
+                <div id="pastoral-visit-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+                <div id="pastoral-visit-empty" class="hidden flex-col items-center justify-center py-8 text-gray-400">
+                    <i class="fa-solid fa-circle-check text-4xl mb-2 text-emerald-300"></i>
+                    <p class="text-sm">Tidak ada jemaat yang perlu dikunjungi saat ini.</p>
+                </div>
+                <p id="pastoral-visit-note" class="text-xs text-gray-400 mt-3">Memuat data jemaat...</p>
             </div>
         </div>
 
@@ -346,6 +397,26 @@
                     </button>
                 </form>
                 <p class="text-xs text-gray-400 mt-2">Kosongkan lalu klik 'Nonaktifkan' bila tidak ingin pakai penanda ini.</p>
+            </div>
+        </div>
+
+        <!-- SECTION 6B: Ambang Batas Kunjungan Pastoral -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100">
+                <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-hand-holding-heart text-rose-500 mr-2"></i>Ambang Batas Kunjungan Pastoral</h2>
+                <p class="text-xs text-gray-500">Jemaat aktif yang absen (checklist) sebanyak ini secara berturut-turut pada ibadah reguler akan otomatis muncul di daftar "Jemaat Perlu Dikunjungi" pada Dashboard. Hanya berlaku untuk laporan ibadah yang memakai mode Checklist.</p>
+            </div>
+            <div class="p-5">
+                <form onsubmit="saveVisitThreshold(event)" class="flex flex-wrap items-end gap-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Tidak Hadir Berturut-turut (kali)</label>
+                        <input type="number" id="param-visit-threshold" min="1" placeholder="Mis: 3" class="w-48 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none">
+                    </div>
+                    <button type="submit" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm cursor-pointer">
+                        <i class="fa-solid fa-floppy-disk mr-2"></i> Simpan
+                    </button>
+                </form>
+                <p class="text-xs text-gray-400 mt-2">Default: 3 kali berturut-turut bila belum pernah diatur.</p>
             </div>
         </div>
 
@@ -752,8 +823,21 @@
 
                     <p id="finance-lock-hint" class="hidden text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3"><i class="fa-solid fa-lock mr-1"></i> Kehadiran baru bisa diisi setelah status diubah ke "Telah Terlaksana".</p>
 
+                    <div class="mb-4 bg-gray-50/80 p-3 rounded-lg border border-gray-200">
+                        <label class="block text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide"><i class="fa-solid fa-clipboard-check mr-1"></i> Metode Pencatatan Kehadiran</label>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <label class="flex items-center gap-2 text-sm cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 flex-1">
+                                <input type="radio" name="attendance-mode" value="manual" checked onchange="toggleAttendanceMode()" class="text-blue-600 focus:ring-blue-500 w-4 h-4"> Input Manual (Angka)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 flex-1">
+                                <input type="radio" name="attendance-mode" value="checklist" onchange="toggleAttendanceMode()" class="text-blue-600 focus:ring-blue-500 w-4 h-4"> Checklist dari Daftar Jemaat
+                            </label>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1.5">Mode checklist memakai data dari Database Jemaat, dan dipakai sistem untuk mendeteksi jemaat yang tidak hadir berturut-turut (perlu dikunjungi).</p>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div>
+                        <div id="attendance-manual-wrapper">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Total Kehadiran (Jiwa) *</label>
                             <input type="number" id="form-attendance" required min="0" placeholder="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                         </div>
@@ -761,6 +845,25 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah Jemaat Baru (Jiwa)</label>
                             <input type="number" id="form-new-visitors" min="0" placeholder="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
                         </div>
+                    </div>
+
+                    <div id="attendance-checklist-group" class="hidden mb-4 bg-blue-50/40 p-4 rounded-xl border border-blue-100">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                            <p class="text-sm font-bold text-blue-900">Checklist Jemaat Hadir <span id="checklist-count-badge" class="ml-1 text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full">0</span></p>
+                            <div class="flex gap-2 w-full sm:w-auto">
+                                <input type="text" id="checklist-search" oninput="renderAttendanceChecklist()" placeholder="Cari nama / NIJ..." class="px-3 py-1.5 text-sm border border-blue-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-400 flex-1 sm:w-56">
+                                <button type="button" onclick="loadJemaatMasterData()" title="Muat ulang data jemaat" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-sm transition cursor-pointer flex-shrink-0"><i class="fa-solid fa-rotate"></i></button>
+                            </div>
+                        </div>
+                        <div id="checklist-jemaat-container" class="max-h-56 overflow-y-auto space-y-0.5 bg-white rounded-lg border border-blue-100 p-2">
+                            <!-- Diisi via JS -->
+                        </div>
+                        <p id="checklist-jemaat-empty" class="hidden text-xs text-gray-400 italic py-3 text-center">Data jemaat belum termuat / kosong. Pastikan Database Jemaat sudah diisi lalu klik tombol muat ulang.</p>
+                        <div class="mt-3">
+                            <label class="block text-xs text-blue-800 mb-1">Tamu / Belum Terdaftar di Database Jemaat (Jiwa)</label>
+                            <input type="number" id="form-attendance-guests" min="0" placeholder="0" oninput="updateChecklistTotal()" class="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-sm">
+                        </div>
+                        <p class="text-xs text-blue-700 mt-2">Total Kehadiran otomatis terhitung: <b id="checklist-total-display">0</b> jiwa (jumlah dicentang + tamu).</p>
                     </div>
 
                     <div id="single-preacher-wrapper" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -915,6 +1018,196 @@
         let churchName = localStorage.getItem(CHURCH_NAME_KEY) || 'Gereja JemaatID';
         let isFirstLoad = true;
         let currentAnalyticsData = {};
+
+        // ========================================================================
+        // LINK KE DATABASE JEMAAT (via Firebase, read-only) — untuk Checklist Absensi
+        // dan deteksi otomatis "Jemaat Perlu Dikunjungi"
+        // ========================================================================
+        let jemaatMasterData = [];
+        let selectedAttendeeIds = new Set();
+        const STORAGE_KEY_VISIT_THRESHOLD = 'jemaatid_visit_threshold_v1';
+
+        function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        function waitForFirebaseJemaatReady() {
+            return new Promise((resolve) => {
+                if (window.firebaseReadyJemaat && window.jemaatDocRef) return resolve();
+                const check = setInterval(() => {
+                    if (window.firebaseReadyJemaat && window.jemaatDocRef) { clearInterval(check); resolve(); }
+                }, 50);
+                setTimeout(() => { clearInterval(check); resolve(); }, 8000); // jangan menggantung selamanya jika Firebase gagal terhubung
+            });
+        }
+
+        async function loadJemaatMasterData() {
+            const note = document.getElementById('pastoral-visit-note');
+            if (note) note.innerText = 'Memuat data jemaat dari Database Jemaat...';
+            try {
+                await waitForFirebaseJemaatReady();
+                if (!window.jemaatDocRef) throw new Error('Firebase belum siap');
+                const snap = await window.firestoreGetDocJemaat(window.jemaatDocRef);
+                jemaatMasterData = (snap.exists() && Array.isArray(snap.data().dataJemaat)) ? snap.data().dataJemaat : [];
+            } catch (e) {
+                console.error('Gagal memuat Database Jemaat:', e);
+                jemaatMasterData = [];
+                if (note) note.innerText = 'Gagal memuat data jemaat. Periksa koneksi internet lalu klik "Muat Ulang Data Jemaat".';
+            }
+            renderAttendanceChecklist();
+            renderPastoralVisitList();
+        }
+
+        function formatNoWhatsAppAcara(no) {
+            if (!no) return null;
+            let digits = String(no).replace(/[^0-9]/g, '');
+            if (!digits) return null;
+            if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+            else if (!digits.startsWith('62')) digits = '62' + digits;
+            return digits;
+        }
+
+        function getActiveJemaatList() {
+            return (jemaatMasterData || []).filter(j => j.status_jemaat === 'Aktif');
+        }
+
+        // ---- Checklist Absensi (dipakai di Modal Form Ibadah) ----
+        function toggleAttendanceMode() {
+            const modeInput = document.querySelector('input[name="attendance-mode"]:checked');
+            const mode = modeInput ? modeInput.value : 'manual';
+            const checklistGroup = document.getElementById('attendance-checklist-group');
+            const attInput = document.getElementById('form-attendance');
+            if (mode === 'checklist') {
+                checklistGroup.classList.remove('hidden');
+                if (attInput) { attInput.readOnly = true; attInput.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed'); }
+                renderAttendanceChecklist();
+            } else {
+                checklistGroup.classList.add('hidden');
+                if (attInput) { attInput.readOnly = false; attInput.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed'); }
+            }
+        }
+
+        function renderAttendanceChecklist() {
+            const container = document.getElementById('checklist-jemaat-container');
+            const emptyState = document.getElementById('checklist-jemaat-empty');
+            if (!container) return;
+            const search = (document.getElementById('checklist-search')?.value || '').toLowerCase().trim();
+            const activeJemaat = getActiveJemaatList();
+            const filtered = search ? activeJemaat.filter(j => (j.nama_lengkap || '').toLowerCase().includes(search) || (j.nij || '').toLowerCase().includes(search)) : activeJemaat;
+
+            if (activeJemaat.length === 0) {
+                container.innerHTML = '';
+                emptyState?.classList.remove('hidden');
+            } else {
+                emptyState?.classList.add('hidden');
+                container.innerHTML = filtered.map(j => `
+                    <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-blue-50 cursor-pointer text-sm">
+                        <input type="checkbox" class="checklist-jemaat-item w-4 h-4 text-blue-600 rounded flex-shrink-0" ${selectedAttendeeIds.has(j.id) ? 'checked' : ''} onchange="onChecklistItemToggle('${j.id}', this.checked)">
+                        <span class="flex-1 truncate">${esc(j.nama_lengkap)} <span class="text-gray-400 font-mono text-[10px]">${esc(j.nij || '')}</span></span>
+                    </label>
+                `).join('') || `<p class="text-xs text-gray-400 italic py-3 text-center">Tidak ada jemaat yang cocok dengan pencarian.</p>`;
+            }
+            updateChecklistTotal();
+        }
+
+        function onChecklistItemToggle(id, checked) {
+            if (checked) selectedAttendeeIds.add(id); else selectedAttendeeIds.delete(id);
+            updateChecklistTotal();
+        }
+
+        function updateChecklistTotal() {
+            const checked = selectedAttendeeIds.size;
+            const guests = parseInt(document.getElementById('form-attendance-guests')?.value) || 0;
+            const total = checked + guests;
+            const badge = document.getElementById('checklist-count-badge'); if (badge) badge.innerText = checked;
+            const totalDisplay = document.getElementById('checklist-total-display'); if (totalDisplay) totalDisplay.innerText = total;
+            const attInput = document.getElementById('form-attendance');
+            const modeInput = document.querySelector('input[name="attendance-mode"]:checked');
+            if (attInput && modeInput && modeInput.value === 'checklist') attInput.value = total;
+        }
+
+        // ---- Deteksi Jemaat Perlu Dikunjungi ----
+        function getVisitThreshold() {
+            const raw = localStorage.getItem(STORAGE_KEY_VISIT_THRESHOLD);
+            const n = parseInt(raw);
+            return (!isNaN(n) && n > 0) ? n : 3;
+        }
+
+        function saveVisitThreshold(e) {
+            e.preventDefault();
+            const val = document.getElementById('param-visit-threshold').value;
+            if (!val || parseInt(val) <= 0) { Swal.fire('Info', 'Masukkan angka minggu berturut-turut yang valid.', 'info'); return; }
+            localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, parseInt(val).toString());
+            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kunjungan pastoral diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+            renderPastoralVisitList();
+        }
+
+        function computeJemaatPerluDikunjungi() {
+            const threshold = getVisitThreshold();
+            const regulerChecklist = eventsData
+                .filter(e => e.ibadahType === 'reguler' && e.eventStatus !== 'Terjadwal' && e.attendanceMode === 'checklist')
+                .slice()
+                .sort((a, b) => new Date(`${b.date}T${b.time || '00:00'}`) - new Date(`${a.date}T${a.time || '00:00'}`));
+
+            if (regulerChecklist.length < threshold) {
+                return { list: [], totalRegulerChecklist: regulerChecklist.length, note: `Minimal ${threshold} data ibadah reguler (mode checklist) diperlukan agar sistem bisa mendeteksi. Saat ini baru ada ${regulerChecklist.length}.` };
+            }
+
+            const activeJemaat = getActiveJemaatList();
+            const result = [];
+            activeJemaat.forEach(j => {
+                let consecutiveAbsent = 0;
+                let lastAttendedDate = null;
+                for (const ev of regulerChecklist) {
+                    const attended = Array.isArray(ev.attendeeIds) && ev.attendeeIds.includes(j.id);
+                    if (attended) { lastAttendedDate = ev.date; break; }
+                    consecutiveAbsent++;
+                }
+                if (consecutiveAbsent >= threshold) result.push({ jemaat: j, consecutiveAbsent, lastAttendedDate });
+            });
+            result.sort((a, b) => b.consecutiveAbsent - a.consecutiveAbsent);
+            return { list: result, totalRegulerChecklist: regulerChecklist.length, note: '' };
+        }
+
+        function renderPastoralVisitList() {
+            const container = document.getElementById('pastoral-visit-list');
+            const emptyState = document.getElementById('pastoral-visit-empty');
+            const note = document.getElementById('pastoral-visit-note');
+            const thresholdLabel = document.getElementById('visit-threshold-label');
+            if (!container) return;
+            const threshold = getVisitThreshold();
+            if (thresholdLabel) thresholdLabel.innerText = threshold;
+
+            if (!jemaatMasterData || jemaatMasterData.length === 0) {
+                container.innerHTML = ''; emptyState.style.display = 'none';
+                if (note) note.innerText = 'Data jemaat belum termuat. Pastikan koneksi internet aktif, lalu klik "Muat Ulang Data Jemaat".';
+                return;
+            }
+
+            const { list, totalRegulerChecklist, note: computeNote } = computeJemaatPerluDikunjungi();
+            if (list.length === 0) {
+                container.innerHTML = ''; emptyState.style.display = 'flex';
+                if (note) note.innerText = computeNote || 'Semua jemaat aktif tercatat hadir dalam batas wajar.';
+                return;
+            }
+            emptyState.style.display = 'none';
+            container.innerHTML = list.map(({ jemaat, consecutiveAbsent, lastAttendedDate }) => {
+                const nomor = formatNoWhatsAppAcara(jemaat.no_telepon);
+                const pesan = `Salam damai sejahtera ${jemaat.nama_lengkap}, kami dari ${churchName} merindukan kehadiran Bapak/Ibu/Saudara/i. Boleh kami menjadwalkan waktu untuk berkunjung?`;
+                const waBtn = nomor
+                    ? `<button onclick="window.open('https://wa.me/${nomor}?text=${encodeURIComponent(pesan)}','_blank')" class="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"><i class="fa-brands fa-whatsapp"></i> Chat WhatsApp</button>`
+                    : `<p class="text-[11px] text-gray-400 italic mt-2">No. telepon tidak tercatat</p>`;
+                return `
+                    <div class="border border-rose-200 bg-rose-50/50 rounded-xl p-4">
+                        <p class="font-bold text-gray-800 text-sm">${esc(jemaat.nama_lengkap)}</p>
+                        <p class="text-[10px] text-gray-400 font-mono mb-1">${esc(jemaat.nij || '-')}</p>
+                        <p class="text-xs text-gray-600 mb-1 flex items-start gap-1"><i class="fa-solid fa-location-dot mt-0.5 text-gray-400"></i><span>${esc(jemaat.alamat) || 'Alamat tidak tercatat'}</span></p>
+                        <p class="text-xs text-rose-600 font-semibold"><i class="fa-solid fa-calendar-xmark mr-1"></i>Absen ${consecutiveAbsent}x berturut-turut</p>
+                        <p class="text-[11px] text-gray-400">${lastAttendedDate ? 'Terakhir hadir: ' + formatDate(lastAttendedDate) : 'Belum pernah tercatat hadir'}</p>
+                        ${waBtn}
+                    </div>
+                `;
+            }).join('');
+            if (note) note.innerText = `${list.length} jemaat aktif teridentifikasi perlu dikunjungi, dihitung dari ${totalRegulerChecklist} data ibadah reguler bermode checklist.`;
+        }
 
         function formatDate(dateString) {
             if(!dateString) return '-';
@@ -1093,6 +1386,8 @@
             } else {
                 suggestionContent.innerHTML = `<p class="text-gray-500">Belum cukup data untuk analisis lanjutan.</p>`;
             }
+
+            renderPastoralVisitList();
         }
 
         function toggleSuggestion() { document.getElementById('suggestion-area').classList.toggle('hidden'); }
@@ -1350,6 +1645,10 @@
                 }
             });
             document.getElementById('finance-lock-hint')?.classList.toggle('hidden', !lock);
+
+            const attModeGroup = document.getElementById('attendance-checklist-group');
+            document.querySelectorAll('input[name="attendance-mode"]').forEach(r => r.disabled = lock);
+            if (lock) { attModeGroup?.classList.add('hidden'); } else { toggleAttendanceMode(); }
         }
 
         function checkBackdateStatus() {
@@ -1601,7 +1900,14 @@
             toggleDurationType();
 
             toggleFinanceAttendanceFields();
-            
+
+            selectedAttendeeIds = new Set();
+            const manualModeRadio = document.querySelector('input[name="attendance-mode"][value="manual"]');
+            if (manualModeRadio) manualModeRadio.checked = true;
+            const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = '';
+            const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
+            toggleAttendanceMode();
+
             const radio = document.querySelector(`input[name="form-type"][value="${defaultType}"]`);
             if(radio) { radio.checked = true; toggleFormType(); }
 
@@ -1667,6 +1973,11 @@
                 if (role && name) otherServersArray.push(`${role}: ${name}`); else if (name) otherServersArray.push(name); else if (role) otherServersArray.push(role);
             });
 
+            const attModeRadio = document.querySelector('input[name="attendance-mode"]:checked');
+            const attendanceMode = attModeRadio ? attModeRadio.value : 'manual';
+            const attendeeIds = attendanceMode === 'checklist' ? Array.from(selectedAttendeeIds) : [];
+            const attendanceGuests = attendanceMode === 'checklist' ? (parseInt(document.getElementById('form-attendance-guests').value) || 0) : 0;
+
             const id = document.getElementById('form-id').value;
             const newData = {
                 id: id ? id : Date.now().toString(),
@@ -1674,6 +1985,7 @@
                 eventName: document.getElementById('form-event-name').value, location: document.getElementById('form-location').value,
                 date: document.getElementById('form-date').value, time: document.getElementById('form-time').value,
                 attendance: document.getElementById('form-attendance').value || 0, newVisitors: document.getElementById('form-new-visitors').value || 0,
+                attendanceMode: attendanceMode, attendeeIds: attendeeIds, attendanceGuests: attendanceGuests,
                 income: 0, expense: 0, preacher: document.getElementById('form-preacher').value,
                 sermonTheme: document.getElementById('form-sermon-theme').value, wl: document.getElementById('form-wl').value,
                 musicians: document.getElementById('form-musicians').value, otherServers: otherServersArray.join(', '),
@@ -1798,6 +2110,14 @@
                 const el = document.getElementById(`form-${k.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
                 if(el) el.value = data[k] || '';
             });
+
+            selectedAttendeeIds = new Set(Array.isArray(data.attendeeIds) ? data.attendeeIds : []);
+            const attMode = data.attendanceMode === 'checklist' ? 'checklist' : 'manual';
+            const attModeRadio = document.querySelector(`input[name="attendance-mode"][value="${attMode}"]`);
+            if (attModeRadio) attModeRadio.checked = true;
+            const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = data.attendanceGuests || '';
+            const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
+            toggleAttendanceMode();
 
             if (isMultiDay) {
                 document.getElementById('form-end-date').value = data.endDate || '';
@@ -2683,6 +3003,9 @@
 
             renderLocationList();
             populateHolidayImportYearSelect();
+
+            const visitThresholdInput = document.getElementById('param-visit-threshold');
+            if (visitThresholdInput) visitThresholdInput.value = getVisitThreshold();
         }
 
         const OFFICIAL_HOLIDAYS_BY_YEAR = {
@@ -2762,7 +3085,10 @@
             });
         }
 
-        window.onload = updateUI;
+        window.onload = function() {
+            updateUI();
+            loadJemaatMasterData();
+        };
     </script>
 </body>
 </html>
