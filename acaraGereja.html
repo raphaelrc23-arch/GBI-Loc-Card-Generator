@@ -37,7 +37,7 @@
          bisa memakai data jemaat yang sama. Data acara/kegiatan tetap tersimpan seperti biasa. -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
@@ -56,8 +56,14 @@
         window.jemaatDocRef = doc(db, "gerejaData", "main");
         window.firestoreGetDocJemaat = getDoc;
 
+        // Referensi ke dokumen data Acara Gereja milik halaman ini sendiri (koleksi "gerejaData",
+        // dokumen "acara"). Dipakai agar dbJemaat.html bisa membaca riwayat kehadiran (read-only).
+        // Data acara tetap tersimpan utuh di localStorage seperti biasa; ini hanya salinan cermin.
+        window.acaraDocRef = doc(db, "gerejaData", "acara");
+        window.firestoreSetDocAcara = setDoc;
+
         window.firebaseReadyJemaat = true;
-        console.log("Firebase Terhubung! (Baca Database Jemaat dari Acara Gereja)");
+        console.log("Firebase Terhubung! (Baca Database Jemaat & Tulis Cermin Data Acara)");
     </script>
     <!-- SELESAI: Batas Kode Firebase -->
 
@@ -79,7 +85,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row justify-between items-center py-3 sm:py-0 sm:h-16 gap-4">
                 <div class="flex items-center self-start sm:self-auto gap-3 w-full sm:w-auto">
-                    <a href="homepage.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
+                    <a href="index.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
                         <i class="fa-solid fa-house text-lg"></i>
                     </a>
                     <div class="flex flex-col justify-center flex-1">
@@ -2583,6 +2589,18 @@
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
 
+        // Menyalin (mirror) eventsData ke Firestore secara diam-diam, agar dbJemaat.html
+        // bisa membaca Riwayat Kehadiran Acara per jemaat. localStorage tetap jadi sumber
+        // data utama halaman ini; ini hanya salinan pengiriman searah (fire-and-forget).
+        async function mirrorEventsToFirebase() {
+            try {
+                if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
+                await window.firestoreSetDocAcara(window.acaraDocRef, { eventsData: eventsData, lastUpdated: new Date().toISOString() });
+            } catch (e) {
+                console.error('Gagal menyalin data acara ke Firebase:', e);
+            }
+        }
+
         function updateUI() {
             document.getElementById('nav-church-name').innerText = churchName;
             eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
@@ -2592,6 +2610,7 @@
             renderCalendar(); renderHolidayTable(); renderParameterTab();
             localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(eventsData));
             localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
+            mirrorEventsToFirebase();
         }
 
         const MAIN_TABS = ['data', 'calendar', 'parameter'];
