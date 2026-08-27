@@ -16,6 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1752,8 +1753,8 @@
             }
 
             if(document.getElementById('chartGender')) {
-                let pria = aktif.filter(j => j.jenis_kelamin === "L").length;
-                let wanita = aktif.filter(j => j.jenis_kelamin === "P").length;
+                let pria = aktifTerkini.filter(j => j.jenis_kelamin === "L").length;
+                let wanita = aktifTerkini.filter(j => j.jenis_kelamin === "P").length;
                 let totalGender = pria + wanita;
                 let pctPria = totalGender === 0 ? 0 : Math.round((pria/totalGender)*100);
                 let pctWanita = totalGender === 0 ? 0 : Math.round((wanita/totalGender)*100);
@@ -1772,7 +1773,7 @@
                 let totalUsia = 0;
                 let demographicCounts = settingsDemographics.map(cat => ({ ...cat, count: 0 }));
 
-                aktif.forEach(j => {
+                aktifTerkini.forEach(j => {
                     if(j.tanggal_lahir) {
                         totalUsia++;
                         let y = parseInt(j.tanggal_lahir.split('-')[0]);
@@ -2255,115 +2256,202 @@
 
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ unit: "pt", format: "a4" });
-
-            let y = 40;
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(18);
-            doc.text("LAPORAN DETAIL JEMAAT", 40, y);
-            y += 15;
-            doc.setFontSize(12);
-            doc.text(churchName.toUpperCase(), 40, y);
-            y += 15;
-            
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(10);
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const marginX = 40;
             const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
-            doc.text(`Waktu Cetak: ${timestamp}`, 40, y);
-            
-            y += 20;
-            doc.setLineWidth(1);
-            doc.line(40, y, 550, y); 
-            y += 25;
-            
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(12);
-            doc.text("1. Identitas & Profil", 40, y);
-            y += 20;
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(10);
-            
-            const leftCol = 40;
-            const rightCol = 300;
-            
-            const printRow = (label, val, x, yPos) => {
-                doc.setFont("helvetica", "bold");
-                doc.text(label + ":", x, yPos);
-                doc.setFont("helvetica", "normal");
-                doc.text(String(val), x + 90, yPos);
+
+            // --- Helper: hitung usia (Tahun) dari tanggal ISO (YYYY-MM-DD) ---
+            const hitungUsiaTahun = (tglIso) => {
+                if(!tglIso) return null;
+                let p = tglIso.split('-');
+                let ty = parseInt(p[0]), tm = parseInt(p[1]), td = parseInt(p[2]);
+                if(isNaN(ty)) return null;
+                let now = new Date();
+                let age = now.getFullYear() - ty;
+                if(!isNaN(tm) && !isNaN(td)) {
+                    const bulanIni = now.getMonth(), tglIni = now.getDate();
+                    if(bulanIni < (tm - 1) || (bulanIni === (tm - 1) && tglIni < td)) age--;
+                }
+                return age;
             };
 
-            printRow("Nama Lengkap", j.nama_lengkap, leftCol, y);
-            printRow("Status Keluarga", j.status_keluarga, rightCol, y); y += 15;
-            printRow("NIJ", j.nij, leftCol, y);
-            printRow("NIK KTP", j.nomorInduk || "-", rightCol, y); y += 15;
-            printRow("Tgl Lahir", j.tanggal_lahir, leftCol, y);
-            printRow("Kelamin", j.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan', rightCol, y); y += 15;
-            printRow("Pendidikan", j.pendidikan || "-", leftCol, y);
-            printRow("Pekerjaan", j.pekerjaan || "-", rightCol, y); y += 15;
-            printRow("Status Jemaat", j.status_jemaat, leftCol, y);
-            printRow("Pelayanan", j.sudah_berpelayanan === 'Ya' ? (j.bidang_pelayanan || 'Ya') : 'Tidak', rightCol, y); y += 15;
-            printRow("No. Telepon", j.no_telepon || "-", leftCol, y);
-            printRow("Email", j.email || "-", rightCol, y); y += 15;
-            
-            doc.setFont("helvetica", "bold");
-            doc.text("Alamat:", leftCol, y);
-            doc.setFont("helvetica", "normal");
-            let splitAlamat = doc.splitTextToSize(j.alamat || "-", 400);
-            doc.text(splitAlamat, leftCol + 90, y);
-            y += 15 * splitAlamat.length;
-
-            y += 10;
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(12);
-            doc.text("2. Anggota Keluarga (Satu KK)", 40, y);
-            y += 20;
+            const val = (v) => (v === undefined || v === null || v === "") ? "-" : String(v);
 
             let headId = j.kepalaKeluargaId || j.id;
+            let head = dataJemaat.find(item => item.id === headId);
             let familyMembers = getFamilyMembersSorted(headId);
+            let usiaJ = hitungUsiaTahun(j.tanggal_lahir);
+            let usiaPernikahanJ = j.tanggal_pernikahan ? (new Date().getFullYear() - parseInt(j.tanggal_pernikahan.split('-')[0])) : null;
+            if(usiaPernikahanJ !== null && isNaN(usiaPernikahanJ)) usiaPernikahanJ = null;
 
-            doc.setFontSize(10);
-            familyMembers.forEach((m, idx) => {
+            // --- Header & footer berwarna, digambar ulang di setiap halaman ---
+            const drawHeaderFooter = () => {
+                doc.setFillColor(79, 70, 229); // indigo-600
+                doc.rect(0, 0, pageW, 82, 'F');
+                doc.setFillColor(236, 72, 153); // pink-500 accent strip
+                doc.rect(0, 82, pageW, 4, 'F');
+
+                doc.setTextColor(255, 255, 255);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(17);
+                doc.text("LAPORAN DETAIL DATA JEMAAT", marginX, 33);
                 doc.setFont("helvetica", "normal");
-                let txt = `${idx + 1}. ${m.nama_lengkap} (${m.status_keluarga}) - ${m.jenis_kelamin === 'L' ? 'L' : 'P'} - ${m.status_jemaat}`;
-                doc.text(txt, 40, y);
-                y += 15;
-                if (y > 780) { doc.addPage(); y = 40; }
+                doc.setFontSize(9.5);
+                doc.text(churchName.toUpperCase(), marginX, 49);
+                doc.setFontSize(8);
+                doc.setTextColor(224, 231, 255);
+                doc.text(`Dicetak: ${timestamp}`, marginX, 64);
+
+                doc.setTextColor(255, 255, 255);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(12);
+                doc.text(j.nama_lengkap || "-", pageW - marginX, 33, { align: "right" });
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9);
+                doc.setTextColor(224, 231, 255);
+                doc.text(`NIJ: ${val(j.nij)}`, pageW - marginX, 47, { align: "right" });
+                doc.text(`Status: ${val(j.status_jemaat)}`, pageW - marginX, 60, { align: "right" });
+
+                doc.setTextColor(148, 163, 184);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8);
+                doc.text(`Halaman ${doc.internal.getCurrentPageInfo().pageNumber}  •  ${churchName}`, pageW / 2, pageH - 20, { align: "center" });
+                doc.setTextColor(0, 0, 0);
+            };
+
+            const baseTableOpts = {
+                margin: { top: 100, left: marginX, right: marginX, bottom: 40 },
+                styles: { font: "helvetica", fontSize: 9, cellPadding: 5, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5 },
+                didDrawPage: drawHeaderFooter
+            };
+
+            const sectionKV = (startY, title, color, rows) => {
+                doc.autoTable({
+                    ...baseTableOpts,
+                    startY,
+                    head: [[{ content: title, colSpan: 2, styles: { fillColor: color, textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }]],
+                    body: rows,
+                    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 150, textColor: [71, 85, 105] }, 1: { cellWidth: 'auto' } },
+                    theme: 'grid'
+                });
+                return doc.lastAutoTable.finalY + 16;
+            };
+
+            let cursorY = 100;
+
+            // 1. Identitas & Data Pribadi
+            cursorY = sectionKV(cursorY, "1. IDENTITAS & DATA PRIBADI", [79, 70, 229], [
+                ["Nama Lengkap", val(j.nama_lengkap)],
+                ["NIJ", val(j.nij)],
+                ["NIK KTP", val(j.nomorInduk)],
+                ["Status dalam Keluarga", val(j.status_keluarga)],
+                ["Kepala Keluarga (KK)", head ? val(head.nama_lengkap) : "-"],
+                ["Jenis Kelamin", j.jenis_kelamin === 'L' ? 'Laki-laki' : (j.jenis_kelamin === 'P' ? 'Perempuan' : '-')],
+                ["Tanggal Lahir", formatTglIndoRingkas(j.tanggal_lahir)],
+                ["Usia", usiaJ !== null ? `${usiaJ} Tahun` : "-"],
+                ["Pendidikan Terakhir", val(j.pendidikan)],
+                ["Pekerjaan", val(j.pekerjaan)],
+                ["Tanggal Input Data", val(j.createdAt)],
+                ["Terakhir Diperbarui", val(j.updatedAt)]
+            ]);
+
+            // 2. Kontak & Alamat
+            cursorY = sectionKV(cursorY, "2. KONTAK & ALAMAT", [37, 99, 235], [
+                ["No. Telepon / WhatsApp", val(j.no_telepon)],
+                ["Email", val(j.email)],
+                ["Alamat Lengkap", val(j.alamat)]
+            ]);
+
+            // 3. Keanggotaan Gereja & Sakramen
+            cursorY = sectionKV(cursorY, "3. KEANGGOTAAN GEREJA & SAKRAMEN", [5, 150, 105], [
+                ["Status Keanggotaan", val(j.status_jemaat)],
+                ["Jalur Masuk", val(j.jalur_masuk)],
+                ["Tanggal Bergabung", formatTglIndoRingkas(j.tanggal_bergabung)],
+                ["Jenis Baptis", val(j.jenis_baptis)],
+                ["No. Surat Baptis", val(j.no_surat_baptis)],
+                ["Tanggal Baptis", formatTglIndoRingkas(j.tanggal_baptis)],
+                ["Status Sidi", val(j.status_sidi)],
+                ["Status Pelayanan", j.sudah_berpelayanan === 'Ya' ? val(j.bidang_pelayanan || 'Ya') : 'Tidak Berpelayanan']
+            ]);
+
+            // 4. Status Pernikahan
+            cursorY = sectionKV(cursorY, "4. STATUS PERNIKAHAN", [225, 29, 72], [
+                ["Status Pernikahan", val(j.status_pernikahan)],
+                ["Tanggal Pernikahan", j.tanggal_pernikahan ? formatTglIndoRingkas(j.tanggal_pernikahan) : "-"],
+                ["Usia Pernikahan", usiaPernikahanJ !== null ? `${usiaPernikahanJ} Tahun` : "-"]
+            ]);
+
+            // 5. Anggota Keluarga (Satu KK)
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [[
+                    { content: `5. ANGGOTA KELUARGA — SATU KK (${familyMembers.length} Orang)`, colSpan: 5, styles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }
+                ], ["No", "Nama Lengkap", "Status Keluarga", "L/P", "Status Jemaat"]],
+                body: familyMembers.length ? familyMembers.map((m, idx) => [
+                    idx + 1,
+                    m.nama_lengkap + (m.id === j.id ? " (Data Ini)" : ""),
+                    m.status_keluarga,
+                    m.jenis_kelamin === 'L' ? 'L' : 'P',
+                    m.status_jemaat
+                ]) : [[{ content: "Tidak ada anggota keluarga lain.", colSpan: 5, styles: { halign: 'center', textColor: [148, 163, 184] } }]],
+                headStyles: { fillColor: [237, 233, 254], textColor: [76, 29, 149], fontStyle: 'bold', fontSize: 9 },
+                columnStyles: { 0: { cellWidth: 30, halign: 'center' }, 3: { cellWidth: 40, halign: 'center' } },
+                theme: 'grid'
+            });
+            cursorY = doc.lastAutoTable.finalY + 16;
+
+            // 6. Riwayat Kehadiran Ibadah/Acara (sepanjang waktu)
+            let eventsAll = (acaraEventsCache || []).filter(ev => ev.date && ev.eventStatus !== 'Terjadwal' && Array.isArray(ev.attendeeIds) && ev.attendeeIds.includes(j.id));
+            let groupedAll = {};
+            eventsAll.forEach(ev => {
+                const name = ev.eventName || '(Tanpa Nama)';
+                if(!groupedAll[name]) groupedAll[name] = { count: 0, lastDate: ev.date };
+                groupedAll[name].count++;
+                if(ev.date > groupedAll[name].lastDate) groupedAll[name].lastDate = ev.date;
+            });
+            let attendanceRows = Object.entries(groupedAll).sort((a, b) => b[1].count - a[1].count);
+
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [[
+                    { content: `6. RIWAYAT KEHADIRAN IBADAH / ACARA (${eventsAll.length}x, Sepanjang Waktu)`, colSpan: 3, styles: { fillColor: [13, 148, 136], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }
+                ], ["Nama Ibadah / Acara", "Jumlah Hadir", "Terakhir Hadir"]],
+                body: attendanceRows.length ? attendanceRows.map(([name, info]) => [name, `${info.count}x`, formatTglIndoRingkas(info.lastDate)]) :
+                    [[{ content: "Belum ada catatan kehadiran.", colSpan: 3, styles: { halign: 'center', textColor: [148, 163, 184] } }]],
+                headStyles: { fillColor: [204, 251, 241], textColor: [15, 118, 110], fontStyle: 'bold', fontSize: 9 },
+                columnStyles: { 1: { cellWidth: 80, halign: 'center' }, 2: { cellWidth: 110 } },
+                theme: 'grid'
+            });
+            cursorY = doc.lastAutoTable.finalY + 16;
+
+            // 7. Histori Perubahan Data (Log Audit)
+            let personLogs = auditLogs.filter(log => log.NIJ === j.nij).slice().reverse();
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [[
+                    { content: "7. HISTORI PERUBAHAN DATA (LOG AUDIT)", colSpan: 4, styles: { fillColor: [71, 85, 105], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }
+                ], ["Waktu Kejadian", "Aksi", "Detail Catatan", "Perubahan"]],
+                body: personLogs.length ? personLogs.map(log => [
+                    log["Waktu Kejadian"],
+                    log["Aksi"],
+                    log["Detail Catatan"],
+                    (log["Nilai Lama"] !== "-" || log["Nilai Baru"] !== "-") ? `${log["Nilai Lama"]}  →  ${log["Nilai Baru"]}` : "-"
+                ]) : [[{ content: "Belum ada histori perubahan.", colSpan: 4, styles: { halign: 'center', textColor: [148, 163, 184] } }]],
+                headStyles: { fillColor: [226, 232, 240], textColor: [30, 41, 59], fontStyle: 'bold', fontSize: 8.5 },
+                styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5, overflow: 'linebreak' },
+                columnStyles: { 0: { cellWidth: 85 }, 1: { cellWidth: 70 } },
+                theme: 'grid'
             });
 
-            y += 10;
-            if (y > 700) { doc.addPage(); y = 40; }
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(12);
-            doc.text("3. Histori Perubahan (Log Data)", 40, y);
-            y += 20;
-
-            let personLogs = auditLogs.filter(log => log.NIJ === j.nij);
-            doc.setFontSize(9);
-            if(personLogs.length === 0) {
-                doc.setFont("helvetica", "normal");
-                doc.text("Belum ada histori perubahan.", 40, y);
-            } else {
-                personLogs.slice().reverse().forEach((log, idx) => {
-                    doc.setFont("helvetica", "bold");
-                    doc.text(`[${log["Waktu Kejadian"]}] ${log["Aksi"]}`, 40, y); y+= 12;
-                    doc.setFont("helvetica", "normal");
-                    let det = doc.splitTextToSize(`Detail: ${log["Detail Catatan"]}`, 500);
-                    doc.text(det, 50, y); y += 12 * det.length;
-                    
-                    if (log["Nilai Lama"] !== "-" || log["Nilai Baru"] !== "-") {
-                        let oldV = doc.splitTextToSize(`Lama: ${log["Nilai Lama"]}`, 500);
-                        doc.text(oldV, 50, y); y += 12 * oldV.length;
-                        
-                        let newV = doc.splitTextToSize(`Baru: ${log["Nilai Baru"]}`, 500);
-                        doc.text(newV, 50, y); y += 12 * newV.length;
-                    }
-                    y += 5;
-                    if (y > 780) { doc.addPage(); y = 40; }
-                });
-            }
+            // Pastikan header/footer tergambar di halaman terakhir juga
+            drawHeaderFooter();
 
             doc.save(`Detail_Jemaat_${j.nij}.pdf`);
-            writeLog(j.nij, "Export PDF", `Mengekspor detail profil dan log ${j.nama_lengkap} ke PDF`);
+            writeLog(j.nij, "Export PDF", `Mengekspor detail profil lengkap ${j.nama_lengkap} ke PDF`);
             if (typeof showAlert === 'function') showAlert("Berhasil", "File PDF Detail Jemaat berhasil diunduh.", "success");
         }
 
