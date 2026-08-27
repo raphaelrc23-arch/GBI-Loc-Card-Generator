@@ -363,7 +363,10 @@
                     <div id="chartGender" class="space-y-4"></div>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                    <h3 class="text-sm font-bold text-slate-800 flex items-center mb-4 border-b border-slate-100 pb-2"><i class="fa-solid fa-users-rays text-indigo-500 mr-2"></i>Demografi Kategori Usia (Aktif)</h3>
+                    <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                        <h3 class="text-sm font-bold text-slate-800 flex items-center"><i class="fa-solid fa-users-rays text-indigo-500 mr-2"></i>Demografi Kategori Usia (Aktif)</h3>
+                        <span id="labelTotalUsia" class="text-[10px] font-semibold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">Total: 0</span>
+                    </div>
                     <div id="chartUsia" class="space-y-3"></div>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -1804,18 +1807,23 @@
 
                 // =======================================================
                 // PERBAIKAN DEMOGRAFI USIA & CHART
-                // Menghitung murni Tahun Sekarang - Tahun Lahir
-                // TotalUsia hanya ditambahkan jika masuk ke kategori valid
                 // =======================================================
-                let totalUsia = 0;
+                let totalUsiaDihitung = 0;
+                let tidakDiketahui = 0;
                 let demographicCounts = settingsDemographics.map(cat => ({ ...cat, count: 0 }));
 
                 aktifTerkini.forEach(j => {
                     let parsed = parseRobustDate(j.tanggal_lahir);
+                    let foundCategory = false;
+
                     if(parsed) {
-                        let age = today.getFullYear() - parsed.y; // murni Tahun Sekarang - Tahun Lahir
-                        let foundCategory = false;
-                        
+                        // Hitung usia akurat berdasarkan tanggal, bulan, tahun
+                        let age = today.getFullYear() - parsed.y;
+                        const bulanIni = today.getMonth() + 1, tglIni = today.getDate();
+                        if(bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) {
+                            age--;
+                        }
+
                         for(let cat of demographicCounts) {
                             if(age >= cat.minAge && age <= cat.maxAge) {
                                 cat.count++;
@@ -1823,12 +1831,20 @@
                                 break; 
                             }
                         }
-                        
-                        if(foundCategory) {
-                            totalUsia++; 
-                        }
+                    }
+                    
+                    if(foundCategory) {
+                        totalUsiaDihitung++; 
+                    } else {
+                        tidakDiketahui++; // Masuk ke sini jika tidak ada tanggal lahir atau usia di luar rentang
                     }
                 });
+
+                let grandTotal = totalUsiaDihitung + tidakDiketahui;
+                let labelTotalUsiaEl = document.getElementById('labelTotalUsia');
+                if(labelTotalUsiaEl) {
+                    labelTotalUsiaEl.innerText = `Total: ${grandTotal} Jiwa`;
+                }
                 
                 const renderBar = (label, val, total, color) => {
                     let pct = total === 0 ? 0 : Math.round((val/total)*100);
@@ -1838,9 +1854,13 @@
                 let chartHtml = '';
                 demographicCounts.forEach(cat => {
                     if(cat.isVisible) {
-                        chartHtml += renderBar(`${cat.name} (${cat.minAge}-${cat.maxAge} Thn)`, cat.count, totalUsia, cat.color);
+                        chartHtml += renderBar(`${cat.name} (${cat.minAge}-${cat.maxAge} Thn)`, cat.count, grandTotal, cat.color);
                     }
                 });
+
+                if (tidakDiketahui > 0) {
+                    chartHtml += renderBar(`Tidak Diketahui / Luar Rentang`, tidakDiketahui, grandTotal, 'bg-slate-300');
+                }
                 
                 document.getElementById('chartUsia').innerHTML = chartHtml || '<p class="text-xs text-slate-400">Tidak ada kategori demografi yang aktif.</p>';
 
@@ -1883,7 +1903,7 @@
                 lastDashboardStats = {
                     bulanVal, tahunVal, periodeEnd,
                     totalAktif: aktif.length, sdhBaptisAir, nonAktif: nonAktif.length,
-                    yoyPct, yoySelisih, pria, wanita, pctPria, pctWanita, totalUsia,
+                    yoyPct, yoySelisih, pria, wanita, pctPria, pctWanita, totalUsia: grandTotal,
                     topAgeCat, pendidikanStats, pekerjaanStats,
                     ultahBulanIniCount: ultahBulanIni.length, annivBulanIniCount: couples.length
                 };
