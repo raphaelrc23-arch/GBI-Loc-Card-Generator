@@ -13,6 +13,51 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/lora@5/latin-700.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <!-- MULAI DARI SINI: Kode Firebase yang Benar untuk HTML murni -->
+    <script type="module">
+        // Import Firebase App dan layanan yang dibutuhkan dari CDN (link gstatic)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Konfigurasi Firebase Anda (project sama dengan Database Jemaat)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.firebasestorage.app",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N30PER"
+        };
+
+        // Inisialisasi Firebase
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+
+        // Inisialisasi Database (Firestore)
+        const db = getFirestore(app);
+
+        // Daftarkan 'db' ke window agar bisa dipanggil oleh kode Javascript Anda yang lain
+        window.db = db;
+
+        // Referensi ke SATU dokumen utama yang menyimpan seluruh data keuangan
+        // (transaksi, anggaran, aset, pemeliharaan, dsb). Dipisah dari dokumen
+        // Database Jemaat ("gerejaData/main") agar tidak saling menimpa data.
+        // Koleksi: "gerejaData" -> Dokumen: "keuangan"
+        window.financeDocRef = doc(db, "gerejaData", "keuangan");
+
+        // Ekspor fungsi Firestore agar bisa dipanggil dari script biasa (non-module) di bawah
+        window.firestoreSetDoc = setDoc;
+        window.firestoreGetDoc = getDoc;
+
+        // Tandai bahwa Firebase sudah siap dipakai
+        window.firebaseReady = true;
+        console.log("Firebase Database Terhubung! (Keuangan)");
+    </script>
+    <!-- SELESAI: Batas Kode Firebase -->
+
     <style>
     :root{
     --bg:#f4f5fa;--card:#fff;--line:#e6e8f0;--ink:#1b2030;--mut:#6a7183;
@@ -502,7 +547,7 @@
     </div>
     </section>
 
-    <div class="footer-note">© JemaatID — Sistem Keuangan Smart-Rel • Data tersimpan aman di perangkat Anda (localStorage)</div>
+    <div class="footer-note">© JemaatID — Sistem Keuangan Smart-Rel • Data tersimpan aman di server (Firebase) dan bisa diakses dari mana saja</div>
     </div>
     </main>
 
@@ -789,14 +834,58 @@
     return { added, updated };
     }
 
-    function save() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
+    // ========================================================================
+    // PENYIMPANAN DATA: FIREBASE FIRESTORE
+    // Seluruh data keuangan (transaksi, anggaran, aset, pemeliharaan, dsb)
+    // disimpan dalam SATU dokumen Firestore: koleksi "gerejaData", dokumen "keuangan"
+    // (referensi dokumennya sudah disiapkan di window.financeDocRef, lihat <head>)
+    // ========================================================================
+
+    // Menunggu sampai Firebase (modul di <head>) benar-benar siap dipakai
+    function waitForFirebaseReady() {
+    return new Promise((resolve) => {
+        if (window.firebaseReady && window.financeDocRef) return resolve();
+        const check = setInterval(() => {
+        if (window.firebaseReady && window.financeDocRef) {
+            clearInterval(check);
+            resolve();
+        }
+        }, 50);
+    });
     }
-    function load() {
+
+    // Menyimpan SELURUH state keuangan ke Firestore
+    async function saveToFirebase() {
     try {
-        const s = localStorage.getItem(LS_KEY);
-        if (s) state = Object.assign(state, JSON.parse(s));
-    } catch (e) {}
+        await waitForFirebaseReady();
+        await window.firestoreSetDoc(window.financeDocRef, Object.assign({}, state, { lastUpdated: new Date().toISOString() }));
+    } catch (e) {
+        console.error('Gagal menyimpan data ke Firebase:', e);
+        if (typeof toast === 'function') toast('Gagal sinkronisasi ke server', 'bad');
+    }
+    }
+
+    // Dipertahankan dengan nama fungsi lama (save/load) agar seluruh kode lain
+    // yang sudah memanggil save()/load() tetap berjalan tanpa diubah.
+    function save() {
+    saveToFirebase();
+    }
+
+    // Memuat SELURUH state keuangan dari Firestore
+    async function load() {
+    try {
+        await waitForFirebaseReady();
+        const snap = await window.firestoreGetDoc(window.financeDocRef);
+        if (snap.exists()) {
+        state = Object.assign(state, snap.data());
+        } else {
+        // Dokumen belum ada (pertama kali dipakai) -> buat dokumen awal
+        await saveToFirebase();
+        }
+    } catch (e) {
+        console.error('Gagal memuat data dari Firebase:', e);
+        if (typeof toast === 'function') toast('Gagal memuat data dari server', 'bad');
+    }
     state.paramUmur = Object.assign({}, UMUR_DEFAULT, state.paramUmur || {});
     state.signatures = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_SIGNATURES)), state.signatures || {});
     // memastikan setiap key array valid dan terstruktur benar jika ada load lama
@@ -1903,7 +1992,6 @@ function renderLaporan() {
         case 'wipe-all-run':
         if (document.getElementById('wipeAllInput')?.value.trim().toUpperCase() === 'HAPUS') {
             state = { transaksi: [], anggaran: [], aset: [], pemeliharaan: [], modalAwal: 0, paramUmur: Object.assign({}, UMUR_DEFAULT), modeAplikasi: 'full', namaGereja: DEFAULT_NAMA_GEREJA, coa: genDefaultCOA(), signatures: JSON.parse(JSON.stringify(DEFAULT_SIGNATURES)) };
-            try { localStorage.removeItem(LS_KEY); } catch (e) {}
             save(); applyChurchName(); renderAll(); closeOv('ovWipeAll'); toast('Seluruh data sistem telah dihapus', 'good');
         } else toast('Ketik HAPUS untuk mengonfirmasi', 'bad');
         break;
@@ -2181,7 +2269,7 @@ function renderLaporan() {
     renderDashboard(); renderBukuKas(); renderAnggaran(); renderAset(); renderFS(); renderLaporan(); renderPengaturan(); renderSignSettings(); renderCoaSettings();
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
     try {
         if (typeof Chart !== 'undefined') {
         Chart.defaults.font.family = "'Plus Jakarta Sans',system-ui,sans-serif";
@@ -2193,7 +2281,7 @@ function renderLaporan() {
         for (let y = now.getFullYear() - 6; y <= now.getFullYear() + 1; y++) yrs.push([y, y]);
         fillSel('fsTahun', yrs, ui.fsTahun);
         fillSel('lapTahun', yrs, ui.lapTahun);
-        load();
+        await load();
         renderAll();
     } catch (err) {
         console.error('Initialization error:', err);
