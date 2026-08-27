@@ -151,24 +151,35 @@
 </head>
 <body class="min-h-screen flex flex-col">
 
-    <!-- Navbar -->
-    <nav class="bg-[#18181b] text-white shadow-lg py-4 px-6 flex justify-between items-center border-b-4 border-[#d4af37]">
-        <div class="flex items-center gap-3">
-            <i class="fa-solid fa-id-card text-2xl text-[#d4af37]"></i>
-            <div>
-                <h1 class="text-xl font-bold tracking-wide leading-tight text-[#d4af37]">E-Card Generator</h1>
-                <p class="text-xs text-gray-300">GBI Light of the City</p>
+    <!-- Header / Navbar -->
+    <header class="bg-indigo-700 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-[1400px] mx-auto px-6 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <a href="homepage.html" title="Kembali ke Homepage" class="bg-white/10 hover:bg-white/20 text-white text-xs w-10 h-10 rounded-lg border border-indigo-500 transition flex items-center justify-center shadow-sm">
+                    <i class="fa-solid fa-house text-lg"></i>
+                </a>
+                <div class="bg-white/10 p-2 rounded-lg flex items-center justify-center w-10 h-10">
+                    <i class="fa-solid fa-id-card text-xl text-indigo-100"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <h1 class="text-sm md:text-lg font-bold tracking-wide truncate">GBI Light of the City</h1>
+                    </div>
+                    <p class="text-[10px] md:text-xs text-indigo-200">Sistem Cetak KTJ</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button id="btn-export-png" class="bg-white/10 hover:bg-white/20 text-white text-xs px-3 py-2 rounded-lg border border-indigo-500 transition flex items-center space-x-1 shadow-sm">
+                    <i class="fa-solid fa-image"></i>
+                    <span class="hidden sm:inline">Download JPG</span>
+                </button>
+                <button id="btn-export-pdf" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-3 py-2 rounded-lg transition flex items-center space-x-1 shadow-sm">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span class="hidden sm:inline">Download PDF</span>
+                </button>
             </div>
         </div>
-        <div class="flex items-center gap-3">
-            <button id="btn-export-png" class="bg-white border-2 border-[#d4af37] text-[#18181b] hover:bg-yellow-50 px-5 py-2.5 rounded-lg text-sm font-semibold shadow-lg flex items-center transition-all duration-300 transform hover:scale-105">
-                <i class="fa-solid fa-image mr-2"></i> Download JPG
-            </button>
-            <button id="btn-export-pdf" class="bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white px-5 py-2.5 rounded-lg text-sm font-semibold shadow-lg flex items-center transition-all duration-300 transform hover:scale-105">
-                <i class="fa-solid fa-file-pdf mr-2"></i> Download PDF
-            </button>
-        </div>
-    </nav>
+    </header>
 
     <!-- Banner status pengambilan data otomatis dari Database Jemaat (Firebase) -->
     <div id="auto-load-banner" class="hidden max-w-[1400px] mx-auto w-full px-6 pt-4">
