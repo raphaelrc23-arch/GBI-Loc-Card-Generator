@@ -20,7 +20,7 @@
     <!-- MULAI: Kode Firebase (sama dengan dbJemaat.html) agar bisa membaca data jemaat -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
@@ -35,9 +35,13 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Dokumen utama yang sama dipakai dbJemaat.html: koleksi "gerejaData", dokumen "main"
+        // Dokumen utama yang sama dipakai dbJemaat.html
         window.mainDocRef = doc(db, "gerejaData", "main");
+        // Sub-collection baru tempat data jemaat dipecah (chunked)
+        window.jemaatChunksColRef = collection(db, "gerejaData", "main", "jemaatChunks");
+        
         window.firestoreGetDoc = getDoc;
+        window.firestoreGetDocs = getDocs;
         window.firebaseReady = true;
     </script>
     <!-- SELESAI: Kode Firebase -->
@@ -631,9 +635,9 @@
             // ==================================================================
             function waitForFirebaseReady() {
                 return new Promise((resolve) => {
-                    if (window.firebaseReady && window.mainDocRef) return resolve();
+                    if (window.firebaseReady && window.mainDocRef && window.jemaatChunksColRef) return resolve();
                     const check = setInterval(() => {
-                        if (window.firebaseReady && window.mainDocRef) {
+                        if (window.firebaseReady && window.mainDocRef && window.jemaatChunksColRef) {
                             clearInterval(check);
                             resolve();
                         }
@@ -669,14 +673,33 @@
 
                 try {
                     await waitForFirebaseReady();
-                    const snap = await window.firestoreGetDoc(window.mainDocRef);
-                    if (!snap.exists()) {
-                        showAutoLoadBanner('Data belum tersedia di Firebase. Isi form secara manual.', 'error');
-                        return;
+                    
+                    let list = [];
+
+                    // 1. Baca dari sub-collection yang terpecah (sistem baru yang tidak dibatasi 1MB)
+                    const chunkSnap = await window.firestoreGetDocs(window.jemaatChunksColRef);
+                    if (!chunkSnap.empty) {
+                        const chunkDocs = chunkSnap.docs
+                            .map((d) => {
+                                const data = d.data() || {};
+                                const idx = typeof data.index === 'number' ? data.index : parseInt(d.id.replace('chunk_', ''), 10) || 0;
+                                return { index: idx, records: Array.isArray(data.records) ? data.records : [] };
+                            })
+                            .sort((a, b) => a.index - b.index);
+
+                        chunkDocs.forEach((c) => { list = list.concat(c.records); });
                     }
-                    const data = snap.data();
-                    const list = Array.isArray(data.dataJemaat) ? data.dataJemaat : [];
+
+                    // 2. Fallback baca format lama langsung dari dokumen main jika chunk kosong
+                    if (list.length === 0) {
+                        const snap = await window.firestoreGetDoc(window.mainDocRef);
+                        if (snap.exists() && snap.data().dataJemaat) {
+                            list = Array.isArray(snap.data().dataJemaat) ? snap.data().dataJemaat : [];
+                        }
+                    }
+
                     const j = list.find(item => item.id === jemaatId);
+                    
                     if (!j) {
                         showAutoLoadBanner('Data jemaat dengan ID tersebut tidak ditemukan. Isi form secara manual.', 'error');
                         return;
