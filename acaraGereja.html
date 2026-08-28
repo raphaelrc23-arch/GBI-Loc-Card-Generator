@@ -783,6 +783,19 @@
                         </div>
                     </div>
 
+                    <!-- ====== BARU: Dropdown Komisi Terkait ====== -->
+                    <div class="mb-4 bg-indigo-50/60 p-4 rounded-xl border border-indigo-200">
+                        <label class="block text-sm font-bold text-indigo-900 mb-1">
+                            <i class="fa-solid fa-people-group mr-1.5"></i> Komisi / Departemen Terkait
+                        </label>
+                        <p class="text-xs text-indigo-700 mb-2">Pilih komisi agar daftar checklist otomatis menampilkan jemaat dari komisi tersebut. Kehadiran di luar komisi dicatat sebagai Tamu.</p>
+                        <select id="form-komisi-id" class="w-full px-3 py-2 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white shadow-sm cursor-pointer">
+                            <option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>
+                        </select>
+                        <p id="komisi-info-text" class="text-[11px] text-indigo-600 mt-1.5 italic hidden">Memuat daftar komisi dari Database Jemaat...</p>
+                    </div>
+                    <!-- ====== AKHIR BARU ====== -->
+
                     <div class="mb-5 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
                         <label class="block text-sm font-bold text-amber-900 mb-2">Status Pelaksanaan</label>
                         <select id="form-event-status" onchange="toggleFinanceAttendanceFields()" class="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm bg-white shadow-sm cursor-pointer">
@@ -861,6 +874,7 @@
                                 <button type="button" onclick="loadJemaatMasterData()" title="Muat ulang data jemaat" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-sm transition cursor-pointer flex-shrink-0"><i class="fa-solid fa-rotate"></i></button>
                             </div>
                         </div>
+                        <p id="checklist-filter-info" class="text-[11px] text-blue-700 mb-2 hidden"><i class="fa-solid fa-filter mr-1"></i> Menampilkan jemaat yang termasuk dalam komisi terpilih. Jika tidak ada komisi, semua jemaat aktif akan tampil.</p>
                         <div id="checklist-jemaat-container" class="max-h-56 overflow-y-auto space-y-0.5 bg-white rounded-lg border border-blue-100 p-2">
                             <!-- Diisi via JS -->
                         </div>
@@ -1030,6 +1044,7 @@
         // dan deteksi otomatis "Jemaat Perlu Dikunjungi"
         // ========================================================================
         let jemaatMasterData = [];
+        let komisiMasterData = []; // <-- BARU: daftar komisi dari dbJemaat
         let selectedAttendeeIds = new Set();
         const STORAGE_KEY_VISIT_THRESHOLD = 'jemaatid_visit_threshold_v1';
 
@@ -1052,14 +1067,45 @@
                 await waitForFirebaseJemaatReady();
                 if (!window.jemaatDocRef) throw new Error('Firebase belum siap');
                 const snap = await window.firestoreGetDocJemaat(window.jemaatDocRef);
-                jemaatMasterData = (snap.exists() && Array.isArray(snap.data().dataJemaat)) ? snap.data().dataJemaat : [];
+                const data = snap.exists() ? snap.data() : {};
+                jemaatMasterData = Array.isArray(data.dataJemaat) ? data.dataJemaat : [];
+                // Ambil settings.komisi dari dbJemaat
+                if (data.settings && Array.isArray(data.settings.komisi)) {
+                    komisiMasterData = data.settings.komisi;
+                } else {
+                    komisiMasterData = [];
+                }
+                // Isi dropdown komisi di form
+                populateKomisiDropdown();
+                renderAttendanceChecklist();
+                renderPastoralVisitList();
+                if (note) note.innerText = `Data jemaat dimuat (${jemaatMasterData.length} entri).`;
             } catch (e) {
                 console.error('Gagal memuat Database Jemaat:', e);
                 jemaatMasterData = [];
+                komisiMasterData = [];
                 if (note) note.innerText = 'Gagal memuat data jemaat. Periksa koneksi internet lalu klik "Muat Ulang Data Jemaat".';
             }
-            renderAttendanceChecklist();
-            renderPastoralVisitList();
+        }
+
+        function populateKomisiDropdown() {
+            const select = document.getElementById('form-komisi-id');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
+            if (komisiMasterData.length === 0) {
+                select.innerHTML += '<option value="" disabled>-- Tidak ada komisi di Database Jemaat --</option>';
+            } else {
+                komisiMasterData.forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.name;
+                    opt.text = k.name;
+                    select.appendChild(opt);
+                });
+            }
+            if (currentVal) select.value = currentVal;
+            const infoText = document.getElementById('komisi-info-text');
+            if (infoText) infoText.classList.add('hidden');
         }
 
         function formatNoWhatsAppAcara(no) {
@@ -1073,6 +1119,67 @@
 
         function getActiveJemaatList() {
             return (jemaatMasterData || []).filter(j => j.status_jemaat === 'Aktif');
+        }
+
+        function getJemaatByKomisi(komisiName) {
+            if (!komisiName) return getActiveJemaatList();
+            const komisi = komisiMasterData.find(k => k.name === komisiName);
+            if (!komisi) return getActiveJemaatList();
+            // Filter jemaat yang memenuhi kriteria komisi (gunakan logika dari dbJemaat)
+            return getActiveJemaatList().filter(j => {
+                let age = hitungUsiaSaatIni(j.tanggal_lahir);
+                if (age === null || age < komisi.minAge || age > komisi.maxAge) return false;
+                if (komisi.gender && komisi.gender !== "Semua" && j.jenis_kelamin !== komisi.gender) return false;
+                const sudah = j.sudah_berpelayanan === "Ya";
+                if (komisi.pelayananSyarat === "Harus Berpelayanan" && !sudah) return false;
+                if (komisi.pelayananSyarat === "Tidak Berpelayanan" && sudah) return false;
+                const punyaBidangFilter = (komisi.bidangPelayanan && komisi.bidangPelayanan.length > 0);
+                if (punyaBidangFilter) {
+                    if (!sudah) return false;
+                    let bidangJemaat = (j.bidang_pelayanan || "").trim();
+                    if (!komisi.bidangPelayanan.includes(bidangJemaat)) return false;
+                }
+                if (komisi.pekerjaan && komisi.pekerjaan !== "Semua" && j.pekerjaan !== komisi.pekerjaan) return false;
+                // status pernikahan, baptis, sidi (jika ada di komisi)
+                if (komisi.statusPernikahan && komisi.statusPernikahan !== "Semua" && j.status_pernikahan !== komisi.statusPernikahan) return false;
+                if (komisi.baptisSyarat === "Sudah Baptis" && j.jenis_baptis === "Belum Baptis") return false;
+                if (komisi.baptisSyarat === "Belum Baptis" && j.jenis_baptis !== "Belum Baptis") return false;
+                if (komisi.sidiSyarat === "Sudah Sidi" && j.status_sidi !== "Sudah Sidi") return false;
+                if (komisi.sidiSyarat === "Belum Sidi" && j.status_sidi !== "Belum Sidi") return false;
+                return true;
+            });
+        }
+
+        function hitungUsiaSaatIni(tanggalLahirStr) {
+            let parsed = parseRobustDate(tanggalLahirStr);
+            if (!parsed) return null;
+            const today = new Date();
+            let age = today.getFullYear() - parsed.y;
+            const bulanIni = today.getMonth() + 1, tglIni = today.getDate();
+            if (bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) age--;
+            return age;
+        }
+
+        function parseRobustDate(tglStr) {
+            if (!tglStr) return null;
+            tglStr = String(tglStr).trim();
+            if (/^\d{4,5}$/.test(tglStr)) {
+                let serial = parseInt(tglStr);
+                if (serial > 10000 && serial < 90000) {
+                    let d = new Date(Math.round((serial - 25569) * 864e5));
+                    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+                }
+            }
+            let matchYMD = tglStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if (matchYMD) return { y: parseInt(matchYMD[1]), m: parseInt(matchYMD[2]), d: parseInt(matchYMD[3]) };
+            let matchDMY = tglStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (matchDMY) return { y: parseInt(matchDMY[3]), m: parseInt(matchDMY[2]), d: parseInt(matchDMY[1]) };
+            let strEn = tglStr.toLowerCase()
+                .replace(/januari/g, 'jan').replace(/februari/g, 'feb').replace(/maret/g, 'mar')
+                .replace(/agustus/g, 'aug').replace(/oktober/g, 'oct').replace(/desember/g, 'dec');
+            let d = new Date(strEn);
+            if (!isNaN(d.getTime())) return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+            return null;
         }
 
         // ---- Checklist Absensi (dipakai di Modal Form Ibadah) ----
@@ -1094,14 +1201,32 @@
         function renderAttendanceChecklist() {
             const container = document.getElementById('checklist-jemaat-container');
             const emptyState = document.getElementById('checklist-jemaat-empty');
+            const filterInfo = document.getElementById('checklist-filter-info');
             if (!container) return;
             const search = (document.getElementById('checklist-search')?.value || '').toLowerCase().trim();
-            const activeJemaat = getActiveJemaatList();
+            const komisiId = document.getElementById('form-komisi-id')?.value || '';
+            
+            // Filter jemaat berdasarkan komisi
+            let activeJemaat = getJemaatByKomisi(komisiId);
+            
+            if (komisiId) {
+                if (filterInfo) filterInfo.classList.remove('hidden');
+                const komisiName = komisiMasterData.find(k => k.name === komisiId)?.name || komisiId;
+                filterInfo.innerHTML = `<i class="fa-solid fa-filter mr-1"></i> Menampilkan jemaat dari komisi <b>${komisiName}</b> (${activeJemaat.length} orang).`;
+            } else {
+                if (filterInfo) filterInfo.classList.add('hidden');
+            }
+
             const filtered = search ? activeJemaat.filter(j => (j.nama_lengkap || '').toLowerCase().includes(search) || (j.nij || '').toLowerCase().includes(search)) : activeJemaat;
 
             if (activeJemaat.length === 0) {
                 container.innerHTML = '';
                 emptyState?.classList.remove('hidden');
+                if (komisiId) {
+                    emptyState.innerHTML = 'Tidak ada jemaat aktif yang masuk dalam komisi ini. Periksa kriteria komisi di dbJemaat.';
+                } else {
+                    emptyState.innerHTML = 'Data jemaat belum termuat / kosong. Pastikan Database Jemaat sudah diisi lalu klik tombol muat ulang.';
+                }
             } else {
                 emptyState?.classList.add('hidden');
                 container.innerHTML = filtered.map(j => `
@@ -1625,7 +1750,8 @@
                         ibadahType: 'reguler', eventStatus: 'Terjadwal', eventName: tpl.name, location: tpl.defaultLocation || '',
                         date: item.date, time: tpl.defaultTime || '', attendance: 0, newVisitors: 0, income: 0, expense: 0,
                         preacher: '', sermonTheme: '', wl: '', musicians: '', otherServers: '', notes: '', templateId: tpl.id,
-                        isMultiDay: false, endDate: '', sessions: []
+                        isMultiDay: false, endDate: '', sessions: [],
+                        komisiId: '' // <-- baru
                     };
                     if (existingIdx !== -1) { eventsData[existingIdx] = newEvent; replaced++; } else { eventsData.push(newEvent); added++; }
                 });
@@ -1875,6 +2001,7 @@
                 document.getElementById('form-id').value = ev.id; document.getElementById('form-date').value = ev.date;
                 if (ev.time) document.getElementById('form-time').value = ev.time;
                 if (ev.location) document.getElementById('form-location').value = ev.location;
+                if (ev.komisiId) document.getElementById('form-komisi-id').value = ev.komisiId;
                 lockScheduleFields(true);
                 document.getElementById('modal-title').innerText = 'Lengkapi Laporan Ibadah (Terjadwal)'; checkBackdateStatus();
             }
@@ -1913,6 +2040,10 @@
             const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = '';
             const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
             toggleAttendanceMode();
+
+            // Reset komisi dropdown
+            document.getElementById('form-komisi-id').value = '';
+            populateKomisiDropdown();
 
             const radio = document.querySelector(`input[name="form-type"][value="${defaultType}"]`);
             if(radio) { radio.checked = true; toggleFormType(); }
@@ -1998,7 +2129,8 @@
                 notes: document.getElementById('form-notes').value,
                 isMultiDay: isMultiDay,
                 endDate: endDate,
-                sessions: sessions
+                sessions: sessions,
+                komisiId: document.getElementById('form-komisi-id').value || '' // <-- BARU
             };
 
             if (id) {
@@ -2048,6 +2180,13 @@
                     }
                 }
 
+                // Tampilkan komisi jika ada
+                let komisiDisplay = '';
+                if (item.komisiId) {
+                    const komisi = komisiMasterData.find(k => k.name === item.komisiId);
+                    komisiDisplay = `<div class="text-[10px] text-indigo-600 mt-1"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : item.komisiId}</div>`;
+                }
+
                 const tr = document.createElement('tr');
                 tr.className = `transition group ${isScheduled ? 'bg-amber-50/30 hover:bg-amber-50' : 'hover:bg-blue-50/50'}`;
                 tr.innerHTML = `
@@ -2055,6 +2194,7 @@
                         <div class="font-medium text-gray-800">${dateDisplay}</div>
                         <div class="text-xs text-gray-500 mt-1">${timeDisplay}</div>
                         <div class="text-xs text-gray-500 mt-1 truncate max-w-[150px]" title="${item.location || '-'}"><i class="fa-solid fa-location-dot mr-1 w-3 text-center"></i> ${item.location || '-'}</div>
+                        ${komisiDisplay}
                         ${isScheduled ? `<span class="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200"><i class="fa-regular fa-calendar-clock mr-1"></i> Program (Terjadwal)</span>` : `<span class="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-check-double mr-1"></i> Selesai</span>`}
                     </td>
                     <td class="p-4 align-top">
@@ -2116,6 +2256,14 @@
                 const el = document.getElementById(`form-${k.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
                 if(el) el.value = data[k] || '';
             });
+
+            // Set komisi
+            if (data.komisiId) {
+                document.getElementById('form-komisi-id').value = data.komisiId;
+            } else {
+                document.getElementById('form-komisi-id').value = '';
+            }
+            populateKomisiDropdown();
 
             selectedAttendeeIds = new Set(Array.isArray(data.attendeeIds) ? data.attendeeIds : []);
             const attMode = data.attendanceMode === 'checklist' ? 'checklist' : 'manual';
@@ -2430,6 +2578,7 @@
                 let notesExport = item.notes || '';
                 let dateExport = item.date;
                 let timeExport = item.time || '';
+                let komisiExport = item.komisiId || '';
                 
                 if (item.isMultiDay) {
                     dateExport = `${item.date} s/d ${item.endDate}`;
@@ -2447,7 +2596,8 @@
                     'Nama Acara': item.eventName, 'Lokasi': item.location || '', 'Tema Khotbah': themeExport,
                     'Total Kehadiran': parseInt(item.attendance) || 0, 'Jemaat Baru': parseInt(item.newVisitors) || 0,
                     'Pengkhotbah': preacherExport, 'Worship Leader': item.wl || '', 'Pemusik': item.musicians || '',
-                    'Pelayan Lainnya': item.otherServers || '', 'Catatan': notesExport
+                    'Pelayan Lainnya': item.otherServers || '', 'Catatan': notesExport,
+                    'Komisi / Departemen': komisiExport
                 };
             });
             const ws1 = XLSX.utils.json_to_sheet(sheet1Data); XLSX.utils.book_append_sheet(workbook, ws1, "Laporan Ibadah");
@@ -2470,8 +2620,8 @@
             ]); XLSX.utils.book_append_sheet(workbook, ws0, "Master Ibadah Reguler");
 
             const ws1 = XLSX.utils.aoa_to_sheet([
-                ['ID (Jangan Diubah)', 'Kategori', 'Status', 'Tanggal', 'Waktu', 'Nama Acara', 'Lokasi', 'Tema Khotbah', 'Total Kehadiran', 'Jemaat Baru', 'Pengkhotbah', 'Worship Leader', 'Pemusik', 'Pelayan Lainnya', 'Catatan'],
-                ['', 'Spesial', 'Terjadwal', '2025-01-01', '09:00', 'Contoh Acara', 'Gedung Utama', 'Contoh Tema', 100, 2, 'Nama Pengkhotbah', 'Nama WL', 'Nama Pemusik', '', 'Contoh baris, hapus']
+                ['ID (Jangan Diubah)', 'Kategori', 'Status', 'Tanggal', 'Waktu', 'Nama Acara', 'Lokasi', 'Tema Khotbah', 'Total Kehadiran', 'Jemaat Baru', 'Pengkhotbah', 'Worship Leader', 'Pemusik', 'Pelayan Lainnya', 'Catatan', 'Komisi / Departemen'],
+                ['', 'Spesial', 'Terjadwal', '2025-01-01', '09:00', 'Contoh Acara', 'Gedung Utama', 'Contoh Tema', 100, 2, 'Nama Pengkhotbah', 'Nama WL', 'Nama Pemusik', '', 'Contoh baris, hapus', 'Contoh Komisi']
             ]); XLSX.utils.book_append_sheet(workbook, ws1, "Laporan Ibadah");
 
             const ws2 = XLSX.utils.aoa_to_sheet([
@@ -2534,7 +2684,8 @@
                                     time: row['Waktu']?.toString() || '', attendance: row['Total Kehadiran'] || 0, newVisitors: row['Jemaat Baru'] || 0,
                                     income: row['Penerimaan (Rp)'] || 0, expense: row['Pengeluaran (Rp)'] || 0, preacher: row['Pengkhotbah'] || '',
                                     sermonTheme: row['Tema Khotbah'] || '', wl: row['Worship Leader'] || '', musicians: row['Pemusik'] || '',
-                                    otherServers: row['Pelayan Lainnya'] || '', notes: row['Catatan'] || '', isMultiDay: false, endDate: '', sessions: []
+                                    otherServers: row['Pelayan Lainnya'] || '', notes: row['Catatan'] || '', isMultiDay: false, endDate: '', sessions: [],
+                                    komisiId: row['Komisi / Departemen'] || ''
                                 };
                                 const idx = eventsData.findIndex(d => d.id === id); if (idx !== -1) eventsData[idx] = item; else eventsData.push(item); importedEvents++;
                             }
@@ -2583,8 +2734,8 @@
             }
             yPos += 5; doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("2. Rincian Ibadah", 14, yPos); yPos += 6;
 
-            const tCols = ["Tanggal", "Kategori", "Acara", "Hadir", "Pelayan Utama"];
-            const tRows = fEvents.map(i => [ i.date, i.ibadahType === 'reguler' ? 'Reguler' : 'Spesial', i.eventName, `${i.attendance||0}`, `K: ${i.preacher||'-'}\nWL: ${i.wl||'-'}` ]);
+            const tCols = ["Tanggal", "Kategori", "Acara", "Hadir", "Pelayan Utama", "Komisi"];
+            const tRows = fEvents.map(i => [ i.date, i.ibadahType === 'reguler' ? 'Reguler' : 'Spesial', i.eventName, `${i.attendance||0}`, `K: ${i.preacher||'-'}\nWL: ${i.wl||'-'}`, i.komisiId || '-' ]);
             doc.autoTable({ startY: yPos, head: [tCols], body: tRows, theme: 'striped', headStyles: { fillColor: [30, 58, 138] }, styles: { fontSize: 8 } });
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
@@ -2789,6 +2940,12 @@
                         } else {
                             statsHtml = `<div class="mt-1.5"><span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold"><i class="fa-solid fa-clock mr-1"></i>Terjadwal (Akan Datang)</span></div>`;
                         }
+
+                        let komisiHtml = '';
+                        if (ev.komisiId) {
+                            const komisi = komisiMasterData.find(k => k.name === ev.komisiId);
+                            komisiHtml = `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : ev.komisiId}</div>`;
+                        }
                         
                         return `
                         <div onclick="editFromCalendar('event', '${ev.id}')" class="text-left text-sm border border-blue-100 bg-white hover:bg-blue-50 hover:border-blue-300 rounded-xl p-3 mb-2 cursor-pointer transition shadow-sm group">
@@ -2796,6 +2953,7 @@
                                 <div>
                                     <b class="text-gray-800 group-hover:text-blue-700 transition">${ev.eventName}</b> ${spanLabel}
                                     <div class="text-xs text-gray-500 mt-0.5">${ev.isMultiDay ? 'Acara Multi-Hari' : (ev.time ? ev.time + ' &middot; ' : '')}${ev.location || 'Lokasi Belum Diatur'}</div>
+                                    ${komisiHtml}
                                 </div>
                                 <div class="text-blue-400 opacity-0 group-hover:opacity-100 transition"><i class="fa-solid fa-pen-to-square"></i></div>
                             </div>
@@ -3111,12 +3269,3 @@
     </script>
 </body>
 </html>
-
-
-<!--
-  ========================================================================
-  Designed and Developed by:
-  Raphael Christopher S.SI., M.B.A., M.Th. & Agatha Octafeni S.M., M.Pd.
-  Est. 2026 | All rights and materials reserved by the creators.
-  ========================================================================
--->
