@@ -1188,6 +1188,7 @@
             return now.toLocaleDateString('id-ID') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
         }
 
+        // --- STREAMING_CHUNK:Setting Log functions... ---
         // --- LOG dengan format terstruktur ---
         function writeLog(nij, aksi, detail, oldVal = "-", newVal = "-") {
             const timestamp = getTimestampString();
@@ -1341,6 +1342,7 @@
             return Math.round((nextEvent - today) / (1000 * 60 * 60 * 24));
         }
 
+        // --- STREAMING_CHUNK:Demografi and Komisi Settings... ---
         // --- Demografi Settings ---
         function renderDemographicsSettings() {
             let tbody = document.getElementById('tableDemographicsBody');
@@ -1401,6 +1403,23 @@
             { val: 'bg-pink-400', label: 'Pink' }, { val: 'bg-slate-400', label: 'Abu-abu' }
         ];
 
+        function handleKomisiSyaratChange(index) {
+            const select = document.getElementById(`komisi_syarat_${index}`);
+            const wrapper = document.getElementById(`komisi_bidang_wrapper_${index}`);
+            if (select && wrapper) {
+                if (select.value === "Harus Berpelayanan") {
+                    wrapper.classList.remove('hidden');
+                } else {
+                    wrapper.classList.add('hidden');
+                    // Reset pilihan saat di hidden agar tidak tersimpan status yang membingungkan
+                    KOMISI_BIDANG_OPTIONS.forEach((opt, bIdx) => {
+                        let cb = document.getElementById(`komisi_bidang_${index}_${bIdx}`);
+                        if (cb) cb.checked = false;
+                    });
+                }
+            }
+        }
+
         function renderKomisiSettings() {
             let container = document.getElementById('listKomisiSettings');
             if (!container) return;
@@ -1448,14 +1467,14 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div>
                                 <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Status Pelayanan</label>
-                                <select id="komisi_syarat_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${syaratSelectHtml(k.pelayananSyarat)}</select>
+                                <select id="komisi_syarat_${index}" onchange="handleKomisiSyaratChange(${index})" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${syaratSelectHtml(k.pelayananSyarat)}</select>
                             </div>
                             <div>
                                 <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Pekerjaan</label>
                                 <select id="komisi_pekerjaan_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${pekerjaanSelectHtml(k.pekerjaan || "Semua")}</select>
                             </div>
                         </div>
-                        <div>
+                        <div id="komisi_bidang_wrapper_${index}" class="${k.pelayananSyarat === 'Harus Berpelayanan' ? '' : 'hidden'} mt-1">
                             <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Bidang Pelayanan Spesifik (opsional — kosongkan jika semua bidang boleh)</label>
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-y-1.5 gap-x-2 bg-white border border-slate-200 rounded p-2.5">${bidangChecklistHtml}</div>
                         </div>
@@ -1572,6 +1591,7 @@
             }
         }
 
+        // --- STREAMING_CHUNK:Setting Window Onload and core rendering... ---
         // --- ON LOAD ---
         window.onload = async function() {
             document.getElementById('nav-church-name').innerText = 'Memuat data...';
@@ -1920,6 +1940,7 @@
             }
         }
 
+        // --- STREAMING_CHUNK:Preparing AI Suggestions and Charting functions... ---
         // --- AI SUGGESTIONS ---
         function generateAISuggestions(s) {
             let saran = [];
@@ -2023,6 +2044,7 @@
             `).join('');
         }
 
+        // --- STREAMING_CHUNK:Loading PDF Export functions... ---
         // --- EXPORT PDF DASHBOARD ---
         function exportPDFSummary() {
             if (!lastDashboardStats) renderDashboard();
@@ -2388,6 +2410,7 @@
             }
         }
 
+        // --- STREAMING_CHUNK:Finalizing UI interactions and table renders... ---
         // --- TABEL DATA JEMAAT ---
         let searchDebounceTimer = null;
 
@@ -3311,65 +3334,124 @@
                     let pesan = String(row["Isi Pesan"] || "").trim();
                     if (pesan) result.ucapanAnniv = pesan;
                 } else if (tipe === TIPE_DEMOGRAFI) {
-                    let name = String(row["Nama Kategori"] || "").trim();
-                    if (!name) return;
-                    let min = parseInt(row["Min Umur"]);
-                    let max = parseInt(row["Max Umur"]);
-                    if (isNaN(min)) min = 0;
-                    if (isNaN(max)) max = 99;
-                    let tampil = String(row["Tampil di Dashboard"] || "").trim().toLowerCase();
-                    let isVisible = !(tampil === "tidak" || tampil === "no" || tampil === "false" || tampil === "0");
-                    let color = String(row["Warna Chart"] || "").trim() || "bg-slate-400";
-                    demographics.push({ name: name, minAge: min, maxAge: max, isVisible: isVisible, color: color });
+                    demographics.push({
+                        name: String(row["Nama Kategori"] || "Kategori"),
+                        minAge: parseInt(row["Min Umur"]) || 0,
+                        maxAge: parseInt(row["Max Umur"]) || 99,
+                        isVisible: String(row["Tampil di Dashboard"]).trim().toLowerCase() === "ya",
+                        color: String(row["Warna Chart"] || "bg-slate-400")
+                    });
                 } else if (tipe === TIPE_KOMISI) {
-                    let name = String(row["Nama Kategori"] || "").trim();
-                    if (!name) return;
-                    let min = parseInt(row["Min Umur"]);
-                    let max = parseInt(row["Max Umur"]);
-                    if (isNaN(min)) min = 0;
-                    if (isNaN(max)) max = 99;
-                    let tampil = String(row["Tampil di Dashboard"] || "").trim().toLowerCase();
-                    let isVisible = !(tampil === "tidak" || tampil === "no" || tampil === "false" || tampil === "0");
-                    let color = String(row["Warna Chart"] || "").trim() || "bg-slate-400";
-                    let gender = String(row["Gender"] || "").trim() || "Semua";
-                    if (!['Semua', 'L', 'P'].includes(gender)) gender = "Semua";
-                    let syarat = String(row["Syarat Pelayanan"] || "").trim() || "Tidak Disyaratkan";
-                    if (!['Tidak Disyaratkan', 'Harus Berpelayanan', 'Tidak Berpelayanan'].includes(syarat)) syarat = "Tidak Disyaratkan";
-                    let bidangStr = String(row["Bidang Pelayanan"] || "").trim();
-                    let bidangPelayanan = bidangStr ? bidangStr.split("|").map(b => b.trim()).filter(Boolean) : [];
-                    let pekerjaan = String(row["Pekerjaan"] || "").trim() || "Semua";
-                    if (!['Semua', ...PEKERJAAN_OPTIONS].includes(pekerjaan)) pekerjaan = "Semua";
-                    komisi.push({ name: name, minAge: min, maxAge: max, gender: gender, pelayananSyarat: syarat, bidangPelayanan: bidangPelayanan, pekerjaan: pekerjaan, isVisible: isVisible, color: color });
+                    komisi.push({
+                        name: String(row["Nama Kategori"] || "Komisi"),
+                        minAge: parseInt(row["Min Umur"]) || 0,
+                        maxAge: parseInt(row["Max Umur"]) || 99,
+                        gender: String(row["Gender"] || "Semua"),
+                        pelayananSyarat: String(row["Syarat Pelayanan"] || "Tidak Disyaratkan"),
+                        bidangPelayanan: String(row["Bidang Pelayanan"] || "").split("|").map(s => s.trim()).filter(Boolean),
+                        pekerjaan: String(row["Pekerjaan"] || "Semua"),
+                        isVisible: String(row["Tampil di Dashboard"]).trim().toLowerCase() === "ya",
+                        color: String(row["Warna Chart"] || "bg-slate-400")
+                    });
                 }
             });
-            if (demographics.length) result.demographics = demographics;
-            if (komisi.length) result.komisi = komisi;
+            if (demographics.length > 0) result.demographics = demographics;
+            if (komisi.length > 0) result.komisi = komisi;
             result.found = true;
             return result;
         }
 
+        function waitForFirebaseReady() {
+            return new Promise((resolve) => {
+                if (window.firebaseReady) return resolve();
+                const check = setInterval(() => {
+                    if (window.firebaseReady) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
         function exportData() {
-            if (dataJemaat.length === 0) { showAlert("Ekspor Gagal", "Tidak ada data jemaat untuk diekspor.", "error"); return; }
-            let workbook = XLSX.utils.book_new();
-            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi", "createdAt", "updatedAt"];
-            let worksheetJemaat = XLSX.utils.json_to_sheet(dataJemaat, { header: headers });
-            XLSX.utils.book_append_sheet(workbook, worksheetJemaat, "Data Jemaat");
-            if (auditLogs.length > 0) {
-                let logsUntukEkspor = dedupeAuditLogs(auditLogs).uniqueLogs;
-                let worksheetLog = XLSX.utils.json_to_sheet(logsUntukEkspor);
-                XLSX.utils.book_append_sheet(workbook, worksheetLog, "Log Data");
-            } else {
-                let worksheetLog = XLSX.utils.json_to_sheet([{ "Waktu Kejadian": "-", "NIJ": "-", "Aksi": "Info", "Detail Catatan": "Belum ada aktivitas terekam.", "Nilai Lama": "-", "Nilai Baru": "-" }]);
-                XLSX.utils.book_append_sheet(workbook, worksheetLog, "Log Data");
+            if (dataJemaat.length === 0) {
+                showAlert("Ekspor Gagal", "Belum ada data jemaat untuk diekspor.", "error");
+                return;
             }
-            appendParameterSheet(workbook, buildParameterSheetRows());
-            XLSX.writeFile(workbook, `database_jemaat_${new Date().toISOString().split('T')[0]}.xlsx`);
-            writeLog("SYSTEM", "Export Data", "Mengekspor seluruh database jemaat beserta log aktivitas ke file Excel.");
-            showAlert("Berhasil", "Data jemaat & Log berhasil diekspor.", "success");
+            try {
+                let wb = XLSX.utils.book_new();
+                let flatData = dataJemaat.map(j => ({
+                    "ID Jemaat (Abaikan)": j.id,
+                    "ID Kepala Keluarga (Abaikan)": j.kepalaKeluargaId || "",
+                    "NIJ": j.nij || "",
+                    "NIK": j.nomorInduk || "",
+                    "Nama Lengkap": j.nama_lengkap,
+                    "Status Keluarga": j.status_keluarga,
+                    "Jenis Kelamin": j.jenis_kelamin,
+                    "Tempat/Tgl Lahir": j.tanggal_lahir,
+                    "Pendidikan": j.pendidikan,
+                    "Pekerjaan": j.pekerjaan,
+                    "Status Jemaat": j.status_jemaat,
+                    "Jalur Masuk": j.jalur_masuk,
+                    "Tanggal Bergabung": j.tanggal_bergabung,
+                    "Jenis Baptis": j.jenis_baptis,
+                    "No. Surat Baptis": j.no_surat_baptis || "",
+                    "Tanggal Baptis": j.tanggal_baptis || "",
+                    "Status Sidi": j.status_sidi,
+                    "Sudah Berpelayanan": j.sudah_berpelayanan,
+                    "Bidang Pelayanan": j.bidang_pelayanan || "",
+                    "Status Pernikahan": j.status_pernikahan,
+                    "Tanggal Pernikahan": j.tanggal_pernikahan || "",
+                    "No Telepon": j.no_telepon || "",
+                    "Email": j.email || "",
+                    "Alamat Lengkap": j.alamat
+                }));
+                let ws = XLSX.utils.json_to_sheet(flatData);
+                XLSX.utils.book_append_sheet(wb, ws, "Data Jemaat");
+                appendParameterSheet(wb, buildParameterSheetRows());
+                XLSX.writeFile(wb, `Database_Jemaat_${new Date().toISOString().split('T')[0]}.xlsx`);
+                writeLog("SYSTEM", "Export Excel", `Mengekspor ${dataJemaat.length} data jemaat ke file Excel.`);
+                showAlert("Berhasil", "Data berhasil diekspor ke Excel.", "success");
+            } catch (e) {
+                showAlert("Error", "Gagal mengekspor data: " + e.message, "error");
+            }
+        }
+
+        function downloadTemplateCSV() {
+            let wb = XLSX.utils.book_new();
+            let templateData = [{
+                "Nama Lengkap": "John Doe",
+                "Status Keluarga": "Anggota Utama",
+                "Jenis Kelamin": "L",
+                "Tempat/Tgl Lahir": "1990-01-01",
+                "Pendidikan": "Sarjana (S1)",
+                "Pekerjaan": "Karyawan Swasta",
+                "Status Jemaat": "Aktif",
+                "Jalur Masuk": "Baru Percaya",
+                "Tanggal Bergabung": "2023-01-15",
+                "Jenis Baptis": "Baptis Selam",
+                "No. Surat Baptis": "BPT/001/2023",
+                "Tanggal Baptis": "2023-02-20",
+                "Status Sidi": "Sudah Sidi",
+                "Sudah Berpelayanan": "Ya",
+                "Bidang Pelayanan": "Pelayanan Musik / Worship",
+                "Status Pernikahan": "Menikah",
+                "Tanggal Pernikahan": "2015-05-10",
+                "No Telepon": "081234567890",
+                "Email": "john.doe@email.com",
+                "Alamat Lengkap": "Jl. Merdeka No. 123",
+                "NIK": "3171234567890001",
+                "NIJ": "LOC0000001"
+            }];
+            let ws = XLSX.utils.json_to_sheet(templateData);
+            XLSX.utils.book_append_sheet(wb, ws, "Template Jemaat");
+            appendParameterSheet(wb, buildParameterSheetRows());
+            XLSX.writeFile(wb, `Template_Impor_Jemaat.xlsx`);
         }
 
         function openModalImport() {
-            document.getElementById('fileImportCSV').value = "";
+            document.getElementById('fileImportCSV').value = '';
+            document.getElementById('fileNameSelected').innerText = '';
             document.getElementById('fileNameSelected').classList.add('hidden');
             selectedImportFile = null;
             document.getElementById('modalImport').classList.remove('hidden');
@@ -3377,153 +3459,127 @@
 
         function closeModalImport() { document.getElementById('modalImport').classList.add('hidden'); }
 
-        function handleFileSelected(event) {
-            const file = event.target.files[0];
-            if (file) { selectedImportFile = file;
-                const el = document.getElementById('fileNameSelected');
-                el.innerText = `Berkas: ${file.name}`;
-                el.classList.remove('hidden'); }
-        }
-
-        function downloadTemplateCSV() {
-            let headers = ["id", "kepalaKeluargaId", "nij", "nomorInduk", "email", "nama_lengkap", "status_keluarga", "jenis_kelamin", "status_pernikahan", "tanggal_pernikahan", "pendidikan", "pekerjaan", "sudah_berpelayanan", "bidang_pelayanan", "tanggal_lahir", "alamat", "no_telepon", "status_jemaat", "jalur_masuk", "tanggal_bergabung", "jenis_baptis", "no_surat_baptis", "tanggal_baptis", "status_sidi", "createdAt", "updatedAt"];
-            let sampleRow = { id: "101", kepalaKeluargaId: "", nij: "LOC0000001", nomorInduk: "", email: "contoh@email.com", nama_lengkap: "Contoh Jemaat", status_keluarga: "Anggota Utama", jenis_kelamin: "L", status_pernikahan: "Menikah", tanggal_pernikahan: "2010-06-15", pendidikan: "Sarjana (S1)", pekerjaan: "Karyawan Swasta", sudah_berpelayanan: "Ya", bidang_pelayanan: "Pelayanan Musik / Worship", tanggal_lahir: "1985-05-12", alamat: "Jl. Contoh No. 1", no_telepon: "08123456789", status_jemaat: "Aktif", jalur_masuk: "Pindahan", tanggal_bergabung: "2026-01-01", jenis_baptis: "Baptis Selam", no_surat_baptis: "BPT-001/2026", tanggal_baptis: "2026-02-15", status_sidi: "Sudah Sidi" };
-            let worksheet = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
-            let workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-            appendParameterSheet(workbook, buildParameterSheetRows());
-            XLSX.writeFile(workbook, "template_impor_jemaat.xlsx");
+        function handleFileSelected(e) {
+            if (e.target.files && e.target.files.length > 0) {
+                selectedImportFile = e.target.files[0];
+                let label = document.getElementById('fileNameSelected');
+                label.innerText = `Terpilih: ${selectedImportFile.name}`;
+                label.classList.remove('hidden');
+            }
         }
 
         function processImportCSV() {
-            if (!selectedImportFile) { showAlert("Perhatian", "Pilih berkas Excel terlebih dahulu.", "error"); return; }
-            const reader = new FileReader();
+            if (!selectedImportFile) { showAlert("Error", "Silakan pilih berkas Excel terlebih dahulu.", "error"); return; }
+            let reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     let data = new Uint8Array(e.target.result);
                     let workbook = XLSX.read(data, { type: 'array' });
-                    let jemaatSheetName = workbook.SheetNames.includes("Data Jemaat") ? "Data Jemaat" : workbook.SheetNames[0];
-                    let jemaatWorksheet = workbook.Sheets[jemaatSheetName];
-                    let jemaatRows = XLSX.utils.sheet_to_json(jemaatWorksheet, { defval: "", raw: false });
-                    let importedCount = 0;
-                    jemaatRows.forEach((row, i) => {
-                        let obj = {};
-                        Object.keys(row).forEach(h => { obj[h.trim()] = row[h] !== undefined && row[h] !== null ? String(row[h]).trim() : ""; });
-                        if (obj.nama_lengkap) {
-                            if (!obj.id) obj.id = generateUniqueId();
-                            if (!obj.nij) obj.nij = generateNextNIJ();
-                            if (!obj.createdAt) obj.createdAt = getTimestampString();
-                            obj.updatedAt = getTimestampString();
-                            dataJemaat.push(obj);
+                    
+                    let paramParsed = parseParameterSheet(workbook);
+                    let parameterUpdatesMsg = [];
+                    if (paramParsed.found) {
+                        if (paramParsed.ucapanUlangTahun) { settingsUcapanUlangTahun = paramParsed.ucapanUlangTahun; parameterUpdatesMsg.push("Ucapan Ultah"); }
+                        if (paramParsed.ucapanAnniv) { settingsUcapanAnniv = paramParsed.ucapanAnniv; parameterUpdatesMsg.push("Ucapan Anniv"); }
+                        if (paramParsed.demographics) { settingsDemographics = paramParsed.demographics; parameterUpdatesMsg.push("Demografi"); }
+                        if (paramParsed.komisi) { settingsKomisi = paramParsed.komisi; parameterUpdatesMsg.push("Komisi"); }
+                    }
+
+                    let sheetName = workbook.SheetNames[0];
+                    if (sheetName.trim().toLowerCase() === PARAMETER_SHEET_NAME.toLowerCase() && workbook.SheetNames.length > 1) {
+                        sheetName = workbook.SheetNames[1];
+                    }
+                    let jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+                    if (jsonData.length === 0) { showAlert("Error", "Berkas Excel kosong atau format tidak sesuai.", "error"); return; }
+                    
+                    let importedCount = 0, failedCount = 0;
+                    
+                    jsonData.forEach(row => {
+                        try {
+                            if (!row["Nama Lengkap"]) return;
+                            let newId = row["ID Jemaat (Abaikan)"] || generateUniqueId();
+                            let kkIdStr = String(row["ID Kepala Keluarga (Abaikan)"] || "").trim();
+                            let kkId = kkIdStr ? kkIdStr : null;
+                            
+                            let existIdx = dataJemaat.findIndex(j => j.id === newId);
+                            let tglLahirStr = row["Tempat/Tgl Lahir"] || row["Tanggal Lahir"] || "";
+                            if (!isNaN(tglLahirStr)) {
+                                let parsed = parseRobustDate(tglLahirStr);
+                                if (parsed) tglLahirStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglGabungStr = row["Tanggal Bergabung"] || "";
+                            if (!isNaN(tglGabungStr)) {
+                                let parsed = parseRobustDate(tglGabungStr);
+                                if (parsed) tglGabungStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglNikahStr = row["Tanggal Pernikahan"] || "";
+                            if (!isNaN(tglNikahStr)) {
+                                let parsed = parseRobustDate(tglNikahStr);
+                                if (parsed) tglNikahStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglBaptisStr = row["Tanggal Baptis"] || "";
+                            if (!isNaN(tglBaptisStr)) {
+                                let parsed = parseRobustDate(tglBaptisStr);
+                                if (parsed) tglBaptisStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+
+                            let jemaatObj = {
+                                id: newId,
+                                kepalaKeluargaId: kkId,
+                                nij: row["NIJ"] || generateNextNIJ(),
+                                nomorInduk: row["NIK"] || "",
+                                nama_lengkap: row["Nama Lengkap"],
+                                status_keluarga: row["Status Keluarga"] || "Anggota Utama",
+                                jenis_kelamin: row["Jenis Kelamin"] || "L",
+                                tanggal_lahir: tglLahirStr,
+                                pendidikan: row["Pendidikan"] || "Belum/Tidak Sekolah",
+                                pekerjaan: row["Pekerjaan"] || "Lainnya",
+                                status_jemaat: row["Status Jemaat"] || "Aktif",
+                                jalur_masuk: row["Jalur Masuk"] || "Baru Percaya",
+                                tanggal_bergabung: tglGabungStr,
+                                jenis_baptis: row["Jenis Baptis"] || "Belum Baptis",
+                                no_surat_baptis: row["No. Surat Baptis"] || "",
+                                tanggal_baptis: tglBaptisStr,
+                                status_sidi: row["Status Sidi"] || "Belum Sidi",
+                                sudah_berpelayanan: row["Sudah Berpelayanan"] || "Tidak",
+                                bidang_pelayanan: row["Bidang Pelayanan"] || "",
+                                status_pernikahan: row["Status Pernikahan"] || "Belum Menikah",
+                                tanggal_pernikahan: tglNikahStr,
+                                no_telepon: row["No Telepon"] || "",
+                                email: row["Email"] || "",
+                                alamat: row["Alamat Lengkap"] || "",
+                                createdAt: getTimestampString(),
+                                updatedAt: getTimestampString()
+                            };
+
+                            if (existIdx >= 0) {
+                                jemaatObj.createdAt = dataJemaat[existIdx].createdAt;
+                                dataJemaat[existIdx] = jemaatObj;
+                            } else {
+                                dataJemaat.push(jemaatObj);
+                            }
                             importedCount++;
+                        } catch(err) {
+                            failedCount++;
                         }
                     });
-                    let logSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes("log"));
-                    let importedLogsCount = 0,
-                        skippedDuplicateLogsCount = 0;
-                    if (logSheetName) {
-                        let logWorksheet = workbook.Sheets[logSheetName];
-                        let logRows = XLSX.utils.sheet_to_json(logWorksheet, { defval: "", raw: false });
-                        let existingLogKeys = new Set(auditLogs.map(buildLogDedupeKey));
-                        logRows.forEach(row => {
-                            if (row["Waktu Kejadian"] && row["Waktu Kejadian"] !== "-") {
-                                let logObj = { "Waktu Kejadian": row["Waktu Kejadian"] || "-", "NIJ": row["NIJ"] || "-", "Aksi": row["Aksi"] || "-", "Detail Catatan": row["Detail Catatan"] || "-", "Nilai Lama": row["Nilai Lama"] || "-", "Nilai Baru": row["Nilai Baru"] || "-" };
-                                let logKey = buildLogDedupeKey(logObj);
-                                if (existingLogKeys.has(logKey)) skippedDuplicateLogsCount++;
-                                else { existingLogKeys.add(logKey);
-                                    auditLogs.push(logObj);
-                                    importedLogsCount++; }
-                            }
-                        });
-                    }
-                    let paramResult = parseParameterSheet(workbook);
-                    let paramUpdated = false;
-                    if (paramResult.found) {
-                        if (paramResult.ucapanUlangTahun) { settingsUcapanUlangTahun = paramResult.ucapanUlangTahun;
-                            paramUpdated = true; }
-                        if (paramResult.ucapanAnniv) { settingsUcapanAnniv = paramResult.ucapanAnniv;
-                            paramUpdated = true; }
-                        if (paramResult.demographics) { settingsDemographics = paramResult.demographics;
-                            paramUpdated = true; }
-                        if (paramResult.komisi) { settingsKomisi = paramResult.komisi;
-                            paramUpdated = true; }
-                        if (paramUpdated) { saveSettingsToLocalStorage();
-                            loadSettingsForm(); }
-                    }
+
                     closeModalImport();
+                    saveDataToLocalStorage();
+                    currentPage = 1;
                     renderTableJemaat();
                     renderDashboard();
-                    let pesanParam = paramUpdated ? " Parameter ucapan WhatsApp, demografi usia & komisi pelayanan juga diperbarui." : "";
-                    let pesanSkip = skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat dilewati.` : "";
-                    writeLog("SYSTEM", "Impor Data", `Sistem mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log dari file excel.${skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat otomatis dilewati.` : ''}${paramUpdated ? ' Parameter sistem turut diperbarui.' : ''}`);
-                    showAlert("Berhasil", `Berhasil mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log.${pesanSkip}${pesanParam}`, "success");
+                    let paramMsg = parameterUpdatesMsg.length > 0 ? `\nParameter sistem diperbarui: ${parameterUpdatesMsg.join(', ')}` : '';
+                    writeLog("SYSTEM", "Impor Excel", `Berhasil impor ${importedCount} data jemaat. Gagal: ${failedCount}. ${paramMsg}`);
+                    showAlert("Impor Selesai", `Berhasil: ${importedCount} baris.\nGagal diabaikan: ${failedCount}.${paramMsg}`, "success");
                 } catch (err) {
-                    showAlert("Error", "Gagal memproses berkas Excel.", "error");
+                    console.error(err);
+                    showAlert("Error", "Gagal membaca berkas Excel.", "error");
                 }
             };
             reader.readAsArrayBuffer(selectedImportFile);
         }
 
-        // --- WAIT FOR FIREBASE READY ---
-        function waitForFirebaseReady() {
-            return new Promise((resolve) => {
-                if (window.firebaseReady && window.mainDocRef) return resolve();
-                const check = setInterval(() => {
-                    if (window.firebaseReady && window.mainDocRef) { clearInterval(check);
-                        resolve(); }
-                }, 50);
-            });
-        }
-
-        // --- PASTIKAN FUNGSI GLOBAL TERDEFINISI ---
-        window.renderTableJemaat = renderTableJemaat;
-        window.renderTableJemaatDebounced = renderTableJemaatDebounced;
-        window.changePage = changePage;
-        window.changeRowsPerPage = changeRowsPerPage;
-        window.switchTab = switchTab;
-        window.setGrowthMode = setGrowthMode;
-        window.renderDashboard = renderDashboard;
-        window.exportPDFSummary = exportPDFSummary;
-        window.exportDetailPDF = exportDetailPDF;
-        window.viewDetailJemaat = viewDetailJemaat;
-        window.closeModalDetail = closeModalDetail;
-        window.goToIDCard = goToIDCard;
-        window.generateKK = generateKK;
-        window.closeModalKK = closeModalKK;
-        window.openModalTambahJemaat = openModalTambahJemaat;
-        window.openModalTambahAnggota = openModalTambahAnggota;
-        window.editJemaat = editJemaat;
-        window.pecahKk = pecahKk;
-        window.closeModalJemaat = closeModalJemaat;
-        window.regenerateNIJ = regenerateNIJ;
-        window.kirimUcapanWhatsApp = kirimUcapanWhatsApp;
-        window.checkDuplicates = checkDuplicates;
-        window.confirmResetAllData = confirmResetAllData;
-        window.exportData = exportData;
-        window.openModalImport = openModalImport;
-        window.closeModalImport = closeModalImport;
-        window.handleFileSelected = handleFileSelected;
-        window.downloadTemplateCSV = downloadTemplateCSV;
-        window.processImportCSV = processImportCSV;
-        window.addDemographicCategory = addDemographicCategory;
-        window.removeDemographicCategory = removeDemographicCategory;
-        window.saveSettings = saveSettings;
-        window.resetSettingsDefault = resetSettingsDefault;
-        window.handleBaptisChange = handleBaptisChange;
-        window.handleGenderChange = handleGenderChange;
-        window.handlePernikahanChange = handlePernikahanChange;
-        window.handleStatusKeluargaChange = handleStatusKeluargaChange;
-        window.handleJalurMasukChange = handleJalurMasukChange;
-        window.handleTanggalLahirChange = handleTanggalLahirChange;
-        window.handlePelayananChange = handlePelayananChange;
-        window.handleBidangPelayananChange = handleBidangPelayananChange;
-        window.saveJemaat = saveJemaat;
-        window.batalSuksesi = batalSuksesi;
-        window.konfirmasiSuksesi = konfirmasiSuksesi;
-        window.showAlert = showAlert;
-        window.closeAlert = closeAlert;
-        window.openConfirm = openConfirm;
-        window.closeConfirm = closeConfirm;
     </script>
 </body>
 </html>
