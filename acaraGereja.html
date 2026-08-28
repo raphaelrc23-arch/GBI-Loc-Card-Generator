@@ -32,12 +32,9 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <!-- MULAI DARI SINI: Koneksi Firebase (khusus MEMBACA Database Jemaat) -->
-    <!-- Modul ini hanya membaca data jemaat dari dokumen "gerejaData/main" (dipakai oleh
-         dbJemaat.html) supaya fitur Checklist Absensi & deteksi jemaat yang perlu dikunjungi
-         bisa memakai data jemaat yang sama. Data acara/kegiatan tetap tersimpan seperti biasa. -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
@@ -54,16 +51,17 @@
 
         // Referensi ke dokumen Database Jemaat (koleksi "gerejaData", dokumen "main")
         window.jemaatDocRef = doc(db, "gerejaData", "main");
+        window.jemaatChunksColRef = collection(db, "gerejaData", "main", "jemaatChunks"); // Referensi koleksi chunk data jemaat
         window.firestoreGetDocJemaat = getDoc;
+        window.firestoreGetDocsJemaat = getDocs; // Fungsi tambahan untuk getDocs
 
         // Referensi ke dokumen data Acara Gereja milik halaman ini sendiri (koleksi "gerejaData",
         // dokumen "acara"). Dipakai agar dbJemaat.html bisa membaca riwayat kehadiran (read-only).
-        // Data acara tetap tersimpan utuh di localStorage seperti biasa; ini hanya salinan cermin.
         window.acaraDocRef = doc(db, "gerejaData", "acara");
         window.firestoreSetDocAcara = setDoc;
 
         window.firebaseReadyJemaat = true;
-        console.log("Firebase Terhubung! (Baca Database Jemaat & Tulis Cermin Data Acara)");
+        console.log("Firebase Terhubung! (Baca Database Jemaat Chunking & Tulis Cermin Data Acara)");
     </script>
     <!-- SELESAI: Batas Kode Firebase -->
 
@@ -559,6 +557,14 @@
                             </div>
                         </div>
 
+                        <div class="mb-3">
+                            <label class="block text-xs text-gray-500 mb-1"><i class="fa-solid fa-people-group mr-1"></i> Komisi / Departemen Terkait (opsional)</label>
+                            <select id="tpl-komisi-id" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 outline-none bg-white cursor-pointer">
+                                <option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>
+                            </select>
+                            <p class="text-[11px] text-gray-400 mt-1">Jika diisi, setiap laporan/jadwal yang dibuat dari master ini otomatis terikat ke komisi ini saat checklist absensi.</p>
+                        </div>
+
                         <div class="bg-white p-3 rounded-lg border border-slate-200 mb-3">
                             <label class="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wide"><i class="fa-solid fa-repeat mr-1"></i> Frekuensi Ibadah</label>
                             <select id="tpl-freq-type" onchange="toggleTplFrequencyFields()" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 outline-none mb-3 bg-white cursor-pointer">
@@ -789,7 +795,7 @@
                             <i class="fa-solid fa-people-group mr-1.5"></i> Komisi / Departemen Terkait
                         </label>
                         <p class="text-xs text-indigo-700 mb-2">Pilih komisi agar daftar checklist otomatis menampilkan jemaat dari komisi tersebut. Kehadiran di luar komisi dicatat sebagai Tamu.</p>
-                        <select id="form-komisi-id" class="w-full px-3 py-2 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white shadow-sm cursor-pointer">
+                        <select id="form-komisi-id" onchange="renderAttendanceChecklist()" class="w-full px-3 py-2 border border-indigo-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm bg-white shadow-sm cursor-pointer">
                             <option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>
                         </select>
                         <p id="komisi-info-text" class="text-[11px] text-indigo-600 mt-1.5 italic hidden">Memuat daftar komisi dari Database Jemaat...</p>
@@ -1060,15 +1066,32 @@
             });
         }
 
+        async function loadChunkedCollection(colRef) {
+            const snap = await window.firestoreGetDocsJemaat(colRef);
+            const chunkDocs = snap.docs.map((d) => {
+                const data = d.data() || {};
+                const idx = typeof data.index === 'number' ? data.index : parseInt(d.id.replace('chunk_', ''), 10) || 0;
+                return { index: idx, records: Array.isArray(data.records) ? data.records : [] };
+            }).sort((a, b) => a.index - b.index);
+            let result = [];
+            chunkDocs.forEach((c) => { result = result.concat(c.records); });
+            return result;
+        }
+
         async function loadJemaatMasterData() {
             const note = document.getElementById('pastoral-visit-note');
             if (note) note.innerText = 'Memuat data jemaat dari Database Jemaat...';
             try {
                 await waitForFirebaseJemaatReady();
                 if (!window.jemaatDocRef) throw new Error('Firebase belum siap');
+                
+                // Ambil settings dari main doc
                 const snap = await window.firestoreGetDocJemaat(window.jemaatDocRef);
                 const data = snap.exists() ? snap.data() : {};
-                jemaatMasterData = Array.isArray(data.dataJemaat) ? data.dataJemaat : [];
+                
+                // Ambil dataJemaat dari chunks collection (versi Enterprise)
+                jemaatMasterData = await loadChunkedCollection(window.jemaatChunksColRef);
+                
                 // Ambil settings.komisi dari dbJemaat
                 if (data.settings && Array.isArray(data.settings.komisi)) {
                     komisiMasterData = data.settings.komisi;
@@ -1077,6 +1100,7 @@
                 }
                 // Isi dropdown komisi di form
                 populateKomisiDropdown();
+                populateTplKomisiDropdown();
                 renderAttendanceChecklist();
                 renderPastoralVisitList();
                 if (note) note.innerText = `Data jemaat dimuat (${jemaatMasterData.length} entri).`;
@@ -1523,8 +1547,22 @@
 
         function toggleSuggestion() { document.getElementById('suggestion-area').classList.toggle('hidden'); }
 
+        function populateTplKomisiDropdown() {
+            const select = document.getElementById('tpl-komisi-id');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
+            komisiMasterData.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = k.name; opt.text = k.name;
+                select.appendChild(opt);
+            });
+            if (currentVal) select.value = currentVal;
+        }
+
         function openTemplateModal() {
             renderTemplateTable();
+            populateTplKomisiDropdown();
             const backdrop = document.getElementById('template-modal-backdrop');
             const modal = document.getElementById('template-modal');
             backdrop.classList.remove('hidden');
@@ -1573,8 +1611,9 @@
 
             regularTemplates.forEach(tpl => {
                 const tr = document.createElement('tr');
+                const komisiBadge = tpl.komisiId ? `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fa-solid fa-people-group mr-0.5"></i> ${esc(tpl.komisiId)}</div>` : '';
                 tr.innerHTML = `
-                    <td class="p-3 font-medium text-slate-800">${tpl.name}</td>
+                    <td class="p-3 font-medium text-slate-800">${tpl.name}${komisiBadge}</td>
                     <td class="p-3 text-gray-600">${tpl.defaultLocation || '-'}${tpl.defaultTime ? ' &bull; ' + tpl.defaultTime : ''}</td>
                     <td class="p-3 text-gray-600 whitespace-normal max-w-xs">${describeFrequency(tpl)}</td>
                     <td class="p-3 text-center">
@@ -1615,12 +1654,13 @@
                 name: document.getElementById('tpl-name').value.trim(),
                 defaultLocation: document.getElementById('tpl-loc').value.trim(),
                 defaultTime: document.getElementById('tpl-time').value,
+                komisiId: document.getElementById('tpl-komisi-id')?.value || '',
                 frequency: frequency
             });
             
             localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplates));
             document.getElementById('template-form').reset();
-            toggleTplFrequencyFields(); renderTemplateTable();
+            toggleTplFrequencyFields(); renderTemplateTable(); populateTplKomisiDropdown();
             Swal.fire({ title: 'Tersimpan', text: 'Master ditambahkan.', icon: 'success', timer: 1000, showConfirmButton: false });
         }
 
@@ -1751,7 +1791,7 @@
                         date: item.date, time: tpl.defaultTime || '', attendance: 0, newVisitors: 0, income: 0, expense: 0,
                         preacher: '', sermonTheme: '', wl: '', musicians: '', otherServers: '', notes: '', templateId: tpl.id,
                         isMultiDay: false, endDate: '', sessions: [],
-                        komisiId: '' // <-- baru
+                        komisiId: tpl.komisiId || ''
                     };
                     if (existingIdx !== -1) { eventsData[existingIdx] = newEvent; replaced++; } else { eventsData.push(newEvent); added++; }
                 });
@@ -1968,7 +2008,11 @@
             const tplId = document.getElementById('form-template-id').value;
             if (!tplId) { populateScheduledDates(); return; }
             const tpl = regularTemplates.find(t => t.id === tplId);
-            if (tpl) { document.getElementById('form-event-name').value = tpl.name; document.getElementById('form-location').value = tpl.defaultLocation || ''; document.getElementById('form-time').value = tpl.defaultTime || ''; }
+            if (tpl) {
+                document.getElementById('form-event-name').value = tpl.name; document.getElementById('form-location').value = tpl.defaultLocation || ''; document.getElementById('form-time').value = tpl.defaultTime || '';
+                const komisiSelect = document.getElementById('form-komisi-id');
+                if (komisiSelect) { komisiSelect.value = tpl.komisiId || ''; renderAttendanceChecklist(); }
+            }
             populateScheduledDates();
         }
 
@@ -2002,6 +2046,7 @@
                 if (ev.time) document.getElementById('form-time').value = ev.time;
                 if (ev.location) document.getElementById('form-location').value = ev.location;
                 if (ev.komisiId) document.getElementById('form-komisi-id').value = ev.komisiId;
+                renderAttendanceChecklist();
                 lockScheduleFields(true);
                 document.getElementById('modal-title').innerText = 'Lengkapi Laporan Ibadah (Terjadwal)'; checkBackdateStatus();
             }
@@ -2740,9 +2785,6 @@
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
 
-        // Menyalin (mirror) eventsData ke Firestore secara diam-diam, agar dbJemaat.html
-        // bisa membaca Riwayat Kehadiran Acara per jemaat. localStorage tetap jadi sumber
-        // data utama halaman ini; ini hanya salinan pengiriman searah (fire-and-forget).
         async function mirrorEventsToFirebase() {
             try {
                 if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
