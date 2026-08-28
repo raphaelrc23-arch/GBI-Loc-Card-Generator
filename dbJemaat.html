@@ -376,6 +376,14 @@
             </div>
 
             <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center"><i class="fa-solid fa-people-group text-indigo-500 mr-2"></i>Distribusi Komisi Pelayanan (Aktif)</h3>
+                    <span id="labelTotalKomisi" class="text-[10px] font-semibold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">Total Aktif: 0</span>
+                </div>
+                <div id="chartKomisi" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3"></div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-100 pb-3">
                     <h3 class="text-sm font-bold text-slate-800 flex items-center">
                         <i class="fa-solid fa-chart-column text-indigo-500 mr-2"></i>
@@ -450,6 +458,20 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 gap-2">
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800 flex items-center mb-1">
+                                <i class="fa-solid fa-people-group text-indigo-500 mr-2 text-lg"></i>
+                                Parameter Komisi Pelayanan (Kategori Dashboard)
+                            </h3>
+                            <p class="text-xs text-slate-500 leading-relaxed">Atur kriteria otomatis tiap komisi (usia, gender, status pelayanan &amp; bidang pelayanan). Jumlah jemaat yang masuk kriteria akan dihitung otomatis di Dashboard &amp; PDF.</p>
+                        </div>
+                        <button onclick="addKomisiCategory()" class="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-medium transition flex items-center space-x-1 whitespace-nowrap"><i class="fa-solid fa-plus"></i> <span>Tambah Komisi</span></button>
+                    </div>
+                    <div id="listKomisiSettings" class="space-y-3"></div>
                 </div>
 
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pt-4 border-t border-slate-100 gap-3">
@@ -1012,7 +1034,8 @@
                     settings: {
                         ucapanUlangTahun: settingsUcapanUlangTahun,
                         ucapanAnniv: settingsUcapanAnniv,
-                        demographics: settingsDemographics
+                        demographics: settingsDemographics,
+                        komisi: settingsKomisi
                     },
                     lastUpdated: new Date().toISOString()
                 });
@@ -1036,6 +1059,7 @@
                         if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
                         if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
                         if (Array.isArray(parsed.settings.demographics)) settingsDemographics = parsed.settings.demographics;
+                        if (Array.isArray(parsed.settings.komisi)) settingsKomisi = parsed.settings.komisi;
                     }
                     if (Array.isArray(parsed.dataJemaat) && parsed.dataJemaat.length > 0) {
                         dataJemaat = parsed.dataJemaat; needsMigrationSave = true;
@@ -1216,6 +1240,57 @@
         ];
         let settingsDemographics = JSON.parse(JSON.stringify(DEFAULT_DEMOGRAPHICS));
 
+        // Daftar bidang pelayanan baku (selaras dengan opsi di Form Data Jemaat)
+        const KOMISI_BIDANG_OPTIONS = ["Pelayanan Musik / Worship", "Pelayanan Anak (Sekolah Minggu)", "Usher / Penyambut Jemaat", "Sound System & Teknisi", "Multimedia & Dokumentasi", "Doa & Konseling", "Diakonia / Sosial", "Keamanan & Parkir"];
+
+        const DEFAULT_KOMISI = [
+            { name: "Komisi Anak", minAge: 0, maxAge: 12, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], kataKunci: "", isVisible: true, color: "bg-amber-400" },
+            { name: "Komisi Wanita", minAge: 20, maxAge: 55, gender: "P", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], kataKunci: "", isVisible: true, color: "bg-pink-400" },
+            { name: "Komisi Hamba Tuhan", minAge: 19, maxAge: 80, gender: "Semua", pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: [], kataKunci: "khotbah, sharing, gembala, pendeta", isVisible: true, color: "bg-indigo-400" },
+            { name: "Komisi Praise & Worship", minAge: 19, maxAge: 100, gender: "Semua", pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: ["Pelayanan Musik / Worship"], kataKunci: "worship, musik, wl, song leader", isVisible: true, color: "bg-blue-400" }
+        ];
+        let settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+
+        // Menghitung usia jemaat pada hari ini berdasarkan tanggal lahir (format string tanggal_lahir)
+        function hitungUsiaSaatIni(tanggalLahirStr) {
+            let parsed = parseRobustDate(tanggalLahirStr);
+            if (!parsed) return null;
+            const today = new Date();
+            let age = today.getFullYear() - parsed.y;
+            const bulanIni = today.getMonth() + 1, tglIni = today.getDate();
+            if (bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) age--;
+            return age;
+        }
+
+        // Mengecek apakah satu jemaat memenuhi kriteria satu komisi
+        function jemaatMasukKomisi(j, komisi) {
+            let age = hitungUsiaSaatIni(j.tanggal_lahir);
+            if (age === null || age < komisi.minAge || age > komisi.maxAge) return false;
+            if (komisi.gender && komisi.gender !== "Semua" && j.jenis_kelamin !== komisi.gender) return false;
+            const sudah = j.sudah_berpelayanan === "Ya";
+            if (komisi.pelayananSyarat === "Harus Berpelayanan" && !sudah) return false;
+            if (komisi.pelayananSyarat === "Tidak Berpelayanan" && sudah) return false;
+            const punyaBidangFilter = (komisi.bidangPelayanan && komisi.bidangPelayanan.length > 0) || (komisi.kataKunci && komisi.kataKunci.trim());
+            if (punyaBidangFilter) {
+                if (!sudah) return false;
+                let bidangJemaat = (j.bidang_pelayanan || "").trim();
+                let cocokDaftar = komisi.bidangPelayanan && komisi.bidangPelayanan.includes(bidangJemaat);
+                let cocokKataKunci = false;
+                if (komisi.kataKunci && komisi.kataKunci.trim()) {
+                    let keywords = komisi.kataKunci.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+                    let bidangLower = bidangJemaat.toLowerCase();
+                    cocokKataKunci = keywords.some(k => bidangLower.includes(k));
+                }
+                if (!cocokDaftar && !cocokKataKunci) return false;
+            }
+            return true;
+        }
+
+        // Menghitung jumlah jemaat (dari sebuah list) yang memenuhi kriteria setiap komisi
+        function hitungKomisiCounts(list) {
+            return settingsKomisi.map(komisi => ({ ...komisi, count: list.filter(j => jemaatMasukKomisi(j, komisi)).length }));
+        }
+
         let confirmCallback = null;
         function openConfirm(title, message, callback) {
             document.getElementById('confirmTitle').innerText = title;
@@ -1308,10 +1383,117 @@
             return updated;
         }
 
+        // --- Komisi Pelayanan Settings ---
+        const KOMISI_COLOR_OPTIONS = [
+            { val: 'bg-amber-400', label: 'Kuning' }, { val: 'bg-emerald-400', label: 'Hijau' },
+            { val: 'bg-blue-400', label: 'Biru' }, { val: 'bg-indigo-400', label: 'Nila' },
+            { val: 'bg-purple-400', label: 'Ungu' }, { val: 'bg-rose-400', label: 'Merah' },
+            { val: 'bg-pink-400', label: 'Pink' }, { val: 'bg-slate-400', label: 'Abu-abu' }
+        ];
+
+        function renderKomisiSettings() {
+            let container = document.getElementById('listKomisiSettings');
+            if (!container) return;
+            let colorSelectHtml = (selected) => KOMISI_COLOR_OPTIONS.map(c => `<option value="${c.val}" ${selected === c.val ? 'selected' : ''}>${c.label}</option>`).join('');
+            let genderSelectHtml = (selected) => ['Semua', 'L', 'P'].map(g => `<option value="${g}" ${selected === g ? 'selected' : ''}>${g === 'Semua' ? 'Semua Gender' : (g === 'L' ? 'Laki-Laki' : 'Perempuan')}</option>`).join('');
+            let syaratSelectHtml = (selected) => ['Tidak Disyaratkan', 'Harus Berpelayanan', 'Tidak Berpelayanan'].map(o => `<option value="${o}" ${selected === o ? 'selected' : ''}>${o}</option>`).join('');
+            let html = settingsKomisi.map((k, index) => {
+                let bidangChecklistHtml = KOMISI_BIDANG_OPTIONS.map((opt, bIdx) => `
+                    <label class="flex items-center space-x-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <input type="checkbox" id="komisi_bidang_${index}_${bIdx}" value="${opt}" ${k.bidangPelayanan && k.bidangPelayanan.includes(opt) ? 'checked' : ''} class="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer">
+                        <span>${opt}</span>
+                    </label>
+                `).join('');
+                return `
+                    <div class="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center space-x-2 flex-1">
+                                <input type="checkbox" id="komisi_vis_${index}" title="Tampilkan di Dashboard" ${k.isVisible ? 'checked' : ''} class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer flex-shrink-0">
+                                <input type="text" id="komisi_name_${index}" value="${k.name}" placeholder="Nama Komisi" class="w-full px-2.5 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-bold text-slate-800">
+                            </div>
+                            <button onclick="removeKomisiCategory(${index})" class="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1.5 rounded transition flex-shrink-0"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Usia Min</label>
+                                <input type="number" id="komisi_min_${index}" value="${k.minAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Usia Max</label>
+                                <input type="number" id="komisi_max_${index}" value="${k.maxAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Gender</label>
+                                <select id="komisi_gender_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${genderSelectHtml(k.gender)}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Warna Chart</label>
+                                <select id="komisi_color_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${colorSelectHtml(k.color)}</select>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Status Pelayanan</label>
+                            <select id="komisi_syarat_${index}" class="w-full sm:w-64 px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${syaratSelectHtml(k.pelayananSyarat)}</select>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Bidang Pelayanan Spesifik (opsional — kosongkan jika semua bidang boleh)</label>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-y-1.5 gap-x-2 bg-white border border-slate-200 rounded p-2.5">${bidangChecklistHtml}</div>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Kata Kunci Tambahan (opsional, pisahkan koma — mencocokkan teks bebas di kolom "Bidang Pelayanan Lainnya", mis. untuk Khotbah/Sharing/WL)</label>
+                            <input type="text" id="komisi_katakunci_${index}" value="${k.kataKunci || ''}" placeholder="mis: khotbah, sharing" class="w-full px-2.5 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html.join('') || `<p class="text-xs text-slate-400 text-center py-4">Belum ada komisi. Klik "Tambah Komisi" untuk membuat.</p>`;
+        }
+
+        function addKomisiCategory() {
+            settingsKomisi.push({ name: "Komisi Baru", minAge: 0, maxAge: 99, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], kataKunci: "", isVisible: true, color: "bg-slate-400" });
+            renderKomisiSettings();
+        }
+        function removeKomisiCategory(index) { settingsKomisi.splice(index, 1); renderKomisiSettings(); }
+
+        function gatherKomisiSettings() {
+            let updated = [];
+            for (let i = 0; i < settingsKomisi.length; i++) {
+                let visEl = document.getElementById(`komisi_vis_${i}`);
+                let nameEl = document.getElementById(`komisi_name_${i}`);
+                let minEl = document.getElementById(`komisi_min_${i}`);
+                let maxEl = document.getElementById(`komisi_max_${i}`);
+                let genderEl = document.getElementById(`komisi_gender_${i}`);
+                let colorEl = document.getElementById(`komisi_color_${i}`);
+                let syaratEl = document.getElementById(`komisi_syarat_${i}`);
+                let kataKunciEl = document.getElementById(`komisi_katakunci_${i}`);
+                let bidangTerpilih = [];
+                KOMISI_BIDANG_OPTIONS.forEach((opt, bIdx) => {
+                    let cb = document.getElementById(`komisi_bidang_${i}_${bIdx}`);
+                    if (cb && cb.checked) bidangTerpilih.push(opt);
+                });
+                let min = minEl ? parseInt(minEl.value) : 0;
+                let max = maxEl ? parseInt(maxEl.value) : 99;
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 99;
+                updated.push({
+                    name: (nameEl ? nameEl.value.trim() : "") || "Komisi Tanpa Nama",
+                    minAge: min, maxAge: max,
+                    gender: genderEl ? genderEl.value : "Semua",
+                    pelayananSyarat: syaratEl ? syaratEl.value : "Tidak Disyaratkan",
+                    bidangPelayanan: bidangTerpilih,
+                    kataKunci: kataKunciEl ? kataKunciEl.value.trim() : "",
+                    isVisible: visEl ? visEl.checked : true,
+                    color: colorEl ? colorEl.value : "bg-slate-400"
+                });
+            }
+            return updated;
+        }
+
         function loadSettingsForm() {
             document.getElementById('inputTemplateUlangTahun').value = settingsUcapanUlangTahun;
             document.getElementById('inputTemplateAnniv').value = settingsUcapanAnniv;
             renderDemographicsSettings();
+            renderKomisiSettings();
         }
 
         function saveSettings() {
@@ -1321,6 +1503,7 @@
             settingsUcapanUlangTahun = t1;
             settingsUcapanAnniv = t2;
             settingsDemographics = gatherDemographicsSettings();
+            settingsKomisi = gatherKomisiSettings();
             saveSettingsToLocalStorage();
             renderDashboard();
             showAlert("Berhasil", "Parameter sistem berhasil disimpan.", "success");
@@ -1330,7 +1513,9 @@
             document.getElementById('inputTemplateUlangTahun').value = DEFAULT_UCAPAN_ULANG_TAHUN;
             document.getElementById('inputTemplateAnniv').value = DEFAULT_UCAPAN_ANNIV;
             settingsDemographics = JSON.parse(JSON.stringify(DEFAULT_DEMOGRAPHICS));
+            settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
             renderDemographicsSettings();
+            renderKomisiSettings();
         }
 
         function confirmResetAllData() {
@@ -1693,13 +1878,27 @@
                 demographicCounts.forEach(cat => { if (cat.isVisible && (!topAgeCat || cat.count > topAgeCat.count)) topAgeCat = cat; });
                 renderMonthlyTrendChart(tahunVal);
 
+                // Distribusi Komisi Pelayanan
+                let komisiCounts = hitungKomisiCounts(aktif);
+                let komisiContainer = document.getElementById('chartKomisi');
+                let labelTotalKomisiEl = document.getElementById('labelTotalKomisi');
+                if (labelTotalKomisiEl) labelTotalKomisiEl.innerText = `Total Aktif: ${aktif.length}`;
+                if (komisiContainer) {
+                    let komisiVisible = komisiCounts.filter(k => k.isVisible);
+                    if (komisiVisible.length === 0) {
+                        komisiContainer.innerHTML = '<p class="text-xs text-slate-400 col-span-2">Belum ada komisi yang aktif. Atur di tab Parameter Sistem.</p>';
+                    } else {
+                        komisiContainer.innerHTML = komisiVisible.map(k => renderBar(k.name, k.count, aktif.length, k.color)).join('');
+                    }
+                }
+
                 lastDashboardStats = {
                     bulanVal, tahunVal, periodeEnd,
                     totalAktif: aktif.length, sdhBaptisAir, nonAktif: nonAktif.length,
                     yoyPct, yoySelisih, pria, wanita, pctPria, pctWanita, totalUsia: grandTotal,
                     topAgeCat, pendidikanStats, pekerjaanStats,
                     ultahBulanIniCount: ultahBulanIni.length, annivBulanIniCount: couples.length,
-                    demographicCounts: demographicCounts
+                    demographicCounts: demographicCounts, komisiCounts: komisiCounts
                 };
                 renderAISuggestions(lastDashboardStats);
             }
@@ -1966,6 +2165,19 @@
                     ageCats.forEach(cat => {
                         let pct = s.totalUsia ? Math.round((cat.count / s.totalUsia) * 100) : 0;
                         barRow(`${cat.name} (${cat.minAge}-${cat.maxAge} Thn)`, cat.count, pct, DEMO_HEX[cat.color] || C.slate400);
+                    });
+                }
+                y += 6;
+
+                // ================= KOMISI PELAYANAN =================
+                sectionTitle("DISTRIBUSI KOMISI PELAYANAN (AKTIF)");
+                let komisiVisiblePdf = (s.komisiCounts || []).filter(k => k.isVisible);
+                if (komisiVisiblePdf.length === 0) {
+                    emptyNote("Belum ada komisi yang aktif ditampilkan.");
+                } else {
+                    komisiVisiblePdf.forEach(k => {
+                        let pct = s.totalAktif ? Math.round((k.count / s.totalAktif) * 100) : 0;
+                        barRow(k.name, k.count, pct, DEMO_HEX[k.color] || C.slate400);
                     });
                 }
                 y += 6;
@@ -3031,17 +3243,21 @@
 
         // --- IMPOR / EKSPOR EXCEL ---
         const PARAMETER_SHEET_NAME = "Parameter";
-        const PARAMETER_HEADERS = ["Tipe", "Isi Pesan", "Nama Kategori", "Min Umur", "Max Umur", "Tampil di Dashboard", "Warna Chart"];
+        const PARAMETER_HEADERS = ["Tipe", "Isi Pesan", "Nama Kategori", "Min Umur", "Max Umur", "Tampil di Dashboard", "Warna Chart", "Gender", "Syarat Pelayanan", "Bidang Pelayanan", "Kata Kunci"];
         const TIPE_UCAPAN_ULTAH = "Ucapan Ulang Tahun";
         const TIPE_UCAPAN_ANNIV = "Ucapan Ulang Tahun Pernikahan";
         const TIPE_DEMOGRAFI = "Demografi Usia";
+        const TIPE_KOMISI = "Komisi Pelayanan";
 
         function buildParameterSheetRows() {
             let rows = [];
-            rows.push({ "Tipe": TIPE_UCAPAN_ULTAH, "Isi Pesan": settingsUcapanUlangTahun, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "" });
-            rows.push({ "Tipe": TIPE_UCAPAN_ANNIV, "Isi Pesan": settingsUcapanAnniv, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "" });
+            rows.push({ "Tipe": TIPE_UCAPAN_ULTAH, "Isi Pesan": settingsUcapanUlangTahun, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Kata Kunci": "" });
+            rows.push({ "Tipe": TIPE_UCAPAN_ANNIV, "Isi Pesan": settingsUcapanAnniv, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Kata Kunci": "" });
             settingsDemographics.forEach(cat => {
-                rows.push({ "Tipe": TIPE_DEMOGRAFI, "Isi Pesan": "", "Nama Kategori": cat.name, "Min Umur": cat.minAge, "Max Umur": cat.maxAge, "Tampil di Dashboard": cat.isVisible ? "Ya" : "Tidak", "Warna Chart": cat.color });
+                rows.push({ "Tipe": TIPE_DEMOGRAFI, "Isi Pesan": "", "Nama Kategori": cat.name, "Min Umur": cat.minAge, "Max Umur": cat.maxAge, "Tampil di Dashboard": cat.isVisible ? "Ya" : "Tidak", "Warna Chart": cat.color, "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Kata Kunci": "" });
+            });
+            settingsKomisi.forEach(k => {
+                rows.push({ "Tipe": TIPE_KOMISI, "Isi Pesan": "", "Nama Kategori": k.name, "Min Umur": k.minAge, "Max Umur": k.maxAge, "Tampil di Dashboard": k.isVisible ? "Ya" : "Tidak", "Warna Chart": k.color, "Gender": k.gender, "Syarat Pelayanan": k.pelayananSyarat, "Bidang Pelayanan": (k.bidangPelayanan || []).join(" | "), "Kata Kunci": k.kataKunci || "" });
             });
             return rows;
         }
@@ -3053,11 +3269,12 @@
 
         function parseParameterSheet(workbook) {
             let sheetName = workbook.SheetNames.find(name => name.trim().toLowerCase() === PARAMETER_SHEET_NAME.toLowerCase());
-            let result = { ucapanUlangTahun: null, ucapanAnniv: null, demographics: null, found: false };
+            let result = { ucapanUlangTahun: null, ucapanAnniv: null, demographics: null, komisi: null, found: false };
             if (!sheetName) return result;
             let rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "", raw: false });
             if (!rows.length) return result;
             let demographics = [];
+            let komisi = [];
             rows.forEach(row => {
                 let tipe = String(row["Tipe"] || "").trim();
                 if (tipe === TIPE_UCAPAN_ULTAH) {
@@ -3077,9 +3294,28 @@
                     let isVisible = !(tampil === "tidak" || tampil === "no" || tampil === "false" || tampil === "0");
                     let color = String(row["Warna Chart"] || "").trim() || "bg-slate-400";
                     demographics.push({ name: name, minAge: min, maxAge: max, isVisible: isVisible, color: color });
+                } else if (tipe === TIPE_KOMISI) {
+                    let name = String(row["Nama Kategori"] || "").trim();
+                    if (!name) return;
+                    let min = parseInt(row["Min Umur"]);
+                    let max = parseInt(row["Max Umur"]);
+                    if (isNaN(min)) min = 0;
+                    if (isNaN(max)) max = 99;
+                    let tampil = String(row["Tampil di Dashboard"] || "").trim().toLowerCase();
+                    let isVisible = !(tampil === "tidak" || tampil === "no" || tampil === "false" || tampil === "0");
+                    let color = String(row["Warna Chart"] || "").trim() || "bg-slate-400";
+                    let gender = String(row["Gender"] || "").trim() || "Semua";
+                    if (!['Semua', 'L', 'P'].includes(gender)) gender = "Semua";
+                    let syarat = String(row["Syarat Pelayanan"] || "").trim() || "Tidak Disyaratkan";
+                    if (!['Tidak Disyaratkan', 'Harus Berpelayanan', 'Tidak Berpelayanan'].includes(syarat)) syarat = "Tidak Disyaratkan";
+                    let bidangStr = String(row["Bidang Pelayanan"] || "").trim();
+                    let bidangPelayanan = bidangStr ? bidangStr.split("|").map(b => b.trim()).filter(Boolean) : [];
+                    let kataKunci = String(row["Kata Kunci"] || "").trim();
+                    komisi.push({ name: name, minAge: min, maxAge: max, gender: gender, pelayananSyarat: syarat, bidangPelayanan: bidangPelayanan, kataKunci: kataKunci, isVisible: isVisible, color: color });
                 }
             });
             if (demographics.length) result.demographics = demographics;
+            if (komisi.length) result.komisi = komisi;
             result.found = true;
             return result;
         }
@@ -3181,13 +3417,15 @@
                             paramUpdated = true; }
                         if (paramResult.demographics) { settingsDemographics = paramResult.demographics;
                             paramUpdated = true; }
+                        if (paramResult.komisi) { settingsKomisi = paramResult.komisi;
+                            paramUpdated = true; }
                         if (paramUpdated) { saveSettingsToLocalStorage();
                             loadSettingsForm(); }
                     }
                     closeModalImport();
                     renderTableJemaat();
                     renderDashboard();
-                    let pesanParam = paramUpdated ? " Parameter ucapan WhatsApp & demografi usia juga diperbarui." : "";
+                    let pesanParam = paramUpdated ? " Parameter ucapan WhatsApp, demografi usia & komisi pelayanan juga diperbarui." : "";
                     let pesanSkip = skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat dilewati.` : "";
                     writeLog("SYSTEM", "Impor Data", `Sistem mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log dari file excel.${skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat otomatis dilewati.` : ''}${paramUpdated ? ' Parameter sistem turut diperbarui.' : ''}`);
                     showAlert("Berhasil", `Berhasil mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log.${pesanSkip}${pesanParam}`, "success");
