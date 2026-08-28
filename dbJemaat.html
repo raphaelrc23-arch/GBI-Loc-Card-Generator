@@ -952,11 +952,18 @@
                         <span><i class="fa-solid fa-clock-rotate-left mr-2 text-indigo-500"></i>Histori Perubahan (Log Data)</span>
                     </h4>
                     <div class="overflow-x-auto border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
-                        <table class="w-full text-left text-[10px]">
+                        <table class="w-full text-left text-[10px] table-fixed">
+                            <colgroup>
+                                <col style="width:15%">
+                                <col style="width:13%">
+                                <col style="width:24%">
+                                <col style="width:24%">
+                                <col style="width:24%">
+                            </colgroup>
                             <thead class="bg-slate-50 text-slate-500 uppercase sticky top-0">
                                 <tr>
-                                    <th class="py-2 px-3 w-28">Waktu</th>
-                                    <th class="py-2 px-3 w-24">Aksi</th>
+                                    <th class="py-2 px-3">Waktu</th>
+                                    <th class="py-2 px-3">Aksi</th>
                                     <th class="py-2 px-3">Detail</th>
                                     <th class="py-2 px-3">Nilai Lama</th>
                                     <th class="py-2 px-3">Nilai Baru</th>
@@ -2027,62 +2034,100 @@
             }
         }
 
+        // Setiap insight sekarang punya 2 bagian:
+        // - text        : fakta/insight dari data (apa yang terjadi)
+        // - rekomendasi : aksi konkret yang disarankan untuk ditindaklanjuti (apa yang perlu dilakukan)
+        // - priority     : 1 = perlu perhatian segera, 2 = perlu ditindaklanjuti, 3 = informatif/positif
+        // Insight diurutkan berdasarkan priority agar hal yang paling mendesak tampil di atas.
         function generateAISuggestions(s) {
             let saran = [];
             if(s.totalAktif === 0) {
-                saran.push({ icon: "fa-circle-info", color: "text-slate-500 bg-slate-100", text: "Belum ada data jemaat aktif. Tambahkan data jemaat melalui menu Data & Kartu Keluarga untuk melihat insight analitik." });
+                saran.push({ icon: "fa-circle-info", color: "text-slate-500 bg-slate-100", priority: 1, badge: "Info",
+                    text: "Belum ada data jemaat aktif.",
+                    rekomendasi: "Tambahkan data jemaat melalui menu \"Data & Kartu Keluarga\" agar sistem dapat mulai menghitung insight analitik dan rekomendasi." });
                 return saran;
             }
 
             let pctBaptis = Math.round((s.sdhBaptisAir/s.totalAktif)*100);
-            saran.push({ icon: "fa-chart-line", color: "text-indigo-600 bg-indigo-50", text: `Total jemaat aktif saat ini adalah ${s.totalAktif} jiwa dengan persentase baptis air ${pctBaptis}%.` });
+
+            saran.push({ icon: "fa-chart-line", color: "text-indigo-600 bg-indigo-50", priority: 3, badge: "Ringkasan",
+                text: `Total jemaat aktif saat ini ${s.totalAktif} jiwa, dengan ${pctBaptis}% di antaranya sudah baptis air.`,
+                rekomendasi: "Gunakan angka ini sebagai baseline laporan bulanan/tahunan kepada majelis atau tim gembala." });
 
             if(s.yoyPct >= 0) {
-                saran.push({ icon: "fa-arrow-trend-up", color: "text-emerald-600 bg-emerald-50", text: `Jumlah jemaat aktif bertumbuh ${s.yoyPct.toFixed(1)}% (${s.yoySelisih >= 0 ? '+' : ''}${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu.` });
+                saran.push({ icon: "fa-arrow-trend-up", color: "text-emerald-600 bg-emerald-50", priority: 3, badge: "Positif",
+                    text: `Jemaat aktif bertumbuh ${s.yoyPct.toFixed(1)}% (${s.yoySelisih >= 0 ? '+' : ''}${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu.`,
+                    rekomendasi: "Pertahankan momentum dengan mengevaluasi program penginjilan/follow-up jemaat baru yang sudah berjalan, lalu perkuat kanal yang paling efektif." });
             } else {
-                saran.push({ icon: "fa-arrow-trend-down", color: "text-rose-600 bg-rose-50", text: `Jumlah jemaat aktif menurun ${Math.abs(s.yoyPct).toFixed(1)}% (${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu. Perlu perhatian khusus untuk retensi jemaat.` });
+                saran.push({ icon: "fa-arrow-trend-down", color: "text-rose-600 bg-rose-50", priority: 1, badge: "Perlu Perhatian",
+                    text: `Jemaat aktif menurun ${Math.abs(s.yoyPct).toFixed(1)}% (${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu.`,
+                    rekomendasi: "Lakukan kunjungan/telepon pastoral ke jemaat yang mulai jarang hadir, telusuri penyebab utama penurunan (pindah gereja, kesibukan, dsb.), dan buat rencana retensi dalam 1 bulan ke depan." });
             }
 
             if(s.pria + s.wanita > 0) {
                 let selisihGender = Math.abs(s.pctPria - s.pctWanita);
                 if(selisihGender >= 20) {
                     let dominan = s.pctPria > s.pctWanita ? "Laki-Laki" : "Perempuan";
-                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", text: `Komposisi gender kurang seimbang, didominasi jemaat ${dominan} (${Math.max(s.pctPria, s.pctWanita)}%). Pertimbangkan program yang menjangkau kelompok minoritas gender.` });
+                    let minoritas = s.pctPria > s.pctWanita ? "Perempuan" : "Laki-Laki";
+                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", priority: 2, badge: "Tindak Lanjut",
+                        text: `Komposisi gender kurang seimbang, didominasi jemaat ${dominan} (${Math.max(s.pctPria, s.pctWanita)}%).`,
+                        rekomendasi: `Rancang program pelayanan/persekutuan yang secara khusus menjangkau dan melibatkan lebih banyak jemaat ${minoritas} agar partisipasi lebih merata.` });
                 } else {
-                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", text: `Komposisi gender cukup seimbang: ${s.pctPria}% Laki-Laki dan ${s.pctWanita}% Perempuan.` });
+                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", priority: 3, badge: "Positif",
+                        text: `Komposisi gender cukup seimbang: ${s.pctPria}% Laki-Laki dan ${s.pctWanita}% Perempuan.`,
+                        rekomendasi: "Pertahankan pendekatan pelayanan yang inklusif untuk kedua kelompok gender saat ini." });
                 }
             }
 
             if(s.topAgeCat) {
                 let pctTopAge = s.totalUsia === 0 ? 0 : Math.round((s.topAgeCat.count/s.totalUsia)*100);
-                saran.push({ icon: "fa-users-rays", color: "text-amber-600 bg-amber-50", text: `Kelompok usia terbanyak adalah "${s.topAgeCat.name}" (${s.topAgeCat.minAge}-${s.topAgeCat.maxAge} Thn) sebanyak ${s.topAgeCat.count} jiwa (${pctTopAge}%).` });
+                let namaKategoriLower = s.topAgeCat.name.toLowerCase();
+                saran.push({ icon: "fa-users-rays", color: "text-amber-600 bg-amber-50", priority: 2, badge: "Tindak Lanjut",
+                    text: `Kelompok usia terbanyak adalah "${s.topAgeCat.name}" (${s.topAgeCat.minAge}-${s.topAgeCat.maxAge} Thn) sebanyak ${s.topAgeCat.count} jiwa (${pctTopAge}%).`,
+                    rekomendasi: `Fokuskan alokasi program, jadwal ibadah, dan materi khotbah/pelayanan agar lebih relevan dengan kebutuhan kelompok usia ${namaKategoriLower}, tanpa mengabaikan kelompok usia lain.` });
             }
 
             if(s.pendidikanStats && s.pendidikanStats.topLabel) {
-                saran.push({ icon: "fa-graduation-cap", color: "text-purple-600 bg-purple-50", text: `Tingkat pendidikan terbanyak jemaat aktif adalah "${s.pendidikanStats.topLabel}" dengan ${s.pendidikanStats.topVal} jiwa.` });
+                saran.push({ icon: "fa-graduation-cap", color: "text-purple-600 bg-purple-50", priority: 3, badge: "Informatif",
+                    text: `Tingkat pendidikan terbanyak jemaat aktif adalah "${s.pendidikanStats.topLabel}" (${s.pendidikanStats.topVal} jiwa).`,
+                    rekomendasi: "Pertimbangkan profil pendidikan ini saat menyiapkan materi pemuridan, seminar, atau publikasi gereja agar bahasa dan levelnya sesuai." });
             }
 
             if(s.pekerjaanStats && s.pekerjaanStats.topLabel) {
-                saran.push({ icon: "fa-briefcase", color: "text-teal-600 bg-teal-50", text: `Jenis pekerjaan terbanyak jemaat aktif adalah "${s.pekerjaanStats.topLabel}" dengan ${s.pekerjaanStats.topVal} jiwa.` });
+                saran.push({ icon: "fa-briefcase", color: "text-teal-600 bg-teal-50", priority: 3, badge: "Informatif",
+                    text: `Jenis pekerjaan terbanyak jemaat aktif adalah "${s.pekerjaanStats.topLabel}" (${s.pekerjaanStats.topVal} jiwa).`,
+                    rekomendasi: "Pertimbangkan jadwal ibadah/kegiatan pelayanan yang fleksibel agar tidak berbenturan dengan jam kerja mayoritas jemaat." });
             }
 
             if(s.nonAktif > 0) {
                 let pctNonAktif = Math.round((s.nonAktif/(s.totalAktif + s.nonAktif))*100);
-                saran.push({ icon: "fa-triangle-exclamation", color: "text-rose-600 bg-rose-50", text: `Terdapat ${s.nonAktif} jemaat berstatus non-aktif (pindah/meninggal) pada periode ini, atau sekitar ${pctNonAktif}% dari total keseluruhan.` });
+                saran.push({ icon: "fa-triangle-exclamation", color: "text-rose-600 bg-rose-50", priority: pctNonAktif >= 15 ? 1 : 2, badge: pctNonAktif >= 15 ? "Perlu Perhatian" : "Tindak Lanjut",
+                    text: `Terdapat ${s.nonAktif} jemaat berstatus non-aktif (pindah/meninggal), sekitar ${pctNonAktif}% dari total keseluruhan.`,
+                    rekomendasi: pctNonAktif >= 15
+                        ? "Persentase non-aktif cukup tinggi — jadwalkan evaluasi khusus dengan tim gembala untuk memetakan penyebab dan menyusun strategi retensi jemaat."
+                        : "Lakukan pendataan ulang berkala agar status keanggotaan (pindah/meninggal) selalu tercatat akurat dan tidak menumpuk." });
             }
 
             if(s.ultahBulanIniCount > 0) {
-                saran.push({ icon: "fa-cake-candles", color: "text-pink-600 bg-pink-50", text: `Ada ${s.ultahBulanIniCount} jemaat yang berulang tahun bulan ini. Jangan lupa kirimkan ucapan WhatsApp otomatis dari menu Ultah Terdekat.` });
+                saran.push({ icon: "fa-cake-candles", color: "text-pink-600 bg-pink-50", priority: 2, badge: "Aksi Cepat",
+                    text: `Ada ${s.ultahBulanIniCount} jemaat yang berulang tahun bulan ini.`,
+                    rekomendasi: "Kirimkan ucapan WhatsApp otomatis melalui menu \"Ultah Terdekat\" sebelum tanggal lahir masing-masing jemaat agar sapaan gereja terasa personal dan tepat waktu." });
             }
 
             if(s.annivBulanIniCount > 0) {
-                saran.push({ icon: "fa-ring", color: "text-indigo-600 bg-indigo-50", text: `Ada ${s.annivBulanIniCount} pasangan yang merayakan ulang tahun pernikahan bulan ini.` });
+                saran.push({ icon: "fa-ring", color: "text-indigo-600 bg-indigo-50", priority: 2, badge: "Aksi Cepat",
+                    text: `Ada ${s.annivBulanIniCount} pasangan yang merayakan ulang tahun pernikahan bulan ini.`,
+                    rekomendasi: "Kirimkan ucapan ulang tahun pernikahan melalui menu terkait, dan pertimbangkan doa/penggembalaan khusus bagi pasangan yang merayakan tahun pernikahan besar (mis. 10, 25 tahun)." });
             }
 
             if(pctBaptis < 70) {
-                saran.push({ icon: "fa-water", color: "text-cyan-600 bg-cyan-50", text: `Persentase jemaat yang sudah baptis air baru ${pctBaptis}%. Pertimbangkan mengadakan kelas persiapan baptis untuk jemaat yang belum.` });
+                saran.push({ icon: "fa-water", color: "text-cyan-600 bg-cyan-50", priority: pctBaptis < 50 ? 1 : 2, badge: pctBaptis < 50 ? "Perlu Perhatian" : "Tindak Lanjut",
+                    text: `Persentase jemaat yang sudah baptis air baru ${pctBaptis}%.`,
+                    rekomendasi: "Jadwalkan kelas persiapan baptis secara rutin (mis. tiap kuartal) dan hubungi langsung jemaat aktif yang belum baptis untuk mendorong keikutsertaan mereka." });
             }
 
+            // Urutkan agar insight paling mendesak (priority terkecil) tampil paling atas
+            saran.sort((a, b) => a.priority - b.priority);
             return saran;
         }
 
@@ -2090,12 +2135,27 @@
             let el = document.getElementById('aiSuggestions');
             if(!el) return;
             let saran = generateAISuggestions(stats);
+            const badgeStyle = {
+                "Perlu Perhatian": "bg-rose-100 text-rose-600",
+                "Tindak Lanjut": "bg-amber-100 text-amber-700",
+                "Aksi Cepat": "bg-indigo-100 text-indigo-600",
+                "Positif": "bg-emerald-100 text-emerald-600",
+                "Informatif": "bg-slate-100 text-slate-500",
+                "Ringkasan": "bg-slate-100 text-slate-500",
+                "Info": "bg-slate-100 text-slate-500"
+            };
             el.innerHTML = saran.map(s => `
                 <div class="flex items-start space-x-3 bg-white/70 border border-slate-100 rounded-lg p-3">
                     <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${s.color}">
                         <i class="fa-solid ${s.icon}"></i>
                     </div>
-                    <p class="text-xs text-slate-700 leading-relaxed">${s.text}</p>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center flex-wrap gap-2 mb-1">
+                            <span class="text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${badgeStyle[s.badge] || 'bg-slate-100 text-slate-500'}">${s.badge}</span>
+                        </div>
+                        <p class="text-xs text-slate-700 leading-relaxed">${s.text}</p>
+                        ${s.rekomendasi ? `<p class="text-[11px] text-slate-500 leading-relaxed mt-1"><i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i><span class="font-semibold text-slate-600">Rekomendasi:</span> ${s.rekomendasi}</p>` : ''}
+                    </div>
                 </div>
             `).join('');
         }
@@ -2262,6 +2322,37 @@
         }
 
         // DUPLICATE CLEANSING LOGIC
+        // Menghasilkan key unik untuk satu baris log aktivitas, dipakai untuk mendeteksi
+        // baris log yang benar-benar identik (duplikat), misalnya akibat impor Excel berulang.
+        function buildLogDedupeKey(log) {
+            return [
+                log["Waktu Kejadian"] || "-",
+                log["NIJ"] || "-",
+                log["Aksi"] || "-",
+                log["Detail Catatan"] || "-",
+                log["Nilai Lama"] || "-",
+                log["Nilai Baru"] || "-"
+            ].join("||").trim().toLowerCase();
+        }
+
+        // Cari log yang datanya identik persis (bukan hanya NIJ sama, tapi seluruh kolom sama)
+        // lalu kembalikan daftar log unik beserta jumlah duplikat yang ditemukan.
+        function dedupeAuditLogs(logs) {
+            let seen = new Set();
+            let uniqueLogs = [];
+            let duplicateCount = 0;
+            logs.forEach(log => {
+                let key = buildLogDedupeKey(log);
+                if (seen.has(key)) {
+                    duplicateCount++;
+                } else {
+                    seen.add(key);
+                    uniqueLogs.push(log);
+                }
+            });
+            return { uniqueLogs, duplicateCount };
+        }
+
         function checkDuplicates() {
             let seen = new Set();
             let duplicates = [];
@@ -2277,22 +2368,40 @@
                 }
             });
 
-            if(duplicates.length > 0) {
+            // Selain data jemaat, cek juga baris histori log yang identik persis (duplikat log),
+            // misalnya karena impor Excel yang sama diulang lebih dari sekali.
+            let logDedupe = dedupeAuditLogs(auditLogs);
+            let totalDuplicateLogs = logDedupe.duplicateCount;
+
+            if(duplicates.length > 0 || totalDuplicateLogs > 0) {
+                let pesanBagian = [];
+                if(duplicates.length > 0) pesanBagian.push(`${duplicates.length} data jemaat duplikat (Nomor Induk Jemaat sama)`);
+                if(totalDuplicateLogs > 0) pesanBagian.push(`${totalDuplicateLogs} baris histori log yang identik/duplikat`);
+
                 openConfirm(
-                    "Ditemukan Duplikat", 
-                    `Sistem mendeteksi ada ${duplicates.length} data jemaat yang berduplikat (memiliki Nomor Induk Jemaat yang sama). Apakah Anda yakin ingin membersihkannya?`,
+                    "Ditemukan Duplikat",
+                    `Sistem mendeteksi ${pesanBagian.join(" dan ")}. Apakah Anda yakin ingin membersihkannya?`,
                     () => {
                         dataJemaat = uniqueData;
+                        auditLogs = logDedupe.uniqueLogs;
                         saveDataToLocalStorage();
                         currentPage = 1;
                         renderTableJemaat();
                         renderDashboard();
-                        writeLog("SYSTEM", "Cleansing Duplikat", `Menghapus ${duplicates.length} data duplikat hasil impor/kesalahan input.`);
-                        showAlert("Cleansing Berhasil", `${duplicates.length} data duplikat telah dihapus dari sistem secara permanen.`, "success");
+
+                        let detailLog = [];
+                        if(duplicates.length > 0) detailLog.push(`${duplicates.length} data jemaat duplikat`);
+                        if(totalDuplicateLogs > 0) detailLog.push(`${totalDuplicateLogs} baris log duplikat`);
+                        writeLog("SYSTEM", "Cleansing Duplikat", `Membersihkan ${detailLog.join(" & ")} hasil impor/kesalahan input.`);
+
+                        let pesanHasil = [];
+                        if(duplicates.length > 0) pesanHasil.push(`${duplicates.length} data jemaat duplikat`);
+                        if(totalDuplicateLogs > 0) pesanHasil.push(`${totalDuplicateLogs} baris log duplikat`);
+                        showAlert("Cleansing Berhasil", `${pesanHasil.join(" dan ")} telah dihapus dari sistem secara permanen.`, "success");
                     }
                 );
             } else {
-                showAlert("Sudah Bersih", "Tidak ditemukan indikasi data jemaat yang berduplikat di dalam sistem.", "success");
+                showAlert("Sudah Bersih", "Tidak ditemukan indikasi data jemaat maupun histori log yang berduplikat di dalam sistem.", "success");
             }
         }
 
@@ -2406,12 +2515,12 @@
                 logTbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-slate-400">Belum ada histori perubahan tercatat.</td></tr>`;
             } else {
                 let rowsLog = personLogs.slice().reverse().map(log => `
-                    <tr class="hover:bg-slate-50 border-b border-slate-50">
-                        <td class="py-2 px-3 whitespace-nowrap text-slate-500">${log["Waktu Kejadian"]}</td>
-                        <td class="py-2 px-3 font-semibold text-indigo-600">${log["Aksi"]}</td>
-                        <td class="py-2 px-3 text-slate-700 leading-tight">${log["Detail Catatan"]}</td>
-                        <td class="py-2 px-3 text-slate-500 whitespace-pre-wrap font-mono text-[9px] leading-tight">${log["Nilai Lama"]}</td>
-                        <td class="py-2 px-3 text-slate-700 whitespace-pre-wrap font-mono text-[9px] leading-tight">${log["Nilai Baru"]}</td>
+                    <tr class="hover:bg-slate-50 border-b border-slate-50 align-top">
+                        <td class="py-2 px-3 align-top break-words text-slate-500">${log["Waktu Kejadian"]}</td>
+                        <td class="py-2 px-3 align-top break-words font-semibold text-indigo-600">${log["Aksi"]}</td>
+                        <td class="py-2 px-3 align-top break-words text-slate-700 leading-tight">${log["Detail Catatan"]}</td>
+                        <td class="py-2 px-3 align-top break-words whitespace-pre-line font-mono text-[9px] leading-snug text-slate-500">${log["Nilai Lama"]}</td>
+                        <td class="py-2 px-3 align-top break-words whitespace-pre-line font-mono text-[9px] leading-snug text-slate-700">${log["Nilai Baru"]}</td>
                     </tr>
                 `);
                 logTbody.innerHTML = rowsLog.join('');
@@ -2617,11 +2726,17 @@
                     log["Waktu Kejadian"],
                     log["Aksi"],
                     log["Detail Catatan"],
-                    (log["Nilai Lama"] !== "-" || log["Nilai Baru"] !== "-") ? `${log["Nilai Lama"]}  →  ${log["Nilai Baru"]}` : "-"
+                    (log["Nilai Lama"] !== "-" || log["Nilai Baru"] !== "-") ? `${log["Nilai Lama"]}\n→ ${log["Nilai Baru"]}` : "-"
                 ]) : [[{ content: "Belum ada histori perubahan.", colSpan: 4, styles: { halign: 'center', textColor: [148, 163, 184] } }]],
-                headStyles: { fillColor: [226, 232, 240], textColor: [30, 41, 59], fontStyle: 'bold', fontSize: 8.5 },
-                styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5, overflow: 'linebreak' },
-                columnStyles: { 0: { cellWidth: 85 }, 1: { cellWidth: 70 } },
+                headStyles: { fillColor: [226, 232, 240], textColor: [30, 41, 59], fontStyle: 'bold', fontSize: 8.5, halign: 'left' },
+                styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5, overflow: 'linebreak', valign: 'top', halign: 'left' },
+                // Lebar kolom dijumlah persis = lebar halaman efektif (515pt) agar rapi & tidak melebar/rata ke kanan tidak teratur
+                columnStyles: {
+                    0: { cellWidth: 80 },
+                    1: { cellWidth: 65 },
+                    2: { cellWidth: 190 },
+                    3: { cellWidth: 180 }
+                },
                 theme: 'grid'
             });
 
@@ -3170,7 +3285,10 @@
             XLSX.utils.book_append_sheet(workbook, worksheetJemaat, "Data Jemaat");
 
             if (auditLogs.length > 0) {
-                let worksheetLog = XLSX.utils.json_to_sheet(auditLogs);
+                // Ekspor log dalam kondisi sudah dibersihkan dari baris yang identik persis,
+                // agar file Excel yang dihasilkan konsisten dengan hasil fitur Cleansing.
+                let logsUntukEkspor = dedupeAuditLogs(auditLogs).uniqueLogs;
+                let worksheetLog = XLSX.utils.json_to_sheet(logsUntukEkspor);
                 XLSX.utils.book_append_sheet(workbook, worksheetLog, "Log Data");
             } else {
                 let worksheetLog = XLSX.utils.json_to_sheet([{"Waktu Kejadian": "-", "NIJ": "-", "Aksi": "Info", "Detail Catatan": "Belum ada aktivitas terekam.", "Nilai Lama": "-", "Nilai Baru": "-"}]);
@@ -3246,21 +3364,32 @@
 
                     let logSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes("log"));
                     let importedLogsCount = 0;
+                    let skippedDuplicateLogsCount = 0;
                     if (logSheetName) {
                         let logWorksheet = workbook.Sheets[logSheetName];
                         let logRows = XLSX.utils.sheet_to_json(logWorksheet, { defval: "", raw: false });
-                        
+
+                        // Cegah log yang sudah ada (identik persis) ikut tergandakan saat impor berulang.
+                        let existingLogKeys = new Set(auditLogs.map(buildLogDedupeKey));
+
                         logRows.forEach(row => {
                             if (row["Waktu Kejadian"] && row["Waktu Kejadian"] !== "-") {
-                                auditLogs.push({
+                                let logObj = {
                                     "Waktu Kejadian": row["Waktu Kejadian"] || "-",
                                     "NIJ": row["NIJ"] || "-",
                                     "Aksi": row["Aksi"] || "-",
                                     "Detail Catatan": row["Detail Catatan"] || "-",
                                     "Nilai Lama": row["Nilai Lama"] || "-",
                                     "Nilai Baru": row["Nilai Baru"] || "-"
-                                });
-                                importedLogsCount++;
+                                };
+                                let logKey = buildLogDedupeKey(logObj);
+                                if (existingLogKeys.has(logKey)) {
+                                    skippedDuplicateLogsCount++;
+                                } else {
+                                    existingLogKeys.add(logKey);
+                                    auditLogs.push(logObj);
+                                    importedLogsCount++;
+                                }
                             }
                         });
                     }
@@ -3281,8 +3410,9 @@
                     renderTableJemaat();
                     renderDashboard();
                     let pesanParam = paramUpdated ? " Parameter ucapan WhatsApp & demografi usia juga diperbarui." : "";
-                    writeLog("SYSTEM", "Impor Data", `Sistem mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log dari file excel.${paramUpdated ? ' Parameter sistem turut diperbarui.' : ''}`);
-                    showAlert("Berhasil", `Berhasil mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log.${pesanParam}`, "success");
+                    let pesanSkip = skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat dilewati.` : "";
+                    writeLog("SYSTEM", "Impor Data", `Sistem mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log dari file excel.${skippedDuplicateLogsCount > 0 ? ` ${skippedDuplicateLogsCount} baris log duplikat otomatis dilewati.` : ''}${paramUpdated ? ' Parameter sistem turut diperbarui.' : ''}`);
+                    showAlert("Berhasil", `Berhasil mengimpor ${importedCount} data jemaat dan ${importedLogsCount} histori log.${pesanSkip}${pesanParam}`, "success");
                 } catch(err) {
                     showAlert("Error", "Gagal memproses berkas Excel.", "error");
                 }
