@@ -1065,7 +1065,10 @@
                         if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
                         if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
                         if (Array.isArray(parsed.settings.demographics)) settingsDemographics = parsed.settings.demographics;
-                        if (Array.isArray(parsed.settings.komisi)) settingsKomisi = parsed.settings.komisi;
+                        if (Array.isArray(parsed.settings.komisi)) {
+                            settingsKomisi = parsed.settings.komisi;
+                            ensureKomisiFields(); // ⬅️ tambahkan baris ini
+                        }
                     }
                     if (Array.isArray(parsed.dataJemaat) && parsed.dataJemaat.length > 0) {
                         dataJemaat = parsed.dataJemaat; needsMigrationSave = true;
@@ -1254,12 +1257,42 @@
         const PEKERJAAN_OPTIONS = ["Belum/Tidak Bekerja", "Pelajar/Mahasiswa", "Mengurus Rumah Tangga", "PNS/TNI/Polri", "Karyawan Swasta", "Wiraswasta/Pengusaha", "Pensiunan", "Lainnya"];
 
         const DEFAULT_KOMISI = [
-            { name: "Komisi Anak", minAge: 0, maxAge: 12, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-amber-400" },
-            { name: "Komisi Wanita", minAge: 20, maxAge: 55, gender: "P", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-pink-400" },
-            { name: "Komisi Hamba Tuhan", minAge: 19, maxAge: 80, gender: "Semua", pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-indigo-400" },
-            { name: "Komisi Praise & Worship", minAge: 19, maxAge: 100, gender: "Semua", pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: ["Pelayanan Musik / Worship"], pekerjaan: "Semua", isVisible: true, color: "bg-blue-400" }
+            { 
+                name: "Komisi Anak", minAge: 0, maxAge: 12, gender: "Semua", 
+                pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-amber-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Wanita", minAge: 20, maxAge: 55, gender: "P", 
+                pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-pink-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Hamba Tuhan", minAge: 19, maxAge: 80, gender: "Semua", 
+                pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-indigo-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Praise & Worship", minAge: 19, maxAge: 100, gender: "Semua", 
+                pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: ["Pelayanan Musik / Worship"], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-blue-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            }
         ];
         let settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+
+        // Fungsi untuk memastikan semua komisi memiliki field baru (untuk kompatibilitas data lama)
+        function ensureKomisiFields() {
+            settingsKomisi = settingsKomisi.map(k => ({
+                ...k,
+                statusPernikahan: k.statusPernikahan || "Semua",
+                baptisSyarat: k.baptisSyarat || "Semua",
+                sidiSyarat: k.sidiSyarat || "Semua"
+            }));
+        }
 
         // Menghitung usia jemaat pada hari ini berdasarkan tanggal lahir (format string tanggal_lahir)
         function hitungUsiaSaatIni(tanggalLahirStr) {
@@ -1289,6 +1322,12 @@
             }
             // Cek pekerjaan
             if (komisi.pekerjaan && komisi.pekerjaan !== "Semua" && j.pekerjaan !== komisi.pekerjaan) return false;
+            // ⬅️ Kriteria baru
+            if (komisi.statusPernikahan && komisi.statusPernikahan !== "Semua" && j.status_pernikahan !== komisi.statusPernikahan) return false;
+            if (komisi.baptisSyarat === "Sudah Baptis" && j.jenis_baptis === "Belum Baptis") return false;
+            if (komisi.baptisSyarat === "Belum Baptis" && j.jenis_baptis !== "Belum Baptis") return false;
+            if (komisi.sidiSyarat === "Sudah Sidi" && j.status_sidi !== "Sudah Sidi") return false;
+            if (komisi.sidiSyarat === "Belum Sidi" && j.status_sidi !== "Belum Sidi") return false;
             return true;
         }
 
@@ -1431,12 +1470,24 @@
                 return allOpts.map(p => `<option value="${p}" ${selected === p ? 'selected' : ''}>${p}</option>`).join('');
             };
             let html = settingsKomisi.map((k, index) => {
+                // ⬅️ dropdown baru
+                let statusPernikahanOptions = ['Semua', 'Belum Menikah', 'Menikah', 'Cerai Hidup', 'Cerai Mati'].map(val => 
+                    `<option value="${val}" ${k.statusPernikahan === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+                let baptisOptions = ['Semua', 'Sudah Baptis', 'Belum Baptis'].map(val => 
+                    `<option value="${val}" ${k.baptisSyarat === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+                let sidiOptions = ['Semua', 'Sudah Sidi', 'Belum Sidi'].map(val => 
+                    `<option value="${val}" ${k.sidiSyarat === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+
                 let bidangChecklistHtml = KOMISI_BIDANG_OPTIONS.map((opt, bIdx) => `
                     <label class="flex items-center space-x-1.5 text-[11px] text-slate-600 cursor-pointer">
                         <input type="checkbox" id="komisi_bidang_${index}_${bIdx}" value="${opt}" ${k.bidangPelayanan && k.bidangPelayanan.includes(opt) ? 'checked' : ''} class="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer">
                         <span>${opt}</span>
                     </label>
                 `).join('');
+
                 return `
                     <div class="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-3">
                         <div class="flex items-start justify-between gap-2">
@@ -1474,6 +1525,21 @@
                                 <select id="komisi_pekerjaan_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${pekerjaanSelectHtml(k.pekerjaan || "Semua")}</select>
                             </div>
                         </div>
+                        <!-- ⬅️ dropdown baru untuk status pernikahan, baptis, sidi -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Status Pernikahan</label>
+                                <select id="komisi_statusPernikahan_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${statusPernikahanOptions}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Baptis</label>
+                                <select id="komisi_baptisSyarat_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${baptisOptions}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Sidi</label>
+                                <select id="komisi_sidiSyarat_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${sidiOptions}</select>
+                            </div>
+                        </div>
                         <div id="komisi_bidang_wrapper_${index}" class="${k.pelayananSyarat === 'Harus Berpelayanan' ? '' : 'hidden'} mt-1">
                             <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Bidang Pelayanan Spesifik (opsional — kosongkan jika semua bidang boleh)</label>
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-y-1.5 gap-x-2 bg-white border border-slate-200 rounded p-2.5">${bidangChecklistHtml}</div>
@@ -1485,7 +1551,7 @@
         }
 
         function addKomisiCategory() {
-            settingsKomisi.push({ name: "Komisi Baru", minAge: 0, maxAge: 99, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-slate-400" });
+            settingsKomisi.push({ name: "Komisi Baru", minAge: 0, maxAge: 99, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-slate-400", statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua" });
             renderKomisiSettings();
         }
         function removeKomisiCategory(index) { settingsKomisi.splice(index, 1); renderKomisiSettings(); }
@@ -1501,6 +1567,11 @@
                 let colorEl = document.getElementById(`komisi_color_${i}`);
                 let syaratEl = document.getElementById(`komisi_syarat_${i}`);
                 let pekerjaanEl = document.getElementById(`komisi_pekerjaan_${i}`);
+                // ⬅️ elemen baru
+                let statusPernikahanEl = document.getElementById(`komisi_statusPernikahan_${i}`);
+                let baptisSyaratEl = document.getElementById(`komisi_baptisSyarat_${i}`);
+                let sidiSyaratEl = document.getElementById(`komisi_sidiSyarat_${i}`);
+
                 let bidangTerpilih = [];
                 KOMISI_BIDANG_OPTIONS.forEach((opt, bIdx) => {
                     let cb = document.getElementById(`komisi_bidang_${i}_${bIdx}`);
@@ -1518,7 +1589,11 @@
                     bidangPelayanan: bidangTerpilih,
                     pekerjaan: pekerjaanEl ? pekerjaanEl.value : "Semua",
                     isVisible: visEl ? visEl.checked : true,
-                    color: colorEl ? colorEl.value : "bg-slate-400"
+                    color: colorEl ? colorEl.value : "bg-slate-400",
+                    // ⬅️ ambil nilai baru
+                    statusPernikahan: statusPernikahanEl ? statusPernikahanEl.value : "Semua",
+                    baptisSyarat: baptisSyaratEl ? baptisSyaratEl.value : "Semua",
+                    sidiSyarat: sidiSyaratEl ? sidiSyaratEl.value : "Semua"
                 });
             }
             return updated;
@@ -3293,7 +3368,7 @@
 
         // --- IMPOR / EKSPOR EXCEL ---
         const PARAMETER_SHEET_NAME = "Parameter";
-        const PARAMETER_HEADERS = ["Tipe", "Isi Pesan", "Nama Kategori", "Min Umur", "Max Umur", "Tampil di Dashboard", "Warna Chart", "Gender", "Syarat Pelayanan", "Bidang Pelayanan", "Pekerjaan"];
+        const PARAMETER_HEADERS = ["Tipe", "Isi Pesan", "Nama Kategori", "Min Umur", "Max Umur", "Tampil di Dashboard", "Warna Chart", "Gender", "Syarat Pelayanan", "Bidang Pelayanan", "Pekerjaan", "Status Pernikahan", "Syarat Baptis", "Syarat Sidi"];
         const TIPE_UCAPAN_ULTAH = "Ucapan Ulang Tahun";
         const TIPE_UCAPAN_ANNIV = "Ucapan Ulang Tahun Pernikahan";
         const TIPE_DEMOGRAFI = "Demografi Usia";
@@ -3301,13 +3376,13 @@
 
         function buildParameterSheetRows() {
             let rows = [];
-            rows.push({ "Tipe": TIPE_UCAPAN_ULTAH, "Isi Pesan": settingsUcapanUlangTahun, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "" });
-            rows.push({ "Tipe": TIPE_UCAPAN_ANNIV, "Isi Pesan": settingsUcapanAnniv, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "" });
+            rows.push({ "Tipe": TIPE_UCAPAN_ULTAH, "Isi Pesan": settingsUcapanUlangTahun, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
+            rows.push({ "Tipe": TIPE_UCAPAN_ANNIV, "Isi Pesan": settingsUcapanAnniv, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
             settingsDemographics.forEach(cat => {
-                rows.push({ "Tipe": TIPE_DEMOGRAFI, "Isi Pesan": "", "Nama Kategori": cat.name, "Min Umur": cat.minAge, "Max Umur": cat.maxAge, "Tampil di Dashboard": cat.isVisible ? "Ya" : "Tidak", "Warna Chart": cat.color, "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "" });
+                rows.push({ "Tipe": TIPE_DEMOGRAFI, "Isi Pesan": "", "Nama Kategori": cat.name, "Min Umur": cat.minAge, "Max Umur": cat.maxAge, "Tampil di Dashboard": cat.isVisible ? "Ya" : "Tidak", "Warna Chart": cat.color, "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
             });
             settingsKomisi.forEach(k => {
-                rows.push({ "Tipe": TIPE_KOMISI, "Isi Pesan": "", "Nama Kategori": k.name, "Min Umur": k.minAge, "Max Umur": k.maxAge, "Tampil di Dashboard": k.isVisible ? "Ya" : "Tidak", "Warna Chart": k.color, "Gender": k.gender, "Syarat Pelayanan": k.pelayananSyarat, "Bidang Pelayanan": (k.bidangPelayanan || []).join(" | "), "Pekerjaan": k.pekerjaan || "Semua" });
+                rows.push({ "Tipe": TIPE_KOMISI, "Isi Pesan": "", "Nama Kategori": k.name, "Min Umur": k.minAge, "Max Umur": k.maxAge, "Tampil di Dashboard": k.isVisible ? "Ya" : "Tidak", "Warna Chart": k.color, "Gender": k.gender, "Syarat Pelayanan": k.pelayananSyarat, "Bidang Pelayanan": (k.bidangPelayanan || []).join(" | "), "Pekerjaan": k.pekerjaan || "Semua", "Status Pernikahan": k.statusPernikahan || "Semua", "Syarat Baptis": k.baptisSyarat || "Semua", "Syarat Sidi": k.sidiSyarat || "Semua" });
             });
             return rows;
         }
@@ -3351,7 +3426,10 @@
                         bidangPelayanan: String(row["Bidang Pelayanan"] || "").split("|").map(s => s.trim()).filter(Boolean),
                         pekerjaan: String(row["Pekerjaan"] || "Semua"),
                         isVisible: String(row["Tampil di Dashboard"]).trim().toLowerCase() === "ya",
-                        color: String(row["Warna Chart"] || "bg-slate-400")
+                        color: String(row["Warna Chart"] || "bg-slate-400"),
+                        statusPernikahan: String(row["Status Pernikahan"] || "Semua"),
+                        baptisSyarat: String(row["Syarat Baptis"] || "Semua"),
+                        sidiSyarat: String(row["Syarat Sidi"] || "Semua")
                     });
                 }
             });
@@ -3482,7 +3560,11 @@
                         if (paramParsed.ucapanUlangTahun) { settingsUcapanUlangTahun = paramParsed.ucapanUlangTahun; parameterUpdatesMsg.push("Ucapan Ultah"); }
                         if (paramParsed.ucapanAnniv) { settingsUcapanAnniv = paramParsed.ucapanAnniv; parameterUpdatesMsg.push("Ucapan Anniv"); }
                         if (paramParsed.demographics) { settingsDemographics = paramParsed.demographics; parameterUpdatesMsg.push("Demografi"); }
-                        if (paramParsed.komisi) { settingsKomisi = paramParsed.komisi; parameterUpdatesMsg.push("Komisi"); }
+                        if (paramParsed.komisi) { 
+                            settingsKomisi = paramParsed.komisi; 
+                            ensureKomisiFields(); // ⬅️ tambahkan baris ini
+                            parameterUpdatesMsg.push("Komisi"); 
+                        }
                     }
 
                     let sheetName = workbook.SheetNames[0];
