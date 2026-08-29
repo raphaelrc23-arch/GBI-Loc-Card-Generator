@@ -1029,58 +1029,13 @@
             return result;
         }
 
-        // ========================================================================
-        // ARSITEKTUR DATA BARU: allJemaatRaw (termasuk tombstone) & dataJemaat (aktif)
-        // ========================================================================
-        let allJemaatRaw = [];
-        let dataJemaat = [];
-        let auditLogs = [];
-
-        function recomputeActiveJemaat() {
-            // filter: tidak deleted, dan ambil yang terbaru per id jika ada duplikat
-            const latestById = new Map();
-            allJemaatRaw.forEach(j => {
-                if (!j || !j.id) return;
-                const prev = latestById.get(j.id);
-                if (!prev || (j.updatedAt && new Date(j.updatedAt).getTime() > new Date(prev.updatedAt).getTime())) {
-                    latestById.set(j.id, j);
-                }
-            });
-            // sekarang ambil yang tidak deleted
-            dataJemaat = Array.from(latestById.values()).filter(j => !j.deleted);
-        }
-
-        function upsertRawJemaat(newData) {
-            // pastikan ada id, set updatedAt
-            if (!newData.id) newData.id = generateUniqueId();
-            newData.updatedAt = new Date().toISOString();
-            // cari existing di allJemaatRaw
-            const idx = allJemaatRaw.findIndex(j => j.id === newData.id);
-            if (idx !== -1) {
-                allJemaatRaw[idx] = newData;
-            } else {
-                allJemaatRaw.push(newData);
-            }
-        }
-
-        function deleteRawJemaat(id) {
-            // tambahkan tombstone
-            allJemaatRaw.push({
-                id: id,
-                deleted: true,
-                updatedAt: new Date().toISOString()
-            });
-        }
-
-        // --- Fungsi simpan/load yang sudah diadopsi ---
         async function saveAllToFirebase() {
             try {
                 await waitForFirebaseReady();
                 await Promise.all([
-                    saveChunkedCollection(window.jemaatChunksColRef, allJemaatRaw),
+                    saveChunkedCollection(window.jemaatChunksColRef, dataJemaat),
                     saveChunkedCollection(window.auditChunksColRef, auditLogs)
                 ]);
-                // Simpan settings dengan timestamp
                 await window.firestoreSetDoc(window.mainDocRef, {
                     settings: {
                         ucapanUlangTahun: settingsUcapanUlangTahun,
@@ -1088,7 +1043,6 @@
                         demographics: settingsDemographics,
                         komisi: settingsKomisi
                     },
-                    settingsUpdatedAt: new Date().toISOString(),
                     lastUpdated: new Date().toISOString()
                 });
             } catch (e) {
@@ -1097,6 +1051,8 @@
             }
         }
 
+        // ⬅️ Debounce: kalau saveDataToLocalStorage() dipanggil beberapa kali beruntun
+        // (misal beberapa aksi cepat), cukup 1x saja yang benar-benar sync ke Firebase.
         let _saveDebounceTimer = null;
         const SAVE_DEBOUNCE_MS = 400;
         function saveDataToLocalStorage() {
@@ -1108,84 +1064,142 @@
         async function loadDataFromLocalStorage() {
             try {
                 await waitForFirebaseReady();
-                // Ambil settings dari main doc
                 const snap = await window.firestoreGetDoc(window.mainDocRef);
-                let cloudSettings = null;
-                let cloudSettingsUpdatedAt = null;
+                let needsMigrationSave = false;
                 if (snap.exists()) {
-                    const data = snap.data();
-                    if (data.settings) cloudSettings = data.settings;
-                    if (data.settingsUpdatedAt) cloudSettingsUpdatedAt = data.settingsUpdatedAt;
-                }
-
-                // Ambil chunk data jemaat (allJemaatRaw) dari Firebase
-                const jemaatFromCloud = await loadChunkedCollection(window.jemaatChunksColRef);
-                if (jemaatFromCloud.length > 0) {
-                    // Merge dengan allJemaatRaw lokal (jika ada) berdasarkan updatedAt
-                    const merged = new Map();
-                    // masukkan data lokal dulu
-                    allJemaatRaw.forEach(j => {
-                        if (j && j.id) {
-                            const existing = merged.get(j.id);
-                            if (!existing || (j.updatedAt && new Date(j.updatedAt).getTime() > new Date(existing.updatedAt).getTime())) {
-                                merged.set(j.id, j);
-                            }
+                    const parsed = snap.data();
+                    if (parsed.settings) {
+                        if (parsed.settings.ucapanUlangTahun) settingsUcapanUlangTahun = parsed.settings.ucapanUlangTahun;
+                        if (parsed.settings.ucapanAnniv) settingsUcapanAnniv = parsed.settings.ucapanAnniv;
+                        if (Array.isArray(parsed.settings.demographics)) settingsDemographics = parsed.settings.demographics;
+                        if (Array.isArray(parsed.settings.komisi)) {
+                            settingsKomisi = parsed.settings.komisi;
+                            ensureKomisiFields(); // ⬅️ tambahkan baris ini
                         }
-                    });
-                    // lalu data cloud (menang jika lebih baru)
-                    jemaatFromCloud.forEach(j => {
-                        if (j && j.id) {
-                            const existing = merged.get(j.id);
-                            if (!existing || (j.updatedAt && new Date(j.updatedAt).getTime() > new Date(existing.updatedAt).getTime())) {
-                                merged.set(j.id, j);
-                            }
-                        }
-                    });
-                    allJemaatRaw = Array.from(merged.values());
-                }
-
-                // Ambil audit logs (tidak perlu merge, karena log hanya append, dan tidak dihapus)
-                const auditFromCloud = await loadChunkedCollection(window.auditChunksColRef);
-                if (auditFromCloud.length > 0) {
-                    // Gabung audit, tapi kita hindari duplikat berdasarkan kombinasi field?
-                    // Untuk sederhana, kita timpa dengan cloud? Atau merge? Lebih aman: gunakan yang terbaru dari cloud karena lebih lengkap.
-                    // Tapi kita bisa merge dengan dedupe: gunakan Map per id? audit log tidak punya id unik.
-                    // Solusi: gunakan seluruh audit dari cloud, tapi tambahkan yang lokal jika unik.
-                    // Cukup gunakan cloud karena cloud selalu sinkron.
-                    auditLogs = auditFromCloud;
-                }
-
-                // Merge settings: pilih yang lebih baru antara cloud dan lokal (lokal dari localStorage)
-                // settings lokal ada di variabel global settingsUcapanUlangTahun dll, kita baca dari localStorage? 
-                // Kita simpan settings juga di localStorage? Saat ini disimpan di mainDocRef saja.
-                // Kita akan baca dari cloud, dan timpa lokal jika cloud lebih baru.
-                if (cloudSettings && cloudSettingsUpdatedAt) {
-                    // Baca settings lokal dari variabel global (sebelum diubah)
-                    const localSettingsUpdatedAt = localStorage.getItem('settingsUpdatedAt') || null;
-                    if (!localSettingsUpdatedAt || new Date(cloudSettingsUpdatedAt).getTime() > new Date(localSettingsUpdatedAt).getTime()) {
-                        // Terapkan settings dari cloud
-                        if (cloudSettings.ucapanUlangTahun) settingsUcapanUlangTahun = cloudSettings.ucapanUlangTahun;
-                        if (cloudSettings.ucapanAnniv) settingsUcapanAnniv = cloudSettings.ucapanAnniv;
-                        if (Array.isArray(cloudSettings.demographics)) settingsDemographics = cloudSettings.demographics;
-                        if (Array.isArray(cloudSettings.komisi)) {
-                            settingsKomisi = cloudSettings.komisi;
-                            ensureKomisiFields();
-                        }
-                        localStorage.setItem('settingsUpdatedAt', cloudSettingsUpdatedAt);
                     }
-                } else {
-                    // Jika tidak ada cloud, simpan settings lokal ke cloud (nanti)
+                    if (Array.isArray(parsed.dataJemaat) && parsed.dataJemaat.length > 0) {
+                        dataJemaat = parsed.dataJemaat; needsMigrationSave = true;
+                    }
+                    if (Array.isArray(parsed.auditLogs) && parsed.auditLogs.length > 0) {
+                        auditLogs = parsed.auditLogs; needsMigrationSave = true;
+                    }
                 }
-
-                recomputeActiveJemaat();
-                // simpan ke localStorage? Tidak perlu, karena kita gunakan Firebase.
+                const [jemaatFromChunks, auditFromChunks] = await Promise.all([
+                    loadChunkedCollection(window.jemaatChunksColRef),
+                    loadChunkedCollection(window.auditChunksColRef)
+                ]);
+                if (jemaatFromChunks.length > 0) dataJemaat = jemaatFromChunks;
+                if (auditFromChunks.length > 0) auditLogs = auditFromChunks;
+                if (!snap.exists() || needsMigrationSave) await saveAllToFirebase();
             } catch (e) {
                 console.error('Gagal memuat data dari Firebase:', e);
                 if (typeof showAlert === 'function') showAlert('Gagal Memuat Data', 'Tidak dapat terhubung ke server Firebase.', 'error');
             }
         }
 
-        // Fungsi untuk menulis log (tetap pakai auditLogs)
+        let dataJemaat = [];
+        let auditLogs = [];
+
+        function parseRobustDate(tglStr) {
+            if (!tglStr) return null;
+            tglStr = String(tglStr).trim();
+            if (/^\d{4,5}$/.test(tglStr)) {
+                let serial = parseInt(tglStr);
+                if (serial > 10000 && serial < 90000) {
+                    let d = new Date(Math.round((serial - 25569) * 864e5));
+                    return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+                }
+            }
+            let matchYMD = tglStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if (matchYMD) return { y: parseInt(matchYMD[1]), m: parseInt(matchYMD[2]), d: parseInt(matchYMD[3]) };
+            let matchDMY = tglStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+            if (matchDMY) return { y: parseInt(matchDMY[3]), m: parseInt(matchDMY[2]), d: parseInt(matchDMY[1]) };
+            let strEn = tglStr.toLowerCase()
+                .replace(/januari/g, 'jan').replace(/februari/g, 'feb').replace(/maret/g, 'mar')
+                .replace(/agustus/g, 'aug').replace(/oktober/g, 'oct').replace(/desember/g, 'dec');
+            let d = new Date(strEn);
+            if (!isNaN(d.getTime())) return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() };
+            return null;
+        }
+
+        // --- Acara Events ---
+        let acaraEventsCache = [];
+        let currentDetailJemaatId = null;
+
+        async function loadAcaraEventsData() {
+            try {
+                await waitForFirebaseReady();
+                const snap = await window.firestoreGetDoc(window.acaraDocRef);
+                acaraEventsCache = (snap.exists() && Array.isArray(snap.data().eventsData)) ? snap.data().eventsData : [];
+            } catch (e) {
+                console.error('Gagal memuat data Acara Gereja:', e);
+                acaraEventsCache = [];
+            }
+            if (currentDetailJemaatId) renderAttendanceHistory();
+        }
+
+        function formatTglIndoRingkas(iso) {
+            if (!iso) return '-';
+            let p = parseRobustDate(iso);
+            if (!p) return '-';
+            const d = new Date(p.y, p.m - 1, p.d);
+            if (isNaN(d)) return '-';
+            return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        }
+
+        function renderAttendanceHistory() {
+            if (!currentDetailJemaatId) return;
+            const period = document.getElementById('detailAttendancePeriod').value;
+            const now = new Date();
+            const events = (acaraEventsCache || []).filter(ev => {
+                if (!ev.date || ev.eventStatus === 'Terjadwal') return false;
+                if (!Array.isArray(ev.attendeeIds) || !ev.attendeeIds.includes(currentDetailJemaatId)) return false;
+                const p = parseRobustDate(ev.date);
+                if (!p) return false;
+                const d = new Date(p.y, p.m - 1, p.d);
+                if (period === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+                if (period === 'year') return d.getFullYear() === now.getFullYear();
+                return true;
+            });
+            document.getElementById('detailAttendanceTotal').innerText = events.length;
+            const grouped = {};
+            events.forEach(ev => {
+                const name = ev.eventName || '(Tanpa Nama)';
+                if (!grouped[name]) grouped[name] = { count: 0, lastDate: ev.date };
+                grouped[name].count++;
+                if (ev.date > grouped[name].lastDate) grouped[name].lastDate = ev.date;
+            });
+            const rows = Object.entries(grouped).sort((a, b) => b[1].count - a[1].count);
+            const tbody = document.getElementById('detailAttendanceBody');
+            const emptyMsg = document.getElementById('detailAttendanceEmpty');
+            if (rows.length === 0) {
+                tbody.innerHTML = '';
+                emptyMsg?.classList.remove('hidden');
+            } else {
+                emptyMsg?.classList.add('hidden');
+                tbody.innerHTML = rows.map(([name, info]) => `
+                    <tr>
+                        <td class="py-2 px-3 font-medium text-slate-800">${name}</td>
+                        <td class="py-2 px-3 text-center"><span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-semibold">${info.count}x</span></td>
+                        <td class="py-2 px-3 text-slate-500">${formatTglIndoRingkas(info.lastDate)}</td>
+                    </tr>
+                `).join('');
+            }
+            const note = document.getElementById('detailAttendanceNote');
+            if (note) {
+                note.innerText = (acaraEventsCache && acaraEventsCache.length > 0)
+                    ? 'Hanya menghitung laporan ibadah/acara yang absensinya dicatat via mode Checklist di Acara Gereja.'
+                    : 'Data Acara Gereja belum termuat / belum ada data. Pastikan koneksi internet aktif.';
+            }
+        }
+
+        function getTimestampString() {
+            const now = new Date();
+            return now.toLocaleDateString('id-ID') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+        }
+
+        // --- STREAMING_CHUNK:Setting Log functions... ---
+        // --- LOG dengan format terstruktur ---
         function writeLog(nij, aksi, detail, oldVal = "-", newVal = "-") {
             const timestamp = getTimestampString();
             auditLogs.push({
@@ -1196,16 +1210,1956 @@
                 "Nilai Lama": oldVal,
                 "Nilai Baru": newVal
             });
-            // simpan otomatis setelah log ditambahkan
+            // ⬅️ Tidak lagi auto-save di sini. Pemanggil (caller) wajib memanggil
+            // saveDataToLocalStorage() SEKALI setelah semua writeLog() selesai,
+            // supaya 1 aksi user = 1x sync Firebase (bukan berkali-kali).
+        }
+
+        function generateUniqueId() {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return window.crypto.randomUUID();
+            }
+            return Date.now().toString() + '-' + Math.random().toString(36).slice(2, 8);
+        }
+
+        const NIJ_PREFIX = 'LOC';
+        const NIJ_DIGIT_LENGTH = 7;
+
+        function generateNextNIJ() {
+            let maxNumber = 0;
+            const pattern = new RegExp('^' + NIJ_PREFIX + '(\\d{' + NIJ_DIGIT_LENGTH + '})$');
+            dataJemaat.forEach(j => {
+                if (j.nij && typeof j.nij === 'string') {
+                    let match = j.nij.trim().toUpperCase().match(pattern);
+                    if (match) { let num = parseInt(match[1], 10); if (num > maxNumber) maxNumber = num; }
+                }
+            });
+            return NIJ_PREFIX + String(maxNumber + 1).padStart(NIJ_DIGIT_LENGTH, '0');
+        }
+
+        function regenerateNIJ() {
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
+        }
+
+        let selectedImportFile = null;
+
+        const DEFAULT_UCAPAN_ULANG_TAHUN = "Selamat Ulang Tahun, {nama}! 🎉\n\nTuhan Yesus memberkati di usia yang baru. Kiranya kasih dan sukacita-Nya senantiasa menyertai Bapak/Ibu/Saudara/i sekalian.\n\n- GBI Light of the City";
+        const DEFAULT_UCAPAN_ANNIV = "Selamat Ulang Tahun Pernikahan, {nama} & {pasangan}! 🥂\n\nSemoga kasih Tuhan senantiasa merekat rumah tangga Anda berdua dalam damai sejahtera-Nya.\n\n- GBI Light of the City";
+
+        let settingsUcapanUlangTahun = DEFAULT_UCAPAN_ULANG_TAHUN;
+        let settingsUcapanAnniv = DEFAULT_UCAPAN_ANNIV;
+
+        const DEFAULT_DEMOGRAPHICS = [
+            { name: "Balita", minAge: 0, maxAge: 5, isVisible: true, color: "bg-amber-400" },
+            { name: "Anak-anak", minAge: 6, maxAge: 12, isVisible: true, color: "bg-emerald-400" },
+            { name: "Remaja", minAge: 13, maxAge: 17, isVisible: true, color: "bg-blue-400" },
+            { name: "Pemuda", minAge: 18, maxAge: 30, isVisible: true, color: "bg-indigo-400" },
+            { name: "Dewasa", minAge: 31, maxAge: 59, isVisible: true, color: "bg-purple-400" },
+            { name: "Lansia", minAge: 60, maxAge: 150, isVisible: true, color: "bg-slate-400" }
+        ];
+        let settingsDemographics = JSON.parse(JSON.stringify(DEFAULT_DEMOGRAPHICS));
+
+        // Daftar bidang pelayanan baku (selaras dengan opsi di Form Data Jemaat)
+        const KOMISI_BIDANG_OPTIONS = ["Pelayanan Musik / Worship", "Pelayanan Anak (Sekolah Minggu)", "Usher / Penyambut Jemaat", "Sound System & Teknisi", "Multimedia & Dokumentasi", "Doa & Konseling", "Diakonia / Sosial", "Keamanan & Parkir"];
+
+        // Daftar pekerjaan (selaras dengan opsi di Form Data Jemaat)
+        const PEKERJAAN_OPTIONS = ["Belum/Tidak Bekerja", "Pelajar/Mahasiswa", "Mengurus Rumah Tangga", "PNS/TNI/Polri", "Karyawan Swasta", "Wiraswasta/Pengusaha", "Pensiunan", "Lainnya"];
+
+        const DEFAULT_KOMISI = [
+            { 
+                name: "Komisi Anak", minAge: 0, maxAge: 12, gender: "Semua", 
+                pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-amber-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Wanita", minAge: 20, maxAge: 55, gender: "P", 
+                pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-pink-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Hamba Tuhan", minAge: 19, maxAge: 80, gender: "Semua", 
+                pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: [], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-indigo-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            },
+            { 
+                name: "Komisi Praise & Worship", minAge: 19, maxAge: 100, gender: "Semua", 
+                pelayananSyarat: "Harus Berpelayanan", bidangPelayanan: ["Pelayanan Musik / Worship"], pekerjaan: "Semua", 
+                isVisible: true, color: "bg-blue-400",
+                statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua"
+            }
+        ];
+        let settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+
+        // Fungsi untuk memastikan semua komisi memiliki field baru (untuk kompatibilitas data lama)
+        function ensureKomisiFields() {
+            settingsKomisi = settingsKomisi.map(k => ({
+                ...k,
+                statusPernikahan: k.statusPernikahan || "Semua",
+                baptisSyarat: k.baptisSyarat || "Semua",
+                sidiSyarat: k.sidiSyarat || "Semua"
+            }));
+        }
+
+        // Menghitung usia jemaat pada hari ini berdasarkan tanggal lahir (format string tanggal_lahir)
+        function hitungUsiaSaatIni(tanggalLahirStr) {
+            let parsed = parseRobustDate(tanggalLahirStr);
+            if (!parsed) return null;
+            const today = new Date();
+            let age = today.getFullYear() - parsed.y;
+            const bulanIni = today.getMonth() + 1, tglIni = today.getDate();
+            if (bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) age--;
+            return age;
+        }
+
+        // Mengecek apakah satu jemaat memenuhi kriteria satu komisi
+        function jemaatMasukKomisi(j, komisi) {
+            let age = hitungUsiaSaatIni(j.tanggal_lahir);
+            if (age === null || age < komisi.minAge || age > komisi.maxAge) return false;
+            if (komisi.gender && komisi.gender !== "Semua" && j.jenis_kelamin !== komisi.gender) return false;
+            const sudah = j.sudah_berpelayanan === "Ya";
+            if (komisi.pelayananSyarat === "Harus Berpelayanan" && !sudah) return false;
+            if (komisi.pelayananSyarat === "Tidak Berpelayanan" && sudah) return false;
+            // Cek bidang pelayanan
+            const punyaBidangFilter = (komisi.bidangPelayanan && komisi.bidangPelayanan.length > 0);
+            if (punyaBidangFilter) {
+                if (!sudah) return false;
+                let bidangJemaat = (j.bidang_pelayanan || "").trim();
+                if (!komisi.bidangPelayanan.includes(bidangJemaat)) return false;
+            }
+            // Cek pekerjaan
+            if (komisi.pekerjaan && komisi.pekerjaan !== "Semua" && j.pekerjaan !== komisi.pekerjaan) return false;
+            // ⬅️ Kriteria baru
+            if (komisi.statusPernikahan && komisi.statusPernikahan !== "Semua" && j.status_pernikahan !== komisi.statusPernikahan) return false;
+            if (komisi.baptisSyarat === "Sudah Baptis" && j.jenis_baptis === "Belum Baptis") return false;
+            if (komisi.baptisSyarat === "Belum Baptis" && j.jenis_baptis !== "Belum Baptis") return false;
+            if (komisi.sidiSyarat === "Sudah Sidi" && j.status_sidi !== "Sudah Sidi") return false;
+            if (komisi.sidiSyarat === "Belum Sidi" && j.status_sidi !== "Belum Sidi") return false;
+            return true;
+        }
+
+        // Menghitung jumlah jemaat (dari sebuah list) yang memenuhi kriteria setiap komisi
+        function hitungKomisiCounts(list) {
+            return settingsKomisi.map(komisi => ({ ...komisi, count: list.filter(j => jemaatMasukKomisi(j, komisi)).length }));
+        }
+
+        // Mendapatkan daftar komisi yang eligible untuk satu jemaat
+        function getEligibleKomisiForJemaat(j) {
+            return settingsKomisi.filter(komisi => jemaatMasukKomisi(j, komisi));
+        }
+
+        let confirmCallback = null;
+        function openConfirm(title, message, callback) {
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmMessage').innerText = message;
+            confirmCallback = callback;
+            document.getElementById('modalConfirm').classList.remove('hidden');
+        }
+        function closeConfirm() { document.getElementById('modalConfirm').classList.add('hidden'); confirmCallback = null; }
+        document.getElementById('btnConfirmAction').addEventListener('click', function() {
+            if (confirmCallback) confirmCallback();
+            closeConfirm();
+        });
+
+        function showAlert(title, message, type = "success") {
+            document.getElementById('alertTitle').innerText = title;
+            document.getElementById('alertMessage').innerText = message;
+            const iconEl = document.getElementById('alertIcon');
+            if (type === "error") {
+                iconEl.className = "w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto text-2xl";
+                iconEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+            } else {
+                iconEl.className = "w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-2xl";
+                iconEl.innerHTML = `<i class="fa-solid fa-check"></i>`;
+            }
+            document.getElementById('modalAlert').classList.remove('hidden');
+        }
+        function closeAlert() { document.getElementById('modalAlert').classList.add('hidden'); }
+
+        function getEventDistance(m, d) {
+            let today = new Date(); today.setHours(0, 0, 0, 0);
+            let threeDaysAgo = new Date(today); threeDaysAgo.setDate(today.getDate() - 3);
+            let evThisYear = new Date(today.getFullYear(), m - 1, d);
+            let evLastYear = new Date(today.getFullYear() - 1, m - 1, d);
+            if (evThisYear >= threeDaysAgo && evThisYear <= today) return -Math.round((today - evThisYear) / (1000 * 60 * 60 * 24));
+            if (evLastYear >= threeDaysAgo && evLastYear <= today) return -Math.round((today - evLastYear) / (1000 * 60 * 60 * 24));
+            let nextEvent = new Date(today.getFullYear(), m - 1, d);
+            if (nextEvent < today) nextEvent.setFullYear(today.getFullYear() + 1);
+            return Math.round((nextEvent - today) / (1000 * 60 * 60 * 24));
+        }
+
+        // --- STREAMING_CHUNK:Demografi and Komisi Settings... ---
+        // --- Demografi Settings ---
+        function renderDemographicsSettings() {
+            let tbody = document.getElementById('tableDemographicsBody');
+            if (!tbody) return;
+            let rows = settingsDemographics.map((cat, index) => {
+                let colorOptions = [
+                    { val: 'bg-amber-400', label: 'Kuning' }, { val: 'bg-emerald-400', label: 'Hijau' },
+                    { val: 'bg-blue-400', label: 'Biru' }, { val: 'bg-indigo-400', label: 'Nila' },
+                    { val: 'bg-purple-400', label: 'Ungu' }, { val: 'bg-rose-400', label: 'Merah' },
+                    { val: 'bg-pink-400', label: 'Pink' }, { val: 'bg-slate-400', label: 'Abu-abu' }
+                ];
+                let selectHtml = colorOptions.map(c => `<option value="${c.val}" ${cat.color === c.val ? 'selected' : ''}>${c.label}</option>`).join('');
+                return `
+                    <tr>
+                        <td class="py-2 px-3 text-center"><input type="checkbox" id="demo_vis_${index}" ${cat.isVisible ? 'checked' : ''} class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer"></td>
+                        <td class="py-2 px-3"><input type="text" id="demo_name_${index}" value="${cat.name}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-medium text-slate-800"></td>
+                        <td class="py-2 px-3"><input type="number" id="demo_min_${index}" value="${cat.minAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono"></td>
+                        <td class="py-2 px-3"><input type="number" id="demo_max_${index}" value="${cat.maxAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono"></td>
+                        <td class="py-2 px-3"><select id="demo_color_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-medium">${selectHtml}</select></td>
+                        <td class="py-2 px-3 text-center"><button onclick="removeDemographicCategory(${index})" class="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1.5 rounded transition"><i class="fa-solid fa-trash-can"></i></button></td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rows.join('');
+        }
+
+        function addDemographicCategory() {
+            settingsDemographics.push({ name: "Kategori Baru", minAge: 0, maxAge: 99, isVisible: true, color: "bg-slate-400" });
+            renderDemographicsSettings();
+        }
+        function removeDemographicCategory(index) { settingsDemographics.splice(index, 1); renderDemographicsSettings(); }
+
+        function gatherDemographicsSettings() {
+            let updated = [];
+            for (let i = 0; i < settingsDemographics.length; i++) {
+                let visEl = document.getElementById(`demo_vis_${i}`);
+                let nameEl = document.getElementById(`demo_name_${i}`);
+                let minEl = document.getElementById(`demo_min_${i}`);
+                let maxEl = document.getElementById(`demo_max_${i}`);
+                let colorEl = document.getElementById(`demo_color_${i}`);
+                let vis = visEl ? visEl.checked : true;
+                let name = nameEl ? nameEl.value.trim() : "Kategori";
+                let min = minEl ? parseInt(minEl.value) : 0;
+                let max = maxEl ? parseInt(maxEl.value) : 99;
+                let color = colorEl ? colorEl.value : "bg-slate-400";
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 99;
+                updated.push({ name: name || "Kategori Tanpa Nama", minAge: min, maxAge: max, isVisible: vis, color });
+            }
+            return updated;
+        }
+
+        // --- Komisi Pelayanan Settings ---
+        const KOMISI_COLOR_OPTIONS = [
+            { val: 'bg-amber-400', label: 'Kuning' }, { val: 'bg-emerald-400', label: 'Hijau' },
+            { val: 'bg-blue-400', label: 'Biru' }, { val: 'bg-indigo-400', label: 'Nila' },
+            { val: 'bg-purple-400', label: 'Ungu' }, { val: 'bg-rose-400', label: 'Merah' },
+            { val: 'bg-pink-400', label: 'Pink' }, { val: 'bg-slate-400', label: 'Abu-abu' }
+        ];
+
+        function handleKomisiSyaratChange(index) {
+            const select = document.getElementById(`komisi_syarat_${index}`);
+            const wrapper = document.getElementById(`komisi_bidang_wrapper_${index}`);
+            if (select && wrapper) {
+                if (select.value === "Harus Berpelayanan") {
+                    wrapper.classList.remove('hidden');
+                } else {
+                    wrapper.classList.add('hidden');
+                    // Reset pilihan saat di hidden agar tidak tersimpan status yang membingungkan
+                    KOMISI_BIDANG_OPTIONS.forEach((opt, bIdx) => {
+                        let cb = document.getElementById(`komisi_bidang_${index}_${bIdx}`);
+                        if (cb) cb.checked = false;
+                    });
+                }
+            }
+        }
+
+        function renderKomisiSettings() {
+            let container = document.getElementById('listKomisiSettings');
+            if (!container) return;
+            let colorSelectHtml = (selected) => KOMISI_COLOR_OPTIONS.map(c => `<option value="${c.val}" ${selected === c.val ? 'selected' : ''}>${c.label}</option>`).join('');
+            let genderSelectHtml = (selected) => ['Semua', 'L', 'P'].map(g => `<option value="${g}" ${selected === g ? 'selected' : ''}>${g === 'Semua' ? 'Semua Gender' : (g === 'L' ? 'Laki-Laki' : 'Perempuan')}</option>`).join('');
+            let syaratSelectHtml = (selected) => ['Tidak Disyaratkan', 'Harus Berpelayanan', 'Tidak Berpelayanan'].map(o => `<option value="${o}" ${selected === o ? 'selected' : ''}>${o}</option>`).join('');
+            let pekerjaanSelectHtml = (selected) => {
+                let allOpts = ['Semua', ...PEKERJAAN_OPTIONS];
+                return allOpts.map(p => `<option value="${p}" ${selected === p ? 'selected' : ''}>${p}</option>`).join('');
+            };
+            let html = settingsKomisi.map((k, index) => {
+                // ⬅️ dropdown baru
+                let statusPernikahanOptions = ['Semua', 'Belum Menikah', 'Menikah', 'Cerai Hidup', 'Cerai Mati'].map(val => 
+                    `<option value="${val}" ${k.statusPernikahan === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+                let baptisOptions = ['Semua', 'Sudah Baptis', 'Belum Baptis'].map(val => 
+                    `<option value="${val}" ${k.baptisSyarat === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+                let sidiOptions = ['Semua', 'Sudah Sidi', 'Belum Sidi'].map(val => 
+                    `<option value="${val}" ${k.sidiSyarat === val ? 'selected' : ''}>${val}</option>`
+                ).join('');
+
+                let bidangChecklistHtml = KOMISI_BIDANG_OPTIONS.map((opt, bIdx) => `
+                    <label class="flex items-center space-x-1.5 text-[11px] text-slate-600 cursor-pointer">
+                        <input type="checkbox" id="komisi_bidang_${index}_${bIdx}" value="${opt}" ${k.bidangPelayanan && k.bidangPelayanan.includes(opt) ? 'checked' : ''} class="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer">
+                        <span>${opt}</span>
+                    </label>
+                `).join('');
+
+                return `
+                    <div class="border border-slate-200 rounded-lg p-4 bg-slate-50/50 space-y-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center space-x-2 flex-1">
+                                <input type="checkbox" id="komisi_vis_${index}" title="Tampilkan di Dashboard" ${k.isVisible ? 'checked' : ''} class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 cursor-pointer flex-shrink-0">
+                                <input type="text" id="komisi_name_${index}" value="${k.name}" placeholder="Nama Komisi" class="w-full px-2.5 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs font-bold text-slate-800">
+                            </div>
+                            <button onclick="removeKomisiCategory(${index})" class="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1.5 rounded transition flex-shrink-0"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Usia Min</label>
+                                <input type="number" id="komisi_min_${index}" value="${k.minAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Usia Max</label>
+                                <input type="number" id="komisi_max_${index}" value="${k.maxAge}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs text-center font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Gender</label>
+                                <select id="komisi_gender_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${genderSelectHtml(k.gender)}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Warna Chart</label>
+                                <select id="komisi_color_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${colorSelectHtml(k.color)}</select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Status Pelayanan</label>
+                                <select id="komisi_syarat_${index}" onchange="handleKomisiSyaratChange(${index})" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${syaratSelectHtml(k.pelayananSyarat)}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Pekerjaan</label>
+                                <select id="komisi_pekerjaan_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${pekerjaanSelectHtml(k.pekerjaan || "Semua")}</select>
+                            </div>
+                        </div>
+                        <!-- ⬅️ dropdown baru untuk status pernikahan, baptis, sidi -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Status Pernikahan</label>
+                                <select id="komisi_statusPernikahan_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${statusPernikahanOptions}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Baptis</label>
+                                <select id="komisi_baptisSyarat_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${baptisOptions}</select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Syarat Sidi</label>
+                                <select id="komisi_sidiSyarat_${index}" class="w-full px-2 py-1.5 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs">${sidiOptions}</select>
+                            </div>
+                        </div>
+                        <div id="komisi_bidang_wrapper_${index}" class="${k.pelayananSyarat === 'Harus Berpelayanan' ? '' : 'hidden'} mt-1">
+                            <label class="block text-[9px] font-semibold text-slate-400 uppercase mb-1">Bidang Pelayanan Spesifik (opsional — kosongkan jika semua bidang boleh)</label>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-y-1.5 gap-x-2 bg-white border border-slate-200 rounded p-2.5">${bidangChecklistHtml}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            container.innerHTML = html.join('') || `<p class="text-xs text-slate-400 text-center py-4">Belum ada komisi. Klik "Tambah Komisi" untuk membuat.</p>`;
+        }
+
+        function addKomisiCategory() {
+            settingsKomisi.push({ name: "Komisi Baru", minAge: 0, maxAge: 99, gender: "Semua", pelayananSyarat: "Tidak Disyaratkan", bidangPelayanan: [], pekerjaan: "Semua", isVisible: true, color: "bg-slate-400", statusPernikahan: "Semua", baptisSyarat: "Semua", sidiSyarat: "Semua" });
+            renderKomisiSettings();
+        }
+        function removeKomisiCategory(index) { settingsKomisi.splice(index, 1); renderKomisiSettings(); }
+
+        function gatherKomisiSettings() {
+            let updated = [];
+            for (let i = 0; i < settingsKomisi.length; i++) {
+                let visEl = document.getElementById(`komisi_vis_${i}`);
+                let nameEl = document.getElementById(`komisi_name_${i}`);
+                let minEl = document.getElementById(`komisi_min_${i}`);
+                let maxEl = document.getElementById(`komisi_max_${i}`);
+                let genderEl = document.getElementById(`komisi_gender_${i}`);
+                let colorEl = document.getElementById(`komisi_color_${i}`);
+                let syaratEl = document.getElementById(`komisi_syarat_${i}`);
+                let pekerjaanEl = document.getElementById(`komisi_pekerjaan_${i}`);
+                // ⬅️ elemen baru
+                let statusPernikahanEl = document.getElementById(`komisi_statusPernikahan_${i}`);
+                let baptisSyaratEl = document.getElementById(`komisi_baptisSyarat_${i}`);
+                let sidiSyaratEl = document.getElementById(`komisi_sidiSyarat_${i}`);
+
+                let bidangTerpilih = [];
+                KOMISI_BIDANG_OPTIONS.forEach((opt, bIdx) => {
+                    let cb = document.getElementById(`komisi_bidang_${i}_${bIdx}`);
+                    if (cb && cb.checked) bidangTerpilih.push(opt);
+                });
+                let min = minEl ? parseInt(minEl.value) : 0;
+                let max = maxEl ? parseInt(maxEl.value) : 99;
+                if (isNaN(min)) min = 0;
+                if (isNaN(max)) max = 99;
+                updated.push({
+                    name: (nameEl ? nameEl.value.trim() : "") || "Komisi Tanpa Nama",
+                    minAge: min, maxAge: max,
+                    gender: genderEl ? genderEl.value : "Semua",
+                    pelayananSyarat: syaratEl ? syaratEl.value : "Tidak Disyaratkan",
+                    bidangPelayanan: bidangTerpilih,
+                    pekerjaan: pekerjaanEl ? pekerjaanEl.value : "Semua",
+                    isVisible: visEl ? visEl.checked : true,
+                    color: colorEl ? colorEl.value : "bg-slate-400",
+                    // ⬅️ ambil nilai baru
+                    statusPernikahan: statusPernikahanEl ? statusPernikahanEl.value : "Semua",
+                    baptisSyarat: baptisSyaratEl ? baptisSyaratEl.value : "Semua",
+                    sidiSyarat: sidiSyaratEl ? sidiSyaratEl.value : "Semua"
+                });
+            }
+            return updated;
+        }
+
+        function loadSettingsForm() {
+            document.getElementById('inputTemplateUlangTahun').value = settingsUcapanUlangTahun;
+            document.getElementById('inputTemplateAnniv').value = settingsUcapanAnniv;
+            renderDemographicsSettings();
+            renderKomisiSettings();
+        }
+
+        function saveSettings() {
+            let t1 = document.getElementById('inputTemplateUlangTahun').value.trim();
+            let t2 = document.getElementById('inputTemplateAnniv').value.trim();
+            if (!t1 || !t2) { showAlert("Gagal Disimpan", "Template ucapan tidak boleh kosong.", "error"); return; }
+            settingsUcapanUlangTahun = t1;
+            settingsUcapanAnniv = t2;
+            settingsDemographics = gatherDemographicsSettings();
+            settingsKomisi = gatherKomisiSettings();
+            saveSettingsToLocalStorage();
+            renderDashboardIfActive();
+            showAlert("Berhasil", "Parameter sistem berhasil disimpan.", "success");
+        }
+
+        function resetSettingsDefault() {
+            document.getElementById('inputTemplateUlangTahun').value = DEFAULT_UCAPAN_ULANG_TAHUN;
+            document.getElementById('inputTemplateAnniv').value = DEFAULT_UCAPAN_ANNIV;
+            settingsDemographics = JSON.parse(JSON.stringify(DEFAULT_DEMOGRAPHICS));
+            settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+            renderDemographicsSettings();
+            renderKomisiSettings();
+        }
+
+        function confirmResetAllData() {
+            openConfirm("Hapus Semua Data Jemaat?", "Seluruh data jemaat (" + dataJemaat.length + " entri) dan riwayat log aktivitas akan dihapus permanen.", function() {
+                dataJemaat = [];
+                auditLogs = [];
+                currentPage = 1;
+                saveDataToLocalStorage();
+                renderTableJemaat();
+                renderDashboardIfActive();
+                showAlert("Berhasil", "Seluruh data jemaat telah dihapus.", "success");
+            });
+        }
+
+        function formatNoWhatsApp(no) {
+            if (!no) return null;
+            let digits = String(no).replace(/[^0-9]/g, '');
+            if (!digits) return null;
+            if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+            else if (!digits.startsWith('62')) digits = '62' + digits;
+            return digits;
+        }
+
+        function kirimUcapanWhatsApp(id, jenis = 'ultah', pasanganNama = '') {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) return;
+            let nomor = formatNoWhatsApp(j.no_telepon);
+            if (!nomor) { showAlert("Nomor Tidak Tersedia", `${j.nama_lengkap} belum memiliki No. Telepon terdaftar.`, "error"); return; }
+            let pesan = "";
+            if (jenis === 'ultah') pesan = settingsUcapanUlangTahun.split('{nama}').join(j.nama_lengkap);
+            else if (jenis === 'anniv') pesan = settingsUcapanAnniv.split('{nama}').join(j.nama_lengkap).split('{pasangan}').join(pasanganNama || 'Pasangan');
+            let url = `https://wa.me/${nomor}?text=${encodeURIComponent(pesan)}`;
+            window.open(url, '_blank');
+            if (jenis === 'ultah' || jenis === 'anniv') {
+                writeLog(j.nij, "Kirim WhatsApp", `Mengirim ucapan ${jenis === 'ultah' ? 'Ulang Tahun' : 'Anniversary'} ke ${j.nama_lengkap}`);
+            } else {
+                writeLog(j.nij, "Kirim WhatsApp", `Membuka chat WhatsApp dengan ${j.nama_lengkap}`);
+            }
             saveDataToLocalStorage();
         }
 
-        // --- Fungsi lain tetap sama, hanya disesuaikan pemanggilan upsert/delete ---
-        // (Karena panjang, kita pertahankan semua fungsi yang ada, hanya modifikasi bagian save/delete)
+        // --- STREAMING_CHUNK:Setting Window Onload and core rendering... ---
+        // --- ON LOAD ---
+        window.onload = async function() {
+            document.getElementById('nav-church-name').innerText = 'Memuat data...';
+            await loadDataFromLocalStorage();
+            loadAcaraEventsData();
+            document.getElementById('nav-church-name').innerText = churchName;
+            switchTab('jemaat');
+        };
 
-        // ========================================================================
-        // FUNGSI CRUD YANG DIUBAH
-        // ========================================================================
+        // ⬅️ Lacak tab yang sedang aktif, supaya renderDashboard() (yang berat: menghitung
+        // ulang statistik gender, demografi, komisi, tren bulanan, dll) tidak perlu
+        // dijalankan tiap kali ada perubahan data kalau user sedang tidak melihat tab ini.
+        let currentTab = 'jemaat';
+        function renderDashboardIfActive() {
+            if (currentTab === 'dashboard') renderDashboard();
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            const tabs = ['jemaat', 'dashboard', 'settings'];
+            tabs.forEach(t => {
+                document.getElementById('section-' + t).classList.toggle('hidden', t !== tab);
+                const btn = document.getElementById('tab-' + t);
+                if (t === tab) { btn.classList.add('border-indigo-600', 'text-indigo-600');
+                    btn.classList.remove('border-transparent', 'text-slate-500'); } 
+                else { btn.classList.remove('border-indigo-600', 'text-indigo-600');
+                    btn.classList.add('border-transparent', 'text-slate-500'); }
+            });
+            if (tab === 'dashboard') renderDashboard();
+            else if (tab === 'jemaat') { currentPage = 1; renderTableJemaat(); }
+            else if (tab === 'settings') loadSettingsForm();
+        }
+
+        let lastDashboardStats = null;
+        let growthMode = 'yoy';
+
+        function setGrowthMode(mode) { growthMode = mode; renderDashboard(); }
+
+        function updateGrowthModeButtons() {
+            let btnYoy = document.getElementById('btnGrowthYoy');
+            let btnMom = document.getElementById('btnGrowthMom');
+            if (!btnYoy || !btnMom) return;
+            let active = 'px-1.5 py-0.5 rounded bg-white text-indigo-600 shadow-sm transition';
+            let inactive = 'px-1.5 py-0.5 rounded text-slate-400 transition';
+            btnYoy.className = growthMode === 'yoy' ? active : inactive;
+            btnMom.className = growthMode === 'mom' ? active : inactive;
+        }
+
+        function parseTglBergabung(str) {
+            let p = parseRobustDate(str);
+            if (p) return new Date(p.y, p.m - 1, p.d);
+            return null;
+        }
+
+        function getPeriodeFilteredAktif() {
+            const bulanVal = document.getElementById('dashPeriodeBulan').value;
+            const tahunVal = parseInt(document.getElementById('dashPeriodeTahun').value);
+            let periodeEnd;
+            if (bulanVal === "all") periodeEnd = new Date(tahunVal, 11, 31, 23, 59, 59);
+            else { let bln = parseInt(bulanVal); periodeEnd = new Date(tahunVal, bln, 0, 23, 59, 59); }
+            let dalamPeriode = dataJemaat.filter(j => {
+                let d = parseTglBergabung(j.tanggal_bergabung);
+                return d && d <= periodeEnd;
+            });
+            return {
+                periodeEnd, bulanVal, tahunVal,
+                aktif: dalamPeriode.filter(j => j.status_jemaat === "Aktif"),
+                nonAktif: dalamPeriode.filter(j => j.status_jemaat !== "Aktif")
+            };
+        }
+
+        function renderMonthlyTrendChart(tahunVal) {
+            let container = document.getElementById('chartTrenBulanan');
+            if (!container) return;
+            let labelTahunEl = document.getElementById('chartTrenTahunLabel');
+            if (labelTahunEl) labelTahunEl.innerText = tahunVal;
+            const monthAbbr = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+            let baruPerBulan = new Array(12).fill(0);
+            let baptisPerBulan = new Array(12).fill(0);
+            dataJemaat.forEach(j => {
+                let dGabung = parseTglBergabung(j.tanggal_bergabung);
+                if (dGabung && dGabung.getFullYear() === tahunVal) baruPerBulan[dGabung.getMonth()]++;
+                if (j.tanggal_baptis) {
+                    let dBaptis = parseTglBergabung(j.tanggal_baptis);
+                    if (dBaptis && dBaptis.getFullYear() === tahunVal) baptisPerBulan[dBaptis.getMonth()]++;
+                }
+            });
+            let maxVal = Math.max(1, ...baruPerBulan, ...baptisPerBulan);
+            const maxBarPx = 130;
+            let html = '';
+            for (let m = 0; m < 12; m++) {
+                let valBaru = baruPerBulan[m];
+                let valBaptis = baptisPerBulan[m];
+                let hBaru = valBaru === 0 ? 0 : Math.max(2, Math.round((valBaru / maxVal) * maxBarPx));
+                let hBaptis = valBaptis === 0 ? 0 : Math.max(2, Math.round((valBaptis / maxVal) * maxBarPx));
+                html += `
+                    <div class="flex-1 flex flex-col items-center justify-end">
+                        <div class="flex items-end gap-0.5" style="height:${maxBarPx}px;">
+                            <div class="w-2.5 sm:w-3 bg-indigo-400 rounded-t transition-all duration-700" style="height:${hBaru}px" title="Jemaat Baru: ${valBaru}"></div>
+                            <div class="w-2.5 sm:w-3 bg-emerald-400 rounded-t transition-all duration-700" style="height:${hBaptis}px" title="Baptisan: ${valBaptis}"></div>
+                        </div>
+                        <span class="text-[9px] text-slate-400 mt-1.5">${monthAbbr[m]}</span>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // --- RENDER DASHBOARD ---
+        function renderDashboard() {
+            const { periodeEnd, bulanVal, tahunVal, aktif, nonAktif } = getPeriodeFilteredAktif();
+            let sdhBaptisAir = aktif.filter(j => j.jenis_baptis === "Baptis Selam" || j.jenis_baptis === "Baptis Percik").length;
+            document.getElementById('statTotalJemaat').innerText = aktif.length;
+            document.getElementById('statBaptis').innerText = sdhBaptisAir;
+            document.getElementById('statNonAktif').innerText = nonAktif.length;
+            let pctBaptisCard = aktif.length === 0 ? 0 : Math.round((sdhBaptisAir / aktif.length) * 100);
+            let statBaptisPctEl = document.getElementById('statBaptisPct');
+            if (statBaptisPctEl) statBaptisPctEl.innerText = `(${pctBaptisCard}%)`;
+            updateGrowthModeButtons();
+            let periodeEndPembanding = new Date(periodeEnd);
+            if (growthMode === 'mom') periodeEndPembanding.setMonth(periodeEnd.getMonth() - 1);
+            else periodeEndPembanding.setFullYear(periodeEnd.getFullYear() - 1);
+            let aktifPembanding = dataJemaat.filter(j => {
+                let d = parseTglBergabung(j.tanggal_bergabung);
+                return d && d <= periodeEndPembanding && j.status_jemaat === "Aktif";
+            }).length;
+            let yoyPct = 0;
+            if (aktifPembanding > 0) yoyPct = ((aktif.length - aktifPembanding) / aktifPembanding) * 100;
+            else if (aktif.length > 0) yoyPct = 100;
+            let yoySelisih = aktif.length - aktifPembanding;
+            let yoyEl = document.getElementById('statYoy');
+            yoyEl.innerText = `${yoyPct >= 0 ? '+' : ''}${yoyPct.toFixed(1)}%`;
+            yoyEl.className = `text-2xl font-bold ${yoyPct >= 0 ? 'text-indigo-600' : 'text-rose-600'}`;
+            let yoyJiwaEl = document.getElementById('statYoyJiwa');
+            if (yoyJiwaEl) yoyJiwaEl.innerText = `(${yoySelisih >= 0 ? '+' : ''}${yoySelisih} jiwa)`;
+            let statGrowthModeLabelEl = document.getElementById('statGrowthModeLabel');
+            if (statGrowthModeLabelEl) statGrowthModeLabelEl.innerText = growthMode === 'mom' ? 'MoM' : 'YoY';
+            let statYoyVsLabelEl = document.getElementById('statYoyVsLabel');
+            if (statYoyVsLabelEl) statYoyVsLabelEl.innerText = growthMode === 'mom' ? 'vs Bulan Lalu' : 'vs Tahun Lalu';
+
+            const today = new Date();
+            const currentMonth = today.getMonth() + 1;
+            const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+            let aktifTerkini = dataJemaat.filter(j => j.status_jemaat === "Aktif");
+
+            document.getElementById('currentMonthTitle').innerText = `Ulang Tahun Bulan ${monthNames[currentMonth - 1]}`;
+            let ultahBulanIni = aktifTerkini.map(j => {
+                let parsed = parseRobustDate(j.tanggal_lahir);
+                if (!parsed) return null;
+                let dist = getEventDistance(parsed.m, parsed.d);
+                return { ...j, diffDays: dist, tgl: parsed.d, bln: parsed.m, thn: parsed.y };
+            }).filter(j => j && (j.bln === currentMonth || (j.diffDays >= -3 && j.diffDays <= 0))).sort((a, b) => a.tgl - b.tgl);
+            document.getElementById('countUltahBulanIni').innerText = `${ultahBulanIni.length} Orang`;
+            let tbodyUltah = document.getElementById('tableUltahBulanIniBody');
+            if (ultahBulanIni.length === 0) {
+                tbodyUltah.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-400">Tidak ada.</td></tr>`;
+            } else {
+                let rowsUltah = ultahBulanIni.map(j => {
+                    const isHariIni = j.diffDays === 0;
+                    const isDekat = j.diffDays >= -3 && j.diffDays <= 0;
+                    let btnWa = `<span class="text-slate-300 text-[10px]">Belum H-3</span>`;
+                    if (isDekat) {
+                        if (j.no_telepon) {
+                            let badgeText = isHariIni ? "Kirim WA (Hari-H)" : `Kirim WA (Lewat ${Math.abs(j.diffDays)} Hr)`;
+                            btnWa = `<button onclick="kirimUcapanWhatsApp('${j.id}', 'ultah')" class="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded transition whitespace-nowrap"><i class="fa-brands fa-whatsapp text-sm"></i> ${badgeText}</button>`;
+                        } else btnWa = `<span class="text-slate-300 text-[10px]">No WA kosong</span>`;
+                    }
+                    return `
+                        <tr class="hover:bg-slate-50 border-b border-slate-50 ${isHariIni ? 'bg-pink-50/40' : ''}">
+                            <td class="py-2.5 px-3"><div class="font-medium text-slate-800">${j.nama_lengkap} ${isHariIni ? '🎉' : ''}</div><div class="text-[9px] text-slate-400 font-mono">${j.nij}</div></td>
+                            <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">${j.tgl} ${monthNames[j.bln-1]}</td>
+                            <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">${today.getFullYear() - j.thn} Thn</td>
+                            <td class="py-2.5 px-3 text-slate-600">${j.sudah_berpelayanan === "Ya" ? (j.bidang_pelayanan || "Berpelayanan") : "Belum"}</td>
+                            <td class="py-2.5 px-3 text-center">${btnWa}</td>
+                        </tr>
+                    `;
+                });
+                tbodyUltah.innerHTML = rowsUltah.join('');
+            }
+
+            document.getElementById('currentAnnivTitle').innerText = `Ulang Tahun Pernikahan Bulan ${monthNames[currentMonth - 1]}`;
+            let couples = [];
+            let processedKk = new Set();
+            aktifTerkini.forEach(j => {
+                if (j.status_pernikahan === 'Menikah' && j.tanggal_pernikahan) {
+                    let parsed = parseRobustDate(j.tanggal_pernikahan);
+                    if (parsed) {
+                        let m = parsed.m, d = parsed.d;
+                        let dist = getEventDistance(m, d);
+                        if (m === currentMonth || (dist >= -3 && dist <= 0)) {
+                            let kkId = j.kepalaKeluargaId || j.id;
+                            if (!processedKk.has(kkId)) {
+                                processedKk.add(kkId);
+                                let fam = aktifTerkini.filter(x => (x.id === kkId || x.kepalaKeluargaId === kkId));
+                                let suami = fam.find(x => x.jenis_kelamin === 'L' && x.status_pernikahan === 'Menikah');
+                                let istri = fam.find(x => x.jenis_kelamin === 'P' && x.status_pernikahan === 'Menikah');
+                                if (suami || istri) couples.push({ suami, istri, tgl: d, tglStr: `${d} ${monthNames[m - 1]}`, thn: parsed.y, diffDays: dist });
+                            }
+                        }
+                    }
+                }
+            });
+            couples.sort((a, b) => a.tgl - b.tgl);
+            document.getElementById('countAnnivBulanIni').innerText = `${couples.length} Pasangan`;
+            let tbodyAnniv = document.getElementById('tableAnnivBulanIniBody');
+            if (couples.length === 0) {
+                tbodyAnniv.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-400">Tidak ada.</td></tr>`;
+            } else {
+                let rowsAnniv = couples.map(c => {
+                    let isHariIni = c.diffDays === 0;
+                    let isDekat = c.diffDays >= -3 && c.diffDays <= 0;
+                    let usiaPernikahan = today.getFullYear() - c.thn;
+                    let btnWaSuami = '', btnWaIstri = '';
+                    if (isDekat) {
+                        let tText = isHariIni ? '' : ` (Lewat ${Math.abs(c.diffDays)}Hr)`;
+                        if (c.suami && c.suami.no_telepon) btnWaSuami = `<button onclick="kirimUcapanWhatsApp('${c.suami.id}', 'anniv', '${c.istri ? c.istri.nama_lengkap : 'Pasangan'}')" class="px-2 py-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded transition flex items-center space-x-1"><i class="fa-brands fa-whatsapp"></i><span>Suami${tText}</span></button>`;
+                        if (c.istri && c.istri.no_telepon) btnWaIstri = `<button onclick="kirimUcapanWhatsApp('${c.istri.id}', 'anniv', '${c.suami ? c.suami.nama_lengkap : 'Pasangan'}')" class="px-2 py-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded transition flex items-center space-x-1"><i class="fa-brands fa-whatsapp"></i><span>Istri${tText}</span></button>`;
+                    }
+                    if (!btnWaSuami && !btnWaIstri) btnWaSuami = `<span class="text-slate-300 text-[10px]">Belum H-3 / No WA kosong</span>`;
+                    let namaDisplay = [];
+                    if (c.suami) namaDisplay.push(c.suami.nama_lengkap);
+                    if (c.istri) namaDisplay.push(c.istri.nama_lengkap);
+                    let namaText = namaDisplay.join(" & ");
+                    return `
+                        <tr class="hover:bg-slate-50 border-b border-slate-50 ${isHariIni ? 'bg-indigo-50/40' : ''}">
+                            <td class="py-2.5 px-3 font-medium text-slate-800">${namaText} ${isHariIni ? '🥂' : ''}</td>
+                            <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">${c.tglStr}</td>
+                            <td class="py-2.5 px-3 text-slate-600 whitespace-nowrap">${usiaPernikahan} Tahun</td>
+                            <td class="py-2.5 px-3 text-center flex justify-center space-x-2">${btnWaSuami} ${btnWaIstri}</td>
+                        </tr>
+                    `;
+                });
+                tbodyAnniv.innerHTML = rowsAnniv.join('');
+            }
+
+            let container = document.getElementById('countdownWidget');
+            container.innerHTML = "";
+            let list = aktifTerkini.map(j => {
+                let parsed = parseRobustDate(j.tanggal_lahir);
+                if (!parsed) return null;
+                let dist = getEventDistance(parsed.m, parsed.d);
+                return { ...j, diffDays: dist, parsedTgl: parsed };
+            }).filter(Boolean).sort((a, b) => a.diffDays - b.diffDays).slice(0, 3);
+            if (list.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400">Belum ada data jemaat aktif.</p>`;
+            } else {
+                let itemsHtml = list.map(item => {
+                    let badge = "", bClass = "bg-amber-50 text-amber-600";
+                    if (item.diffDays === 0) { badge = "Hari Ini! 🎉";
+                        bClass = "bg-pink-100 text-pink-700 animate-pulse border-pink-200"; } 
+                    else if (item.diffDays < 0) { badge = `Lewat ${Math.abs(item.diffDays)} Hari`;
+                        bClass = "bg-slate-100 text-slate-600"; } 
+                    else badge = `${item.diffDays} Hari Lagi`;
+                    const tgl = `${item.parsedTgl.d} ${monthNames[item.parsedTgl.m - 1]}`;
+                    let waButton = '';
+                    if (item.diffDays >= -3 && item.diffDays <= 0 && item.no_telepon) waButton = `<button onclick="kirimUcapanWhatsApp('${item.id}', 'ultah')" class="ml-2 text-emerald-600 hover:text-emerald-700"><i class="fa-brands fa-whatsapp text-base"></i></button>`;
+                    return `
+                        <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between">
+                            <div><p class="font-semibold text-slate-800">${item.nama_lengkap}</p><p class="text-[11px] text-slate-500">${tgl}</p></div>
+                            <div class="flex items-center"><span class="text-[10px] font-bold px-2 py-1 rounded border border-transparent whitespace-nowrap ${bClass}">${badge}</span>${waButton}</div>
+                        </div>
+                    `;
+                });
+                container.innerHTML = itemsHtml.join('');
+            }
+
+            if (document.getElementById('chartGender')) {
+                let pria = aktifTerkini.filter(j => j.jenis_kelamin === "L").length;
+                let wanita = aktifTerkini.filter(j => j.jenis_kelamin === "P").length;
+                let totalGender = pria + wanita;
+                let pctPria = totalGender === 0 ? 0 : Math.round((pria / totalGender) * 100);
+                let pctWanita = totalGender === 0 ? 0 : Math.round((wanita / totalGender) * 100);
+                document.getElementById('chartGender').innerHTML = `
+                    <div><div class="flex justify-between text-xs mb-1 font-medium"><span class="text-blue-600">Laki-Laki</span><span>${pria} Jiwa (${pctPria}%)</span></div><div class="w-full bg-slate-100 rounded-full h-3"><div class="bg-blue-500 h-3 rounded-full transition-all duration-1000" style="width: ${pctPria}%"></div></div></div>
+                    <div><div class="flex justify-between text-xs mb-1 font-medium"><span class="text-pink-600">Perempuan</span><span>${wanita} Jiwa (${pctWanita}%)</span></div><div class="w-full bg-slate-100 rounded-full h-3"><div class="bg-pink-500 h-3 rounded-full transition-all duration-1000" style="width: ${pctWanita}%"></div></div></div>
+                `;
+
+                let totalUsiaDihitung = 0, tidakDiketahui = 0;
+                let demographicCounts = settingsDemographics.map(cat => ({ ...cat, count: 0 }));
+                aktifTerkini.forEach(j => {
+                    let parsed = parseRobustDate(j.tanggal_lahir);
+                    let foundCategory = false;
+                    if (parsed) {
+                        let age = today.getFullYear() - parsed.y;
+                        const bulanIni = today.getMonth() + 1, tglIni = today.getDate();
+                        if (bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) age--;
+                        for (let cat of demographicCounts) {
+                            if (age >= cat.minAge && age <= cat.maxAge) { cat.count++;
+                                foundCategory = true; break; }
+                        }
+                    }
+                    if (foundCategory) totalUsiaDihitung++;
+                    else tidakDiketahui++;
+                });
+                let grandTotal = totalUsiaDihitung + tidakDiketahui;
+                let labelTotalUsiaEl = document.getElementById('labelTotalUsia');
+                if (labelTotalUsiaEl) labelTotalUsiaEl.innerText = `Total: ${grandTotal} Jiwa`;
+                const renderBar = (label, val, total, color) => {
+                    let pct = total === 0 ? 0 : Math.round((val / total) * 100);
+                    return `<div><div class="flex justify-between text-xs mb-1 font-medium text-slate-600"><span>${label}</span><span>${val} Jiwa (${pct}%)</span></div><div class="w-full bg-slate-100 rounded-full h-2"><div class="${color} h-2 rounded-full transition-all duration-1000" style="width: ${pct}%"></div></div></div>`;
+                };
+                let chartHtml = '';
+                demographicCounts.forEach(cat => { if (cat.isVisible) chartHtml += renderBar(`${cat.name} (${cat.minAge}-${cat.maxAge} Thn)`, cat.count, grandTotal, cat.color); });
+                if (tidakDiketahui > 0) chartHtml += renderBar(`Tidak Diketahui / Luar Rentang`, tidakDiketahui, grandTotal, 'bg-slate-300');
+                document.getElementById('chartUsia').innerHTML = chartHtml || '<p class="text-xs text-slate-400">Tidak ada kategori demografi yang aktif.</p>';
+
+                const renderCategoryChart = (containerId, field, order) => {
+                    let container = document.getElementById(containerId);
+                    let counts = {};
+                    aktif.forEach(j => { let val = (j[field] || '').trim(); if (val) counts[val] = (counts[val] || 0) + 1; });
+                    let total = aktif.length;
+                    let palette = ['bg-indigo-400', 'bg-emerald-400', 'bg-amber-400', 'bg-blue-400', 'bg-purple-400', 'bg-rose-400', 'bg-pink-400', 'bg-slate-400', 'bg-teal-400', 'bg-orange-400'];
+                    let labels = (order && order.length) ? order : Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+                    let html = '';
+                    labels.forEach((label, idx) => { let val = counts[label] || 0; if (val === 0) return; html += renderBar(label, val, total, palette[idx % palette.length]); });
+                    if (container) container.innerHTML = html || '<p class="text-xs text-slate-400">Belum ada data.</p>';
+                    let topLabel = null, topVal = 0;
+                    Object.keys(counts).forEach(k => { if (counts[k] > topVal) { topVal = counts[k];
+                            topLabel = k; } });
+                    return { counts, topLabel, topVal };
+                };
+
+                const urutanPendidikan = ["Belum/Tidak Sekolah", "SD/Sederajat", "SMP/Sederajat", "SMA/Sederajat", "Diploma (D1-D4)", "Sarjana (S1)", "Pascasarjana (S2/S3)"];
+                const urutanPekerjaan = ["Belum/Tidak Bekerja", "Pelajar/Mahasiswa", "Mengurus Rumah Tangga", "PNS/TNI/Polri", "Karyawan Swasta", "Wiraswasta/Pengusaha", "Pensiunan", "Lainnya"];
+                let pendidikanStats = renderCategoryChart('chartPendidikan', 'pendidikan', urutanPendidikan);
+                let pekerjaanStats = renderCategoryChart('chartPekerjaan', 'pekerjaan', urutanPekerjaan);
+                let topAgeCat = null;
+                demographicCounts.forEach(cat => { if (cat.isVisible && (!topAgeCat || cat.count > topAgeCat.count)) topAgeCat = cat; });
+                renderMonthlyTrendChart(tahunVal);
+
+                // Distribusi Komisi Pelayanan
+                let komisiCounts = hitungKomisiCounts(aktif);
+                let komisiContainer = document.getElementById('chartKomisi');
+                let labelTotalKomisiEl = document.getElementById('labelTotalKomisi');
+                if (labelTotalKomisiEl) labelTotalKomisiEl.innerText = `Total Aktif: ${aktif.length}`;
+                if (komisiContainer) {
+                    let komisiVisible = komisiCounts.filter(k => k.isVisible);
+                    if (komisiVisible.length === 0) {
+                        komisiContainer.innerHTML = '<p class="text-xs text-slate-400 col-span-2">Belum ada komisi yang aktif. Atur di tab Parameter Sistem.</p>';
+                    } else {
+                        komisiContainer.innerHTML = komisiVisible.map(k => renderBar(k.name, k.count, aktif.length, k.color)).join('');
+                    }
+                }
+
+                lastDashboardStats = {
+                    bulanVal, tahunVal, periodeEnd,
+                    totalAktif: aktif.length, sdhBaptisAir, nonAktif: nonAktif.length,
+                    yoyPct, yoySelisih, pria, wanita, pctPria, pctWanita, totalUsia: grandTotal,
+                    topAgeCat, pendidikanStats, pekerjaanStats,
+                    ultahBulanIniCount: ultahBulanIni.length, annivBulanIniCount: couples.length,
+                    demographicCounts: demographicCounts, komisiCounts: komisiCounts
+                };
+                renderAISuggestions(lastDashboardStats);
+            }
+        }
+
+        // --- STREAMING_CHUNK:Preparing AI Suggestions and Charting functions... ---
+        // --- AI SUGGESTIONS ---
+        function generateAISuggestions(s) {
+            let saran = [];
+            if (s.totalAktif === 0) {
+                saran.push({ icon: "fa-circle-info", color: "text-slate-500 bg-slate-100", priority: 1, badge: "Info",
+                    text: "Belum ada data jemaat aktif.",
+                    rekomendasi: "Tambahkan data jemaat melalui menu \"Data & Kartu Keluarga\" agar sistem dapat mulai menghitung insight analitik dan rekomendasi." });
+                return saran;
+            }
+            let pctBaptis = Math.round((s.sdhBaptisAir / s.totalAktif) * 100);
+            saran.push({ icon: "fa-chart-line", color: "text-indigo-600 bg-indigo-50", priority: 3, badge: "Ringkasan",
+                text: `Total jemaat aktif saat ini ${s.totalAktif} jiwa, dengan ${pctBaptis}% di antaranya sudah baptis air.`,
+                rekomendasi: "Gunakan angka ini sebagai baseline laporan bulanan/tahunan kepada majelis atau tim gembala." });
+            if (s.yoyPct >= 0) {
+                saran.push({ icon: "fa-arrow-trend-up", color: "text-emerald-600 bg-emerald-50", priority: 3, badge: "Positif",
+                    text: `Jemaat aktif bertumbuh ${s.yoyPct.toFixed(1)}% (${s.yoySelisih >= 0 ? '+' : ''}${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu.`,
+                    rekomendasi: "Pertahankan momentum dengan mengevaluasi program penginjilan/follow-up jemaat baru yang sudah berjalan, lalu perkuat kanal yang paling efektif." });
+            } else {
+                saran.push({ icon: "fa-arrow-trend-down", color: "text-rose-600 bg-rose-50", priority: 1, badge: "Perlu Perhatian",
+                    text: `Jemaat aktif menurun ${Math.abs(s.yoyPct).toFixed(1)}% (${s.yoySelisih} jiwa) dibanding periode yang sama tahun lalu.`,
+                    rekomendasi: "Lakukan kunjungan/telepon pastoral ke jemaat yang mulai jarang hadir, telusuri penyebab utama penurunan (pindah gereja, kesibukan, dsb.), dan buat rencana retensi dalam 1 bulan ke depan." });
+            }
+            if (s.pria + s.wanita > 0) {
+                let selisihGender = Math.abs(s.pctPria - s.pctWanita);
+                if (selisihGender >= 20) {
+                    let dominan = s.pctPria > s.pctWanita ? "Laki-Laki" : "Perempuan";
+                    let minoritas = s.pctPria > s.pctWanita ? "Perempuan" : "Laki-Laki";
+                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", priority: 2, badge: "Tindak Lanjut",
+                        text: `Komposisi gender kurang seimbang, didominasi jemaat ${dominan} (${Math.max(s.pctPria, s.pctWanita)}%).`,
+                        rekomendasi: `Rancang program pelayanan/persekutuan yang secara khusus menjangkau dan melibatkan lebih banyak jemaat ${minoritas} agar partisipasi lebih merata.` });
+                } else {
+                    saran.push({ icon: "fa-venus-mars", color: "text-blue-600 bg-blue-50", priority: 3, badge: "Positif",
+                        text: `Komposisi gender cukup seimbang: ${s.pctPria}% Laki-Laki dan ${s.pctWanita}% Perempuan.`,
+                        rekomendasi: "Pertahankan pendekatan pelayanan yang inklusif untuk kedua kelompok gender saat ini." });
+                }
+            }
+            if (s.topAgeCat) {
+                let pctTopAge = s.totalUsia === 0 ? 0 : Math.round((s.topAgeCat.count / s.totalUsia) * 100);
+                let namaKategoriLower = s.topAgeCat.name.toLowerCase();
+                saran.push({ icon: "fa-users-rays", color: "text-amber-600 bg-amber-50", priority: 2, badge: "Tindak Lanjut",
+                    text: `Kelompok usia terbanyak adalah "${s.topAgeCat.name}" (${s.topAgeCat.minAge}-${s.topAgeCat.maxAge} Thn) sebanyak ${s.topAgeCat.count} jiwa (${pctTopAge}%).`,
+                    rekomendasi: `Fokuskan alokasi program, jadwal ibadah, dan materi khotbah/pelayanan agar lebih relevan dengan kebutuhan kelompok usia ${namaKategoriLower}, tanpa mengabaikan kelompok usia lain.` });
+            }
+            if (s.pendidikanStats && s.pendidikanStats.topLabel) {
+                saran.push({ icon: "fa-graduation-cap", color: "text-purple-600 bg-purple-50", priority: 3, badge: "Informatif",
+                    text: `Tingkat pendidikan terbanyak jemaat aktif adalah "${s.pendidikanStats.topLabel}" (${s.pendidikanStats.topVal} jiwa).`,
+                    rekomendasi: "Pertimbangkan profil pendidikan ini saat menyiapkan materi pemuridan, seminar, atau publikasi gereja agar bahasa dan levelnya sesuai." });
+            }
+            if (s.pekerjaanStats && s.pekerjaanStats.topLabel) {
+                saran.push({ icon: "fa-briefcase", color: "text-teal-600 bg-teal-50", priority: 3, badge: "Informatif",
+                    text: `Jenis pekerjaan terbanyak jemaat aktif adalah "${s.pekerjaanStats.topLabel}" (${s.pekerjaanStats.topVal} jiwa).`,
+                    rekomendasi: "Pertimbangkan jadwal ibadah/kegiatan pelayanan yang fleksibel agar tidak berbenturan dengan jam kerja mayoritas jemaat." });
+            }
+            if (s.nonAktif > 0) {
+                let pctNonAktif = Math.round((s.nonAktif / (s.totalAktif + s.nonAktif)) * 100);
+                saran.push({ icon: "fa-triangle-exclamation", color: "text-rose-600 bg-rose-50", priority: pctNonAktif >= 15 ? 1 : 2, badge: pctNonAktif >= 15 ? "Perlu Perhatian" : "Tindak Lanjut",
+                    text: `Terdapat ${s.nonAktif} jemaat berstatus non-aktif (pindah/meninggal), sekitar ${pctNonAktif}% dari total keseluruhan.`,
+                    rekomendasi: pctNonAktif >= 15 ? "Persentase non-aktif cukup tinggi — jadwalkan evaluasi khusus dengan tim gembala untuk memetakan penyebab dan menyusun strategi retensi jemaat." : "Lakukan pendataan ulang berkala agar status keanggotaan (pindah/meninggal) selalu tercatat akurat dan tidak menumpuk." });
+            }
+            if (s.ultahBulanIniCount > 0) {
+                saran.push({ icon: "fa-cake-candles", color: "text-pink-600 bg-pink-50", priority: 2, badge: "Aksi Cepat",
+                    text: `Ada ${s.ultahBulanIniCount} jemaat yang berulang tahun bulan ini.`,
+                    rekomendasi: "Kirimkan ucapan WhatsApp otomatis melalui menu \"Ultah Terdekat\" sebelum tanggal lahir masing-masing jemaat agar sapaan gereja terasa personal dan tepat waktu." });
+            }
+            if (s.annivBulanIniCount > 0) {
+                saran.push({ icon: "fa-ring", color: "text-indigo-600 bg-indigo-50", priority: 2, badge: "Aksi Cepat",
+                    text: `Ada ${s.annivBulanIniCount} pasangan yang merayakan ulang tahun pernikahan bulan ini.`,
+                    rekomendasi: "Kirimkan ucapan ulang tahun pernikahan melalui menu terkait, dan pertimbangkan doa/penggembalaan khusus bagi pasangan yang merayakan tahun pernikahan besar (mis. 10, 25 tahun)." });
+            }
+            if (pctBaptis < 70) {
+                saran.push({ icon: "fa-water", color: "text-cyan-600 bg-cyan-50", priority: pctBaptis < 50 ? 1 : 2, badge: pctBaptis < 50 ? "Perlu Perhatian" : "Tindak Lanjut",
+                    text: `Persentase jemaat yang sudah baptis air baru ${pctBaptis}%.`,
+                    rekomendasi: "Jadwalkan kelas persiapan baptis secara rutin (mis. tiap kuartal) dan hubungi langsung jemaat aktif yang belum baptis untuk mendorong keikutsertaan mereka." });
+            }
+            saran.sort((a, b) => a.priority - b.priority);
+            return saran;
+        }
+
+        function renderAISuggestions(stats) {
+            let el = document.getElementById('aiSuggestions');
+            if (!el) return;
+            let saran = generateAISuggestions(stats);
+            const badgeStyle = {
+                "Perlu Perhatian": "bg-rose-100 text-rose-600",
+                "Tindak Lanjut": "bg-amber-100 text-amber-700",
+                "Aksi Cepat": "bg-indigo-100 text-indigo-600",
+                "Positif": "bg-emerald-100 text-emerald-600",
+                "Informatif": "bg-slate-100 text-slate-500",
+                "Ringkasan": "bg-slate-100 text-slate-500",
+                "Info": "bg-slate-100 text-slate-500"
+            };
+            el.innerHTML = saran.map(s => `
+                <div class="flex items-start space-x-3 bg-white/70 border border-slate-100 rounded-lg p-3">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 ${s.color}"><i class="fa-solid ${s.icon}"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center flex-wrap gap-2 mb-1"><span class="text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${badgeStyle[s.badge] || 'bg-slate-100 text-slate-500'}">${s.badge}</span></div>
+                        <p class="text-xs text-slate-700 leading-relaxed">${s.text}</p>
+                        ${s.rekomendasi ? `<p class="text-[11px] text-slate-500 leading-relaxed mt-1"><i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i><span class="font-semibold text-slate-600">Rekomendasi:</span> ${s.rekomendasi}</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // --- STREAMING_CHUNK:Loading PDF Export functions... ---
+        // --- EXPORT PDF DASHBOARD ---
+        function exportPDFSummary() {
+            if (!lastDashboardStats) renderDashboard();
+            const s = lastDashboardStats;
+            if (!s || s.totalAktif === 0) {
+                showAlert("Ekspor Gagal", "Belum ada data jemaat untuk diekspor ke PDF.", "error");
+                return;
+            }
+            try {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
+                const pageW = doc.internal.pageSize.getWidth();
+                const pageH = doc.internal.pageSize.getHeight();
+                const margin = 40;
+                const contentW = pageW - margin * 2;
+                let y = 0;
+
+                // ---- Palet Warna (RGB) ----
+                const C = {
+                    indigo: [79, 70, 229], indigoDark: [67, 56, 202], indigoSoft: [224, 231, 255],
+                    slate900: [15, 23, 42], slate800: [30, 41, 59], slate600: [71, 85, 105],
+                    slate500: [100, 116, 139], slate400: [148, 163, 184], slate200: [226, 232, 240],
+                    slate100: [241, 245, 249], white: [255, 255, 255],
+                    emerald: [5, 150, 105], rose: [225, 29, 72], blue: [37, 99, 235], amber: [180, 83, 9],
+                    pink: [219, 39, 119]
+                };
+                // Peta warna kategori demografi (selaras dengan pilihan warna di menu Parameter Sistem)
+                const DEMO_HEX = {
+                    'bg-amber-400': [251, 191, 36], 'bg-emerald-400': [52, 211, 153], 'bg-blue-400': [96, 165, 250],
+                    'bg-indigo-400': [129, 140, 248], 'bg-purple-400': [192, 132, 252], 'bg-rose-400': [251, 113, 133],
+                    'bg-pink-400': [244, 114, 182], 'bg-slate-400': [148, 163, 184]
+                };
+
+                const ensureSpace = (h) => { if (y + h > pageH - 55) { doc.addPage(); y = 40; } };
+
+                const sectionTitle = (text) => {
+                    ensureSpace(28);
+                    doc.setFillColor(...C.indigo);
+                    doc.roundedRect(margin, y, 4, 15, 1, 1, 'F');
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(11.5); doc.setTextColor(...C.slate800);
+                    doc.text(text, margin + 11, y + 11.5);
+                    y += 24;
+                };
+
+                const emptyNote = (text) => {
+                    ensureSpace(20);
+                    doc.setFont("helvetica", "italic"); doc.setFontSize(9); doc.setTextColor(...C.slate500);
+                    doc.text(text, margin + 4, y);
+                    y += 18;
+                };
+
+                const kpiCard = (x, yTop, w, h, label, value, sub, accent) => {
+                    doc.setDrawColor(...C.slate200); doc.setFillColor(...C.white);
+                    doc.roundedRect(x, yTop, w, h, 5, 5, 'FD');
+                    doc.setFillColor(...accent);
+                    doc.roundedRect(x, yTop, 4, h, 2, 2, 'F');
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate500);
+                    doc.text(label.toUpperCase(), x + 14, yTop + 17, { maxWidth: w - 24 });
+                    doc.setFont("helvetica", "bold"); doc.setFontSize(19); doc.setTextColor(...C.slate900);
+                    doc.text(String(value), x + 14, yTop + 40);
+                    if (sub) {
+                        doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...accent);
+                        doc.text(sub, x + 14, yTop + 54, { maxWidth: w - 24 });
+                    }
+                };
+
+                const progressBar = (x, yTop, w, pct, colorRGB) => {
+                    doc.setFillColor(...C.slate100);
+                    doc.roundedRect(x, yTop, w, 6, 3, 3, 'F');
+                    const fw = pct > 0 ? Math.max(5, (w * Math.min(pct, 100)) / 100) : 0;
+                    if (fw > 0) { doc.setFillColor(...colorRGB); doc.roundedRect(x, yTop, fw, 6, 3, 3, 'F'); }
+                };
+
+                const barRow = (label, value, pct, colorRGB) => {
+                    ensureSpace(26);
+                    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...C.slate600);
+                    doc.text(label, margin, y);
+                    doc.setFont("helvetica", "bold"); doc.setTextColor(...C.slate800);
+                    doc.text(`${value} Jiwa (${pct}%)`, pageW - margin, y, { align: "right" });
+                    y += 6;
+                    progressBar(margin, y, contentW, pct, colorRGB);
+                    y += 20;
+                };
+
+                const badgeStyleMap = {
+                    "Perlu Perhatian": C.rose, "Tindak Lanjut": C.amber, "Aksi Cepat": C.indigo,
+                    "Positif": C.emerald, "Informatif": C.slate500, "Ringkasan": C.slate500, "Info": C.slate500
+                };
+
+                const drawTableHeaderFoot = () => {
+                    const totalPages = doc.internal.getNumberOfPages();
+                    for (let i = 1; i <= totalPages; i++) {
+                        doc.setPage(i);
+                        doc.setDrawColor(...C.slate200);
+                        doc.line(margin, pageH - 34, pageW - margin, pageH - 34);
+                        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.slate400);
+                        doc.text(churchName, margin, pageH - 22);
+                        doc.text(`Halaman ${i} dari ${totalPages}`, pageW - margin, pageH - 22, { align: "right" });
+                        doc.text("Dokumen internal — Ringkasan Analitik Jemaat", pageW / 2, pageH - 22, { align: "center" });
+                    }
+                };
+
+                // ================= HEADER =================
+                doc.setFillColor(...C.indigo);
+                doc.rect(0, 0, pageW, 92, 'F');
+                doc.setFillColor(...C.indigoDark);
+                doc.rect(0, 92, pageW, 3, 'F');
+                doc.setTextColor(...C.white);
+                doc.setFont("helvetica", "bold"); doc.setFontSize(19);
+                doc.text("LAPORAN RINGKASAN ANALITIK JEMAAT", pageW / 2, 34, { align: "center" });
+                doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+                doc.text(churchName.toUpperCase(), pageW / 2, 53, { align: "center" });
+
+                const bulanNamaFull = ["Semua Bulan", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                const periodeLabel = s.bulanVal === "all" ? `Semua Bulan Tahun ${s.tahunVal}` : `${bulanNamaFull[parseInt(s.bulanVal)]} ${s.tahunVal}`;
+                doc.setFontSize(9); doc.setTextColor(...C.indigoSoft);
+                doc.text(`Periode Data: s.d. ${periodeLabel}`, pageW / 2, 69, { align: "center" });
+                const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
+                doc.setFontSize(7.5);
+                doc.text(`Dicetak pada ${timestamp}`, pageW / 2, 82, { align: "center" });
+
+                y = 112;
+
+                // ================= KPI CARDS =================
+                const pctBaptis = s.totalAktif ? Math.round((s.sdhBaptisAir / s.totalAktif) * 100) : 0;
+                const growthLabel = growthMode === 'mom' ? 'Pertumbuhan (MoM)' : 'Pertumbuhan (YoY)';
+                const growthVsLabel = growthMode === 'mom' ? 'vs Bulan Lalu' : 'vs Tahun Lalu';
+                const cardW = (contentW - 3 * 10) / 4, cardH = 64;
+                kpiCard(margin, y, cardW, cardH, "Total Jemaat Aktif", s.totalAktif + " Jiwa", "Status Aktif", C.indigo);
+                kpiCard(margin + (cardW + 10), y, cardW, cardH, "Sudah Baptis Air", s.sdhBaptisAir + " Jiwa", `${pctBaptis}% dari jemaat aktif`, C.blue);
+                kpiCard(margin + 2 * (cardW + 10), y, cardW, cardH, growthLabel, (s.yoyPct >= 0 ? '+' : '') + s.yoyPct.toFixed(1) + "%", `${growthVsLabel} (${s.yoySelisih >= 0 ? '+' : ''}${s.yoySelisih} jiwa)`, s.yoyPct >= 0 ? C.emerald : C.rose);
+                kpiCard(margin + 3 * (cardW + 10), y, cardW, cardH, "Pindah / Meninggal", s.nonAktif + " Jiwa", "Non-Aktif", C.rose);
+                y += cardH + 24;
+
+                // ================= RINGKASAN EKSEKUTIF =================
+                sectionTitle("RINGKASAN EKSEKUTIF");
+                doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...C.slate600);
+                const ringkasanTxt = `Per periode ${periodeLabel}, ${churchName} memiliki ${s.totalAktif} jemaat aktif, dengan ${pctBaptis}% di antaranya sudah baptis air. Pertumbuhan jemaat aktif tercatat ${s.yoyPct >= 0 ? '+' : ''}${s.yoyPct.toFixed(1)}% (${s.yoySelisih >= 0 ? '+' : ''}${s.yoySelisih} jiwa) ${growthVsLabel.toLowerCase()}, sementara terdapat ${s.nonAktif} jemaat berstatus non-aktif (pindah/meninggal). Bulan ini tercatat ${s.ultahBulanIniCount} jemaat berulang tahun dan ${s.annivBulanIniCount} pasangan merayakan ulang tahun pernikahan.`;
+                let ringkasanLines = doc.splitTextToSize(ringkasanTxt, contentW);
+                ensureSpace(ringkasanLines.length * 13 + 10);
+                doc.text(ringkasanLines, margin, y);
+                y += ringkasanLines.length * 13 + 16;
+
+                // ================= DEMOGRAFI GENDER =================
+                sectionTitle("DEMOGRAFI GENDER JEMAAT (AKTIF)");
+                barRow("Laki-Laki", s.pria, s.pctPria, C.blue);
+                barRow("Perempuan", s.wanita, s.pctWanita, C.pink);
+                y += 6;
+
+                // ================= DEMOGRAFI USIA =================
+                sectionTitle("DEMOGRAFI KATEGORI USIA (AKTIF)");
+                let ageCats = (s.demographicCounts || []).filter(c => c.isVisible);
+                if (ageCats.length === 0) {
+                    emptyNote("Tidak ada kategori usia yang aktif ditampilkan.");
+                } else {
+                    ageCats.forEach(cat => {
+                        let pct = s.totalUsia ? Math.round((cat.count / s.totalUsia) * 100) : 0;
+                        barRow(`${cat.name} (${cat.minAge}-${cat.maxAge} Thn)`, cat.count, pct, DEMO_HEX[cat.color] || C.slate400);
+                    });
+                }
+                y += 6;
+
+                // ================= KOMISI PELAYANAN =================
+                sectionTitle("DISTRIBUSI KOMISI PELAYANAN (AKTIF)");
+                let komisiVisiblePdf = (s.komisiCounts || []).filter(k => k.isVisible);
+                if (komisiVisiblePdf.length === 0) {
+                    emptyNote("Belum ada komisi yang aktif ditampilkan.");
+                } else {
+                    komisiVisiblePdf.forEach(k => {
+                        let pct = s.totalAktif ? Math.round((k.count / s.totalAktif) * 100) : 0;
+                        barRow(k.name, k.count, pct, DEMO_HEX[k.color] || C.slate400);
+                    });
+                }
+                y += 6;
+
+                // ================= PENDIDIKAN =================
+                sectionTitle("DISTRIBUSI PENDIDIKAN TERAKHIR (AKTIF)");
+                let pendidikanEntries = s.pendidikanStats && s.pendidikanStats.counts ? Object.entries(s.pendidikanStats.counts).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]) : [];
+                if (pendidikanEntries.length === 0) {
+                    emptyNote("Belum ada data pendidikan jemaat aktif.");
+                } else {
+                    ensureSpace(30);
+                    doc.autoTable({
+                        startY: y, margin: { left: margin, right: margin },
+                        head: [["Tingkat Pendidikan", "Jumlah", "Persentase"]],
+                        body: pendidikanEntries.map(([label, val]) => [label, `${val} Jiwa`, `${s.totalAktif ? Math.round((val / s.totalAktif) * 100) : 0}%`]),
+                        theme: 'grid',
+                        headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                        bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 5 },
+                        alternateRowStyles: { fillColor: C.slate100 },
+                        columnStyles: { 1: { halign: 'right', cellWidth: 90 }, 2: { halign: 'right', cellWidth: 90 } }
+                    });
+                    y = doc.lastAutoTable.finalY + 20;
+                }
+
+                // ================= PEKERJAAN =================
+                sectionTitle("DISTRIBUSI PEKERJAAN UTAMA (AKTIF)");
+                let pekerjaanEntries = s.pekerjaanStats && s.pekerjaanStats.counts ? Object.entries(s.pekerjaanStats.counts).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]) : [];
+                if (pekerjaanEntries.length === 0) {
+                    emptyNote("Belum ada data pekerjaan jemaat aktif.");
+                } else {
+                    ensureSpace(30);
+                    doc.autoTable({
+                        startY: y, margin: { left: margin, right: margin },
+                        head: [["Jenis Pekerjaan", "Jumlah", "Persentase"]],
+                        body: pekerjaanEntries.map(([label, val]) => [label, `${val} Jiwa`, `${s.totalAktif ? Math.round((val / s.totalAktif) * 100) : 0}%`]),
+                        theme: 'grid',
+                        headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                        bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 5 },
+                        alternateRowStyles: { fillColor: C.slate100 },
+                        columnStyles: { 1: { halign: 'right', cellWidth: 90 }, 2: { halign: 'right', cellWidth: 90 } }
+                    });
+                    y = doc.lastAutoTable.finalY + 20;
+                }
+
+                // ================= TREN BULANAN =================
+                const bulanNama = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                sectionTitle(`TREN BULANAN — JEMAAT BARU & BAPTISAN (TAHUN ${s.tahunVal})`);
+                let baruPerBulan = new Array(12).fill(0);
+                let baptisPerBulan = new Array(12).fill(0);
+                dataJemaat.forEach(j => {
+                    let dGabung = parseTglBergabung(j.tanggal_bergabung);
+                    if (dGabung && dGabung.getFullYear() === s.tahunVal) baruPerBulan[dGabung.getMonth()]++;
+                    if (j.tanggal_baptis) {
+                        let dBaptis = parseTglBergabung(j.tanggal_baptis);
+                        if (dBaptis && dBaptis.getFullYear() === s.tahunVal) baptisPerBulan[dBaptis.getMonth()]++;
+                    }
+                });
+                let totalBaruTahun = baruPerBulan.reduce((a, b) => a + b, 0);
+                let totalBaptisTahun = baptisPerBulan.reduce((a, b) => a + b, 0);
+                ensureSpace(30);
+                doc.autoTable({
+                    startY: y, margin: { left: margin, right: margin },
+                    head: [["Bulan", "Jemaat Baru", "Baptisan"]],
+                    body: [
+                        ...bulanNama.map((nm, i) => [nm, String(baruPerBulan[i]), String(baptisPerBulan[i])]),
+                        [{ content: "TOTAL", styles: { fontStyle: 'bold' } }, { content: String(totalBaruTahun), styles: { fontStyle: 'bold' } }, { content: String(totalBaptisTahun), styles: { fontStyle: 'bold' } }]
+                    ],
+                    theme: 'grid',
+                    headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                    bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 4.5 },
+                    alternateRowStyles: { fillColor: C.slate100 },
+                    columnStyles: { 1: { halign: 'right', cellWidth: 110 }, 2: { halign: 'right', cellWidth: 110 } },
+                    didParseCell: (data) => { if (data.row.index === 12) data.cell.styles.fillColor = C.indigoSoft; }
+                });
+                y = doc.lastAutoTable.finalY + 20;
+
+                // ================= ULANG TAHUN BULAN INI =================
+                const today = new Date();
+                const currentMonth = today.getMonth() + 1;
+                const aktifTerkini = dataJemaat.filter(j => j.status_jemaat === "Aktif");
+                let ultahBulanIni = aktifTerkini.map(j => {
+                    let parsed = parseRobustDate(j.tanggal_lahir);
+                    if (!parsed) return null;
+                    let dist = getEventDistance(parsed.m, parsed.d);
+                    return { ...j, diffDays: dist, tgl: parsed.d, bln: parsed.m, thn: parsed.y };
+                }).filter(j => j && (j.bln === currentMonth || (j.diffDays >= -3 && j.diffDays <= 0))).sort((a, b) => a.tgl - b.tgl);
+
+                sectionTitle(`ULANG TAHUN BULAN ${bulanNama[currentMonth - 1].toUpperCase()} (JEMAAT AKTIF)`);
+                if (ultahBulanIni.length === 0) {
+                    emptyNote("Tidak ada jemaat yang berulang tahun bulan ini.");
+                } else {
+                    ensureSpace(30);
+                    doc.autoTable({
+                        startY: y, margin: { left: margin, right: margin },
+                        head: [["Nama Lengkap", "NIJ", "Tgl Lahir", "Usia", "Pelayanan"]],
+                        body: ultahBulanIni.map(j => [
+                            j.nama_lengkap, j.nij || "-", `${j.tgl} ${bulanNama[j.bln - 1]}`, `${today.getFullYear() - j.thn} Thn`,
+                            j.sudah_berpelayanan === "Ya" ? (j.bidang_pelayanan || "Berpelayanan") : "Belum"
+                        ]),
+                        theme: 'grid',
+                        headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                        bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 4.5 },
+                        alternateRowStyles: { fillColor: C.slate100 }
+                    });
+                    y = doc.lastAutoTable.finalY + 20;
+                }
+
+                // ================= ULANG TAHUN PERNIKAHAN BULAN INI =================
+                let couples = [];
+                let processedKk = new Set();
+                aktifTerkini.forEach(j => {
+                    if (j.status_pernikahan === 'Menikah' && j.tanggal_pernikahan) {
+                        let parsed = parseRobustDate(j.tanggal_pernikahan);
+                        if (parsed) {
+                            let m = parsed.m, d = parsed.d;
+                            let dist = getEventDistance(m, d);
+                            if (m === currentMonth || (dist >= -3 && dist <= 0)) {
+                                let kkId = j.kepalaKeluargaId || j.id;
+                                if (!processedKk.has(kkId)) {
+                                    processedKk.add(kkId);
+                                    let fam = aktifTerkini.filter(x => (x.id === kkId || x.kepalaKeluargaId === kkId));
+                                    let suami = fam.find(x => x.jenis_kelamin === 'L' && x.status_pernikahan === 'Menikah');
+                                    let istri = fam.find(x => x.jenis_kelamin === 'P' && x.status_pernikahan === 'Menikah');
+                                    if (suami || istri) couples.push({ suami, istri, tgl: d, tglStr: `${d} ${bulanNama[m - 1]}`, thn: parsed.y });
+                                }
+                            }
+                        }
+                    }
+                });
+                couples.sort((a, b) => a.tgl - b.tgl);
+
+                sectionTitle(`ULANG TAHUN PERNIKAHAN BULAN ${bulanNama[currentMonth - 1].toUpperCase()}`);
+                if (couples.length === 0) {
+                    emptyNote("Tidak ada pasangan yang merayakan ulang tahun pernikahan bulan ini.");
+                } else {
+                    ensureSpace(30);
+                    doc.autoTable({
+                        startY: y, margin: { left: margin, right: margin },
+                        head: [["Pasangan Suami & Istri", "Tanggal Nikah", "Usia Pernikahan"]],
+                        body: couples.map(c => {
+                            let namaDisplay = [];
+                            if (c.suami) namaDisplay.push(c.suami.nama_lengkap);
+                            if (c.istri) namaDisplay.push(c.istri.nama_lengkap);
+                            return [namaDisplay.join(" & "), c.tglStr, `${today.getFullYear() - c.thn} Tahun`];
+                        }),
+                        theme: 'grid',
+                        headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                        bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 4.5 },
+                        alternateRowStyles: { fillColor: C.slate100 }
+                    });
+                    y = doc.lastAutoTable.finalY + 20;
+                }
+
+                // ================= SARAN ANALITIK AI =================
+                sectionTitle("SARAN ANALITIK AI (INSIGHT OTOMATIS)");
+                let saran = generateAISuggestions(s);
+                if (saran.length === 0) {
+                    emptyNote("Tidak ada saran yang tersedia untuk periode ini.");
+                } else {
+                    ensureSpace(30);
+                    doc.autoTable({
+                        startY: y, margin: { left: margin, right: margin },
+                        head: [["No", "Prioritas", "Insight & Rekomendasi"]],
+                        body: saran.map((item, idx) => [
+                            String(idx + 1), item.badge,
+                            item.rekomendasi ? `${item.text}\n\nRekomendasi: ${item.rekomendasi}` : item.text
+                        ]),
+                        theme: 'grid',
+                        headStyles: { fillColor: C.indigo, textColor: C.white, fontStyle: 'bold', fontSize: 9 },
+                        bodyStyles: { fontSize: 8.5, textColor: C.slate800, cellPadding: 5, valign: 'top' },
+                        alternateRowStyles: { fillColor: C.slate100 },
+                        columnStyles: { 0: { halign: 'center', cellWidth: 24 }, 1: { cellWidth: 78, fontStyle: 'bold' }, 2: { cellWidth: contentW - 24 - 78 } },
+                        didParseCell: (data) => {
+                            if (data.column.index === 1 && data.section === 'body') {
+                                const rgb = badgeStyleMap[data.cell.raw] || C.slate500;
+                                data.cell.styles.textColor = rgb;
+                            }
+                        }
+                    });
+                    y = doc.lastAutoTable.finalY + 10;
+                }
+
+                // ================= FOOTER (semua halaman) =================
+                drawTableHeaderFoot();
+
+                doc.save(`ringkasan_analitik_${new Date().toISOString().split('T')[0]}.pdf`);
+                writeLog("SYSTEM", "Export Data", "Mengunduh file PDF Ringkasan Analitik Jemaat (lengkap).");
+                saveDataToLocalStorage();
+                showAlert("Berhasil", "PDF Ringkasan Analitik lengkap berhasil diunduh.", "success");
+            } catch (error) {
+                console.error("Error export PDF:", error);
+                showAlert("Error", "Terjadi kesalahan saat mengekspor PDF: " + error.message, "error");
+            }
+        }
+
+        // --- STREAMING_CHUNK:Finalizing UI interactions and table renders... ---
+        // --- TABEL DATA JEMAAT ---
+        let searchDebounceTimer = null;
+
+        function renderTableJemaatDebounced() {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => { currentPage = 1;
+                renderTableJemaat(); }, 250);
+        }
+
+        let currentPage = 1;
+
+        function changeRowsPerPage() { currentPage = 1;
+            renderTableJemaat(); }
+
+        function changePage(delta) { currentPage += delta;
+            renderTableJemaat(); }
+
+        function renderTableJemaat() {
+            const keyword = document.getElementById('searchInput').value.toLowerCase();
+            const filterStatus = document.getElementById('filterStatus').value;
+            const filterPelayanan = document.getElementById('filterPelayanan').value;
+            const tbody = document.getElementById('tableJemaatBody');
+            let filtered = dataJemaat.filter(j => {
+                let match = j.nama_lengkap.toLowerCase().includes(keyword) || (j.nomorInduk && j.nomorInduk.toLowerCase().includes(keyword)) || j.nij.toLowerCase().includes(keyword);
+                let stat = filterStatus === "Semua" ? true : (filterStatus === "Aktif" ? j.status_jemaat === "Aktif" : j.status_jemaat === filterStatus);
+                let layan = filterPelayanan === "Semua" ? true : (filterPelayanan === "Sudah" ? j.sudah_berpelayanan === "Ya" : j.sudah_berpelayanan !== "Ya");
+                return match && stat && layan;
+            });
+            let rowsPerPageSelect = document.getElementById('rowsPerPage').value;
+            let rpp = rowsPerPageSelect === 'all' ? filtered.length : parseInt(rowsPerPageSelect);
+            if (rpp === 0) rpp = 1;
+            let totalItems = filtered.length;
+            let totalPages = Math.ceil(totalItems / rpp);
+            if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+            let startIndex = (currentPage - 1) * rpp;
+            let endIndex = startIndex + rpp;
+            let paginatedItems = rowsPerPageSelect === 'all' ? filtered : filtered.slice(startIndex, endIndex);
+            let infoEl = document.getElementById('paginationInfo');
+            if (totalItems === 0) {
+                infoEl.innerText = `Menampilkan 0 data`;
+                document.getElementById('btnPrevPage').disabled = true;
+                document.getElementById('btnNextPage').disabled = true;
+            } else {
+                infoEl.innerText = `Menampilkan ${startIndex + 1}-${Math.min(endIndex, totalItems)} dari ${totalItems} data`;
+                document.getElementById('btnPrevPage').disabled = (currentPage === 1);
+                document.getElementById('btnNextPage').disabled = (currentPage === totalPages);
+            }
+            if (paginatedItems.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-slate-400">Tidak ada data jemaat. Silakan tambah data baru.</td></tr>`;
+                return;
+            }
+            let rowsJemaat = paginatedItems.map(j => {
+                let bKeluarga = j.status_keluarga === "Anggota Utama" ? "bg-indigo-100 text-indigo-700 font-semibold" : "bg-slate-100 text-slate-600";
+                let iconBaptis = j.jenis_baptis !== "Belum Baptis" ? `<i class="fa-solid fa-droplet text-blue-500" title="${j.jenis_baptis}"></i>` : `<i class="fa-solid fa-droplet text-slate-300"></i>`;
+                let iconSidi = j.status_sidi === "Sudah Sidi" ? `<i class="fa-solid fa-dove text-emerald-500" title="Sudah Sidi"></i>` : `<i class="fa-solid fa-dove text-slate-300"></i>`;
+                let pelayananLabel = j.sudah_berpelayanan === "Ya" ? (j.bidang_pelayanan || "Berpelayanan") : "Belum Berpelayanan";
+                let pelayananClass = j.sudah_berpelayanan === "Ya" ? "text-emerald-600" : "text-slate-400";
+                let pelayananIcon = j.sudah_berpelayanan === "Ya" ? "fa-hands-praying" : "fa-circle-minus";
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${j.status_jemaat !== 'Aktif' ? 'opacity-60' : ''}">
+                        <td class="py-3 px-4 max-w-[200px]">
+                            <div class="font-medium text-slate-900 truncate">${j.nama_lengkap} ${j.status_jemaat !== 'Aktif' ? `<span class="text-rose-500 text-[10px]">(${j.status_jemaat})</span>` : ''}</div>
+                            <div class="text-[10px] font-mono mt-0.5 truncate"><span class="text-indigo-600 font-bold">${j.nij}</span> <span class="text-slate-400">| NIK: ${j.nomorInduk || '-'}</span></div>
+                        </td>
+                        <td class="py-3 px-4 max-w-[150px]">
+                            <span class="px-2 py-1 rounded text-[10px] ${bKeluarga} truncate block max-w-full">${j.status_keluarga}</span>
+                            <div class="text-[10px] ${pelayananClass} mt-1 truncate"><i class="fa-solid ${pelayananIcon} mr-1"></i>${pelayananLabel}</div>
+                        </td>
+                        <td class="py-3 px-4 max-w-[180px]">
+                            <div class="text-xs text-slate-700 truncate">${j.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'} &bull; ${j.tanggal_lahir}</div>
+                            <div class="text-[10px] text-slate-500 mt-1 truncate">${j.pendidikan} &bull; ${j.pekerjaan}</div>
+                        </td>
+                        <td class="py-3 px-4 max-w-[140px]">
+                            <div class="flex items-center space-x-2 text-xs truncate">${iconBaptis} <span class="text-[10px] truncate">${j.jenis_baptis}</span></div>
+                            <div class="flex items-center space-x-2 text-xs mt-1 truncate">${iconSidi} <span class="text-[10px] truncate">${j.status_sidi}</span></div>
+                        </td>
+                        <td class="py-3 px-4 text-center whitespace-nowrap">
+                            <button onclick="viewDetailJemaat('${j.id}')" class="p-1.5 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded transition"><i class="fa-solid fa-eye"></i></button>
+                            <button onclick="goToIDCard('${j.id}')" class="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded transition"><i class="fa-solid fa-id-badge"></i></button>
+                            ${(j.status_keluarga === "Anggota Utama") ? `<button onclick="generateKK('${j.id}')" class="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded transition"><i class="fa-solid fa-users-viewfinder"></i></button>` : ''}
+                            ${(j.status_keluarga === "Anggota Utama" && j.status_jemaat === "Aktif") ? `<button onclick="openModalTambahAnggota('${j.id}')" class="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded transition"><i class="fa-solid fa-user-plus"></i></button>` : ''}
+                            ${(j.status_keluarga === "Anak" && j.status_jemaat === "Aktif") ? `<button onclick="pecahKk('${j.id}')" class="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded transition"><i class="fa-solid fa-house-chimney-user"></i></button>` : ''}
+                            <button onclick="editJemaat('${j.id}')" class="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded transition"><i class="fa-solid fa-pen"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rowsJemaat.join('');
+        }
+
+        // --- DUPLICATE CLEANSING ---
+        function buildLogDedupeKey(log) {
+            return [log["Waktu Kejadian"] || "-", log["NIJ"] || "-", log["Aksi"] || "-", log["Detail Catatan"] || "-", log["Nilai Lama"] || "-", log["Nilai Baru"] || "-"].join("||").trim().toLowerCase();
+        }
+
+        function dedupeAuditLogs(logs) {
+            let seen = new Set();
+            let uniqueLogs = [];
+            let duplicateCount = 0;
+            logs.forEach(log => {
+                let key = buildLogDedupeKey(log);
+                if (seen.has(key)) duplicateCount++;
+                else { seen.add(key);
+                    uniqueLogs.push(log); }
+            });
+            return { uniqueLogs, duplicateCount };
+        }
+
+        function checkDuplicates() {
+            let seen = new Set();
+            let duplicates = [];
+            let uniqueData = [];
+            dataJemaat.forEach(j => {
+                let key = j.nij ? j.nij.trim().toLowerCase() : (j.nama_lengkap + "_" + j.tanggal_lahir).toLowerCase();
+                if (seen.has(key)) duplicates.push(j);
+                else { seen.add(key);
+                    uniqueData.push(j); }
+            });
+            let logDedupe = dedupeAuditLogs(auditLogs);
+            let totalDuplicateLogs = logDedupe.duplicateCount;
+            if (duplicates.length > 0 || totalDuplicateLogs > 0) {
+                let pesanBagian = [];
+                if (duplicates.length > 0) pesanBagian.push(`${duplicates.length} data jemaat duplikat (Nomor Induk Jemaat sama)`);
+                if (totalDuplicateLogs > 0) pesanBagian.push(`${totalDuplicateLogs} baris histori log yang identik/duplikat`);
+                openConfirm("Ditemukan Duplikat", `Sistem mendeteksi ${pesanBagian.join(" dan ")}. Apakah Anda yakin ingin membersihkannya?`, () => {
+                    dataJemaat = uniqueData;
+                    auditLogs = logDedupe.uniqueLogs;
+                    currentPage = 1;
+                    renderTableJemaat();
+                    renderDashboardIfActive();
+                    let detailLog = [];
+                    if (duplicates.length > 0) detailLog.push(`${duplicates.length} data jemaat duplikat`);
+                    if (totalDuplicateLogs > 0) detailLog.push(`${totalDuplicateLogs} baris log duplikat`);
+                    writeLog("SYSTEM", "Cleansing Duplikat", `Membersihkan ${detailLog.join(" & ")} hasil impor/kesalahan input.`);
+                    saveDataToLocalStorage();
+                    let pesanHasil = [];
+                    if (duplicates.length > 0) pesanHasil.push(`${duplicates.length} data jemaat duplikat`);
+                    if (totalDuplicateLogs > 0) pesanHasil.push(`${totalDuplicateLogs} baris log duplikat`);
+                    showAlert("Cleansing Berhasil", `${pesanHasil.join(" dan ")} telah dihapus dari sistem secara permanen.`, "success");
+                });
+            } else {
+                showAlert("Sudah Bersih", "Tidak ditemukan indikasi data jemaat maupun histori log yang berduplikat di dalam sistem.", "success");
+            }
+        }
+
+        function getFamilyMembersSorted(headId) {
+            const order = { "Anggota Utama": 1, "Suami": 2, "Istri": 3, "Anak": 4 };
+            return dataJemaat.filter(item => item.id === headId || item.kepalaKeluargaId === headId)
+                .sort((a, b) => (order[a.status_keluarga] || 99) - (order[b.status_keluarga] || 99));
+        }
+
+        function goToIDCard(id) {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) { showAlert("Data Tidak Ditemukan", "Data jemaat tidak ditemukan.", "error"); return; }
+            window.open('idcard.html?id=' + encodeURIComponent(id), '_blank');
+            writeLog(j.nij, "Cetak ID Card", `Membuka halaman cetak KTJ untuk ${j.nama_lengkap}.`);
+            saveDataToLocalStorage();
+        }
+
+        function generateKK(kkId) {
+            let kkRoot = dataJemaat.find(j => j.id === kkId);
+            if (!kkRoot) return;
+            let familyMembers = getFamilyMembersSorted(kkId);
+            document.getElementById('kkNama').innerText = kkRoot.nama_lengkap;
+            document.getElementById('kkAlamat').innerText = kkRoot.alamat;
+            document.getElementById('kkSektor').innerText = kkRoot.sudah_berpelayanan === "Ya" ? (kkRoot.bidang_pelayanan || "Berpelayanan") : "Belum Berpelayanan";
+            document.getElementById('kkSistemId').innerText = `KK-${kkRoot.id.padStart(6, '0')}`;
+            let now = new Date();
+            let timestamp = now.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' }) + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ' WIB';
+            document.getElementById('kkTimestamp').innerText = timestamp;
+            let tbody = document.getElementById('kkTableBody');
+            let rowsKK = familyMembers.map((member, index) => `
+                    <tr class="border-b border-slate-300">
+                        <td class="border border-slate-800 py-2 px-1">${index + 1}</td>
+                        <td class="border border-slate-800 py-2 px-2 text-left font-semibold uppercase">${member.nama_lengkap}</td>
+                        <td class="border border-slate-800 py-2 px-2 font-mono tracking-wider font-bold">${member.nij}</td>
+                        <td class="border border-slate-800 py-2 px-2 font-mono tracking-wider">${member.nomorInduk || '-'}</td>
+                        <td class="border border-slate-800 py-2 px-2">${member.jenis_kelamin === 'L' ? 'L' : 'P'}</td>
+                        <td class="border border-slate-800 py-2 px-2">${member.tanggal_lahir}</td>
+                        <td class="border border-slate-800 py-2 px-2 uppercase">${member.status_keluarga}</td>
+                        <td class="border border-slate-800 py-2 px-2 uppercase text-[10px]">${member.pendidikan}</td>
+                    </tr>
+                `);
+            tbody.innerHTML = rowsKK.join('');
+            document.getElementById('modalCetakKK').classList.remove('hidden');
+            writeLog(kkRoot.nij, "Cetak Dokumen", `Mencetak/Pratinjau Kartu Keluarga untuk keluarga ${kkRoot.nama_lengkap}`);
+            saveDataToLocalStorage();
+        }
+
+        function closeModalKK() { document.getElementById('modalCetakKK').classList.add('hidden'); }
+
+        // --- VIEW DETAIL JEMAAT (dengan log terstruktur) ---
+        function viewDetailJemaat(id) {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) return;
+            let headId = j.kepalaKeluargaId || j.id;
+            let head = dataJemaat.find(item => item.id === headId);
+            let familyMembers = getFamilyMembersSorted(headId);
+
+            document.getElementById('detailNama').innerText = j.nama_lengkap;
+            document.getElementById('detailStatusKeluarga').innerText = j.status_keluarga;
+            document.getElementById('detailNij').innerText = j.nij;
+            document.getElementById('detailNik').innerText = j.nomorInduk || '-';
+            document.getElementById('detailTtl').innerText = `${j.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'} • ${j.tanggal_lahir}`;
+            document.getElementById('detailStatusJemaat').innerText = j.status_jemaat;
+            document.getElementById('detailPekerjaan').innerText = `${j.pendidikan} • ${j.pekerjaan}`;
+            document.getElementById('detailSakramen').innerText = `${j.jenis_baptis} • ${j.status_sidi}`;
+            document.getElementById('detailTelepon').innerText = j.no_telepon || '-';
+            document.getElementById('detailEmail').innerText = j.email || '-';
+            document.getElementById('detailAlamat').innerText = j.alamat;
+            document.getElementById('detailKepalaKeluarga').innerText = head ? `${head.nama_lengkap}${head.status_jemaat !== 'Aktif' ? ' (' + head.status_jemaat + ')' : ''}` : '-';
+            document.getElementById('detailTimestamp').innerText = `Dibuat: ${j.createdAt || '-'}  •  Terakhir diubah: ${j.updatedAt || '-'}`;
+
+            let waBtnContainer = document.getElementById('detailWaBtnContainer');
+            if (j.no_telepon) {
+                waBtnContainer.innerHTML = `<button onclick="kirimUcapanWhatsApp('${j.id}', 'kosong')" class="px-2 py-0.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded text-[10px] font-medium transition inline-flex items-center space-x-1"><i class="fa-brands fa-whatsapp"></i><span>Chat WA</span></button>`;
+            } else {
+                waBtnContainer.innerHTML = "";
+            }
+            document.getElementById('detailFamilyCount').innerText = `${familyMembers.length} Orang`;
+            let tbody = document.getElementById('detailFamilyBody');
+            let rowsFamily = familyMembers.map(m => {
+                let isCurrent = m.id === j.id;
+                let statusBadge = m.status_jemaat === 'Aktif' ? `<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-50 text-emerald-600">Aktif</span>` : `<span class="px-2 py-0.5 rounded text-[10px] bg-rose-50 text-rose-600">${m.status_jemaat}</span>`;
+                return `
+                    <tr class="${isCurrent ? 'bg-indigo-50/70' : ''}">
+                        <td class="py-2 px-3 font-medium text-slate-800">${m.nama_lengkap} ${isCurrent ? '<span class="text-[9px] font-semibold text-indigo-600">(Dilihat)</span>' : ''}</td>
+                        <td class="py-2 px-3 text-slate-600">${m.status_keluarga}</td>
+                        <td class="py-2 px-3 text-slate-600">${m.jenis_kelamin === 'L' ? 'L' : 'P'} &bull; ${m.tanggal_lahir}</td>
+                        <td class="py-2 px-3">${statusBadge}</td>
+                    </tr>
+                `;
+            });
+            tbody.innerHTML = rowsFamily.join('');
+
+            // --- LOG dengan format terstruktur: Nilai Lama dan Nilai Baru terpisah ---
+            let logTbody = document.getElementById('detailLogBody');
+            let personLogs = auditLogs.filter(log => log.NIJ === j.nij);
+
+            if (personLogs.length === 0) {
+                logTbody.innerHTML = `<tr><td colspan="5" class="py-3 text-center text-slate-400">Belum ada histori perubahan tercatat.</td></tr>`;
+            } else {
+                let rowsLog = personLogs.slice().reverse().map(log => {
+                    let oldVal = log["Nilai Lama"];
+                    let newVal = log["Nilai Baru"];
+
+                    // Jika format perubahan terstruktur (berisi "field: value")
+                    if (oldVal !== "-" && newVal !== "-" && oldVal.includes(":") && newVal.includes(":")) {
+                        let oldParts = oldVal.split(',').map(s => s.trim());
+                        let newParts = newVal.split(',').map(s => s.trim());
+                        let oldItems = [];
+                        let newItems = [];
+                        for (let i = 0; i < Math.max(oldParts.length, newParts.length); i++) {
+                            let oldField = oldParts[i] || '';
+                            let newField = newParts[i] || '';
+                            let oldFieldName = oldField.split(':')[0]?.trim() || '';
+                            let oldFieldValue = oldField.split(':').slice(1).join(':').trim() || '';
+                            let newFieldName = newField.split(':')[0]?.trim() || '';
+                            let newFieldValue = newField.split(':').slice(1).join(':').trim() || '';
+                            let displayName = oldFieldName || newFieldName || 'Field';
+                            oldItems.push(`<div class="text-[10px] leading-tight"><span class="font-semibold">${displayName}</span>: ${oldFieldValue || '-'}</div>`);
+                            newItems.push(`<div class="text-[10px] leading-tight"><span class="font-semibold">${displayName}</span>: ${newFieldValue || '-'}</div>`);
+                        }
+                        oldVal = oldItems.join('<hr class="my-1 border-slate-200">');
+                        newVal = newItems.join('<hr class="my-1 border-slate-200">');
+                    } else {
+                        oldVal = `<span class="text-slate-500">${oldVal}</span>`;
+                        newVal = `<span class="text-slate-700">${newVal}</span>`;
+                    }
+                    return `
+                        <tr class="hover:bg-slate-50 border-b border-slate-50 align-top">
+                            <td class="py-2 px-3 align-top break-words text-slate-500 text-[10px]">${log["Waktu Kejadian"]}</td>
+                            <td class="py-2 px-3 align-top break-words font-semibold text-indigo-600 text-[10px]">${log["Aksi"]}</td>
+                            <td class="py-2 px-3 align-top break-words text-slate-700 leading-tight text-[10px]">${log["Detail Catatan"]}</td>
+                            <td class="py-2 px-3 align-top break-words whitespace-pre-line font-mono text-[9px] leading-snug">${oldVal}</td>
+                            <td class="py-2 px-3 align-top break-words whitespace-pre-line font-mono text-[9px] leading-snug">${newVal}</td>
+                        </tr>
+                    `;
+                });
+                logTbody.innerHTML = rowsLog.join('');
+            }
+
+            // --- Tampilkan Komisi yang Eligible ---
+            let eligibleKomisi = getEligibleKomisiForJemaat(j);
+            let elKomisi = document.getElementById('detailEligibleKomisi');
+            if (eligibleKomisi.length === 0) {
+                elKomisi.innerHTML = `<span class="text-slate-400 text-xs">Tidak ada komisi yang memenuhi kriteria untuk jemaat ini.</span>`;
+            } else {
+                elKomisi.innerHTML = eligibleKomisi.map(k => `
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${k.color} text-white">${k.name}</span>
+                `).join(' ');
+            }
+
+            document.getElementById('btnExportDetailPdf').setAttribute('onclick', `exportDetailPDF('${j.id}')`);
+
+            currentDetailJemaatId = j.id;
+            const periodSelect = document.getElementById('detailAttendancePeriod');
+            if (periodSelect) periodSelect.value = 'month';
+            renderAttendanceHistory();
+
+            document.getElementById('modalDetailJemaat').classList.remove('hidden');
+        }
+
+        function closeModalDetail() {
+            document.getElementById('modalDetailJemaat').classList.add('hidden');
+            currentDetailJemaatId = null;
+        }
+
+        // --- EXPORT DETAIL PDF (sama seperti sebelumnya) ---
+        function exportDetailPDF(id) {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) return;
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: "pt", format: "a4" });
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            const marginX = 40;
+            const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'medium' });
+
+            const hitungUsiaTahun = (tglStr) => {
+                let p = parseRobustDate(tglStr);
+                if (!p) return null;
+                let now = new Date();
+                let age = now.getFullYear() - p.y;
+                const bulanIni = now.getMonth() + 1,
+                    tglIni = now.getDate();
+                if (bulanIni < p.m || (bulanIni === p.m && tglIni < p.d)) age--;
+                return age;
+            };
+
+            const val = (v) => (v === undefined || v === null || v === "") ? "-" : String(v);
+
+            let headId = j.kepalaKeluargaId || j.id;
+            let head = dataJemaat.find(item => item.id === headId);
+            let familyMembers = getFamilyMembersSorted(headId);
+            let usiaJ = hitungUsiaTahun(j.tanggal_lahir);
+            let usiaPernikahanJ = null;
+            if (j.tanggal_pernikahan) {
+                let p = parseRobustDate(j.tanggal_pernikahan);
+                if (p) usiaPernikahanJ = new Date().getFullYear() - p.y;
+            }
+
+            const drawHeaderFooter = () => {
+                doc.setFillColor(79, 70, 229);
+                doc.rect(0, 0, pageW, 82, 'F');
+                doc.setFillColor(236, 72, 153);
+                doc.rect(0, 82, pageW, 4, 'F');
+                doc.setTextColor(255, 255, 255);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(17);
+                doc.text("LAPORAN DETAIL DATA JEMAAT", marginX, 33);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9.5);
+                doc.text(churchName.toUpperCase(), marginX, 49);
+                doc.setFontSize(8);
+                doc.setTextColor(224, 231, 255);
+                doc.text(`Dicetak: ${timestamp}`, marginX, 64);
+                doc.setTextColor(255, 255, 255);
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(12);
+                doc.text(j.nama_lengkap || "-", pageW - marginX, 33, { align: "right" });
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9);
+                doc.setTextColor(224, 231, 255);
+                doc.text(`NIJ: ${val(j.nij)}`, pageW - marginX, 47, { align: "right" });
+                doc.text(`Status: ${val(j.status_jemaat)}`, pageW - marginX, 60, { align: "right" });
+                doc.setTextColor(148, 163, 184);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(8);
+                doc.text(`Halaman ${doc.internal.getCurrentPageInfo().pageNumber}  •  ${churchName}`, pageW / 2, pageH - 20, { align: "center" });
+                doc.setTextColor(0, 0, 0);
+            };
+
+            const baseTableOpts = {
+                margin: { top: 100, left: marginX, right: marginX, bottom: 40 },
+                styles: { font: "helvetica", fontSize: 9, cellPadding: 5, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5 },
+                didDrawPage: drawHeaderFooter
+            };
+
+            const sectionKV = (startY, title, color, rows) => {
+                doc.autoTable({
+                    ...baseTableOpts,
+                    startY,
+                    head: [
+                        [{ content: title, colSpan: 2, styles: { fillColor: color, textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }]
+                    ],
+                    body: rows,
+                    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 150, textColor: [71, 85, 105] }, 1: { cellWidth: 'auto' } },
+                    theme: 'grid'
+                });
+                return doc.lastAutoTable.finalY + 16;
+            };
+
+            let cursorY = 100;
+            cursorY = sectionKV(cursorY, "1. IDENTITAS & DATA PRIBADI", [79, 70, 229], [
+                ["Nama Lengkap", val(j.nama_lengkap)],
+                ["NIJ", val(j.nij)],
+                ["NIK KTP", val(j.nomorInduk)],
+                ["Status dalam Keluarga", val(j.status_keluarga)],
+                ["Kepala Keluarga (KK)", head ? val(head.nama_lengkap) : "-"],
+                ["Jenis Kelamin", j.jenis_kelamin === 'L' ? 'Laki-laki' : (j.jenis_kelamin === 'P' ? 'Perempuan' : '-')],
+                ["Tanggal Lahir", formatTglIndoRingkas(j.tanggal_lahir)],
+                ["Usia", usiaJ !== null ? `${usiaJ} Tahun` : "-"],
+                ["Pendidikan Terakhir", val(j.pendidikan)],
+                ["Pekerjaan", val(j.pekerjaan)],
+                ["Tanggal Input Data", val(j.createdAt)],
+                ["Terakhir Diperbarui", val(j.updatedAt)]
+            ]);
+            cursorY = sectionKV(cursorY, "2. KONTAK & ALAMAT", [37, 99, 235], [
+                ["No. Telepon / WhatsApp", val(j.no_telepon)],
+                ["Email", val(j.email)],
+                ["Alamat Lengkap", val(j.alamat)]
+            ]);
+            cursorY = sectionKV(cursorY, "3. KEANGGOTAAN GEREJA & SAKRAMEN", [5, 150, 105], [
+                ["Status Keanggotaan", val(j.status_jemaat)],
+                ["Jalur Masuk", val(j.jalur_masuk)],
+                ["Tanggal Bergabung", formatTglIndoRingkas(j.tanggal_bergabung)],
+                ["Jenis Baptis", val(j.jenis_baptis)],
+                ["No. Surat Baptis", val(j.no_surat_baptis)],
+                ["Tanggal Baptis", formatTglIndoRingkas(j.tanggal_baptis)],
+                ["Status Sidi", val(j.status_sidi)],
+                ["Status Pelayanan", j.sudah_berpelayanan === 'Ya' ? val(j.bidang_pelayanan || 'Ya') : 'Tidak Berpelayanan']
+            ]);
+            cursorY = sectionKV(cursorY, "4. STATUS PERNIKAHAN", [225, 29, 72], [
+                ["Status Pernikahan", val(j.status_pernikahan)],
+                ["Tanggal Pernikahan", j.tanggal_pernikahan ? formatTglIndoRingkas(j.tanggal_pernikahan) : "-"],
+                ["Usia Pernikahan", usiaPernikahanJ !== null ? `${usiaPernikahanJ} Tahun` : "-"]
+            ]);
+
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [
+                    [{ content: `5. ANGGOTA KELUARGA — SATU KK (${familyMembers.length} Orang)`, colSpan: 5, styles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }],
+                    ["No", "Nama Lengkap", "Status Keluarga", "L/P", "Status Jemaat"]
+                ],
+                body: familyMembers.length ? familyMembers.map((m, idx) => [
+                    idx + 1,
+                    m.nama_lengkap + (m.id === j.id ? " (Data Ini)" : ""),
+                    m.status_keluarga,
+                    m.jenis_kelamin === 'L' ? 'L' : 'P',
+                    m.status_jemaat
+                ]) : [
+                    [{ content: "Tidak ada anggota keluarga lain.", colSpan: 5, styles: { halign: 'center', textColor: [148, 163, 184] } }]
+                ],
+                headStyles: { fillColor: [237, 233, 254], textColor: [76, 29, 149], fontStyle: 'bold', fontSize: 9 },
+                columnStyles: { 0: { cellWidth: 30, halign: 'center' }, 3: { cellWidth: 40, halign: 'center' } },
+                theme: 'grid'
+            });
+            cursorY = doc.lastAutoTable.finalY + 16;
+
+            let eventsAll = (acaraEventsCache || []).filter(ev => ev.date && ev.eventStatus !== 'Terjadwal' && Array.isArray(ev.attendeeIds) && ev.attendeeIds.includes(j.id));
+            let groupedAll = {};
+            eventsAll.forEach(ev => {
+                const name = ev.eventName || '(Tanpa Nama)';
+                if (!groupedAll[name]) groupedAll[name] = { count: 0, lastDate: ev.date };
+                groupedAll[name].count++;
+                if (ev.date > groupedAll[name].lastDate) groupedAll[name].lastDate = ev.date;
+            });
+            let attendanceRows = Object.entries(groupedAll).sort((a, b) => b[1].count - a[1].count);
+
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [
+                    [{ content: `6. RIWAYAT KEHADIRAN IBADAH / ACARA (${eventsAll.length}x, Sepanjang Waktu)`, colSpan: 3, styles: { fillColor: [13, 148, 136], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }],
+                    ["Nama Ibadah / Acara", "Jumlah Hadir", "Terakhir Hadir"]
+                ],
+                body: attendanceRows.length ? attendanceRows.map(([name, info]) => [name, `${info.count}x`, formatTglIndoRingkas(info.lastDate)]) : [
+                    [{ content: "Belum ada catatan kehadiran.", colSpan: 3, styles: { halign: 'center', textColor: [148, 163, 184] } }]
+                ],
+                headStyles: { fillColor: [204, 251, 241], textColor: [15, 118, 110], fontStyle: 'bold', fontSize: 9 },
+                columnStyles: { 1: { cellWidth: 80, halign: 'center' }, 2: { cellWidth: 110 } },
+                theme: 'grid'
+            });
+            cursorY = doc.lastAutoTable.finalY + 16;
+
+            let personLogs = auditLogs.filter(log => log.NIJ === j.nij).slice().reverse();
+            doc.autoTable({
+                ...baseTableOpts,
+                startY: cursorY,
+                head: [
+                    [{ content: "7. HISTORI PERUBAHAN DATA (LOG AUDIT)", colSpan: 4, styles: { fillColor: [71, 85, 105], textColor: 255, fontStyle: 'bold', fontSize: 10.5, halign: 'left', cellPadding: 7 } }],
+                    ["Waktu Kejadian", "Aksi", "Detail Catatan", "Perubahan"]
+                ],
+                body: personLogs.length ? personLogs.map(log => [
+                    log["Waktu Kejadian"],
+                    log["Aksi"],
+                    log["Detail Catatan"],
+                    (log["Nilai Lama"] !== "-" || log["Nilai Baru"] !== "-") ? `Lama: ${log["Nilai Lama"]}\nBaru: ${log["Nilai Baru"]}` : "-"
+                ]) : [
+                    [{ content: "Belum ada histori perubahan.", colSpan: 4, styles: { halign: 'center', textColor: [148, 163, 184] } }]
+                ],
+                headStyles: { fillColor: [226, 232, 240], textColor: [30, 41, 59], fontStyle: 'bold', fontSize: 8.5, halign: 'left' },
+                styles: { font: "helvetica", fontSize: 7.5, cellPadding: 4, textColor: [51, 65, 85], lineColor: [226, 232, 240], lineWidth: 0.5, overflow: 'linebreak', valign: 'top', halign: 'left' },
+                columnStyles: { 0: { cellWidth: 80, halign: 'left' }, 1: { cellWidth: 65, halign: 'left' }, 2: { cellWidth: 190, halign: 'left' }, 3: { cellWidth: 180, halign: 'left' } },
+                theme: 'grid'
+            });
+            drawHeaderFooter();
+            doc.save(`Detail_Jemaat_${j.nij}.pdf`);
+            writeLog(j.nij, "Export PDF", `Mengekspor detail profil lengkap ${j.nama_lengkap} ke PDF`);
+            saveDataToLocalStorage();
+            if (typeof showAlert === 'function') showAlert("Berhasil", "File PDF Detail Jemaat berhasil diunduh.", "success");
+        }
+
+        // --- FORM / MODAL FUNCTIONS ---
+        function handleBaptisChange() {
+            const baptisVal = document.getElementById('jenisBaptis').value;
+            const detailWrapper = document.getElementById('wrapperDetailBaptis');
+            if (baptisVal !== 'Belum Baptis') { detailWrapper.classList.remove('hidden'); } 
+            else { detailWrapper.classList.add('hidden');
+                document.getElementById('noSuratBaptis').value = '';
+                document.getElementById('tanggalBaptis').value = ''; }
+        }
+
+        function openModalTambahJemaat() {
+            document.getElementById('modalJemaatTitle').innerText = "Tambah Data Jemaat Baru";
+            document.getElementById('formJemaat').reset();
+            document.getElementById('editIndex').value = "";
+            document.getElementById('kepalaKeluargaId').value = "";
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
+            let statusSelect = document.getElementById('statusKeluarga');
+            statusSelect.innerHTML = `<option value="Anggota Utama">Anggota Utama</option>`;
+            statusSelect.disabled = true;
+            document.getElementById('statusKeluargaNote').classList.add('hidden');
+            document.getElementById('sudahBerpelayanan').checked = false;
+            document.getElementById('bidangPelayananWrapper').classList.add('hidden');
+            document.getElementById('bidangPelayananLainnya').classList.add('hidden');
+            document.getElementById('alamat').readOnly = false;
+            document.getElementById('alamatNote').classList.add('hidden');
+            handlePernikahanChange();
+            handleJalurMasukChange();
+            handleBaptisChange();
+            document.getElementById('modalJemaat').classList.remove('hidden');
+        }
+
+        function openModalTambahAnggota(kkId) {
+            let kkData = dataJemaat.find(j => j.id === kkId);
+            if (!kkData) return;
+            document.getElementById('modalJemaatTitle').innerText = `Tambah Anggota Keluarga`;
+            document.getElementById('formJemaat').reset();
+            document.getElementById('editIndex').value = "";
+            document.getElementById('kepalaKeluargaId').value = kkId;
+            document.getElementById('nomorIndukJemaat').value = generateNextNIJ();
+            let statusSelect = document.getElementById('statusKeluarga');
+            statusSelect.disabled = false;
+            document.getElementById('statusKeluargaNote').classList.add('hidden');
+            let optionsHTML = `<option value="Anak">Anak</option>`;
+            if (kkData.jenis_kelamin === "L") {
+                let hasIstri = dataJemaat.some(j => (j.kepalaKeluargaId === kkId || j.id === kkId) && j.status_keluarga === "Istri");
+                if (!hasIstri) { optionsHTML = `<option value="Istri">Istri</option>` + optionsHTML; }
+            } else if (kkData.jenis_kelamin === "P") {
+                let hasSuami = dataJemaat.some(j => (j.kepalaKeluargaId === kkId || j.id === kkId) && j.status_keluarga === "Suami");
+                if (!hasSuami) { optionsHTML = `<option value="Suami">Suami</option>` + optionsHTML; }
+            }
+            statusSelect.innerHTML = optionsHTML;
+            handleGenderChange();
+            handleStatusKeluargaChange();
+            document.getElementById('sudahBerpelayanan').checked = false;
+            document.getElementById('bidangPelayananWrapper').classList.add('hidden');
+            document.getElementById('bidangPelayananLainnya').classList.add('hidden');
+            document.getElementById('alamat').value = kkData.alamat;
+            document.getElementById('alamat').readOnly = true;
+            document.getElementById('alamatNote').classList.remove('hidden');
+            handleJalurMasukChange();
+            handleBaptisChange();
+            document.getElementById('modalJemaat').classList.remove('hidden');
+        }
+
+        function handleGenderChange() {
+            let statusKel = document.getElementById('statusKeluarga').value;
+            let jenisKelamin = document.getElementById('jenisKelamin');
+            if (statusKel === "Istri") { jenisKelamin.value = "P";
+                jenisKelamin.disabled = true; } 
+            else if (statusKel === "Suami") { jenisKelamin.value = "L";
+                jenisKelamin.disabled = true; } 
+            else { jenisKelamin.disabled = false; }
+        }
+
+        function handlePernikahanChange() {
+            let val = document.getElementById('statusPernikahan').value;
+            let wrap = document.getElementById('wrapperTanggalPernikahan');
+            if (val === 'Menikah') wrap.classList.remove('hidden');
+            else { wrap.classList.add('hidden');
+                document.getElementById('tanggalPernikahan').value = ""; }
+        }
+
+        function handleStatusKeluargaChange() {
+            handleGenderChange();
+            let statusKel = document.getElementById('statusKeluarga').value;
+            let kkId = document.getElementById('kepalaKeluargaId').value;
+            let statusNikah = document.getElementById('statusPernikahan');
+            let tglNikah = document.getElementById('tanggalPernikahan');
+            let wrapTgl = document.getElementById('wrapperTanggalPernikahan');
+            statusNikah.classList.remove('bg-slate-100', 'pointer-events-none');
+            tglNikah.classList.remove('bg-slate-100', 'pointer-events-none');
+            if (kkId && (statusKel === "Istri" || statusKel === "Suami")) {
+                let kkRoot = dataJemaat.find(j => j.id === kkId);
+                if (kkRoot) {
+                    statusNikah.value = "Menikah";
+                    statusNikah.classList.add('bg-slate-100', 'pointer-events-none');
+                    if (kkRoot.tanggal_pernikahan) {
+                        tglNikah.value = kkRoot.tanggal_pernikahan;
+                        tglNikah.classList.add('bg-slate-100', 'pointer-events-none');
+                    }
+                    wrapTgl.classList.remove('hidden');
+                }
+            } else { handlePernikahanChange(); }
+        }
+
+        function handleJalurMasukChange() {
+            const jalur = document.getElementById('jalurMasuk').value;
+            const tglBergabung = document.getElementById('tanggalBergabung');
+            const note = document.getElementById('tanggalBergabungNote');
+            if (jalur === 'Lahir di Gereja') {
+                const tglLahir = document.getElementById('tanggalLahir').value;
+                if (tglLahir) tglBergabung.value = tglLahir;
+                tglBergabung.readOnly = true;
+                tglBergabung.classList.add('bg-slate-100', 'text-slate-500');
+                note.classList.remove('hidden');
+            } else {
+                tglBergabung.readOnly = false;
+                tglBergabung.classList.remove('bg-slate-100', 'text-slate-500');
+                note.classList.add('hidden');
+            }
+        }
+
+        function handleTanggalLahirChange() {
+            if (document.getElementById('jalurMasuk').value === 'Lahir di Gereja') {
+                document.getElementById('tanggalBergabung').value = document.getElementById('tanggalLahir').value;
+            }
+        }
+
+        function handlePelayananChange() {
+            const checked = document.getElementById('sudahBerpelayanan').checked;
+            const wrapper = document.getElementById('bidangPelayananWrapper');
+            if (checked) { wrapper.classList.remove('hidden');
+                handleBidangPelayananChange(); } 
+            else { wrapper.classList.add('hidden');
+                document.getElementById('bidangPelayananLainnya').classList.add('hidden'); }
+        }
+
+        function handleBidangPelayananChange() {
+            const val = document.getElementById('bidangPelayanan').value;
+            const lainnya = document.getElementById('bidangPelayananLainnya');
+            if (val === "Lainnya") { lainnya.classList.remove('hidden'); } 
+            else { lainnya.classList.add('hidden');
+                lainnya.value = ""; }
+        }
+
+        // --- SAVE JEMAAT ---
+        let pendingMeninggalData = null;
+
         function saveJemaat(event) {
             event.preventDefault();
             const editId = document.getElementById('editIndex').value;
@@ -1270,24 +3224,15 @@
                         changedNew.push(`${key}: ${formData[key] || '-'}`);
                     }
                 }
-                // Update dengan upsert
-                const updatedData = { ...original, ...formData, updatedAt: new Date().toISOString() };
-                upsertRawJemaat(updatedData);
+                let idx = dataJemaat.findIndex(j => j.id === editId);
+                dataJemaat[idx] = { ...dataJemaat[idx], ...formData, updatedAt: getTimestampString() };
                 if (changedOld.length > 0) {
                     writeLog(finalNIJ, "Ubah Data", `Memperbarui profil data jemaat`, changedOld.join(', '), changedNew.join(', '));
                 }
                 showAlert("Berhasil", "Data jemaat berhasil diperbarui.", "success");
             } else {
-                let timestampNow = new Date().toISOString();
-                const newJemaat = {
-                    id: generateUniqueId(),
-                    kepalaKeluargaId: kkId || null,
-                    ...formData,
-                    createdAt: timestampNow,
-                    updatedAt: timestampNow,
-                    deleted: false
-                };
-                upsertRawJemaat(newJemaat);
+                let timestampNow = getTimestampString();
+                dataJemaat.push({ id: generateUniqueId(), kepalaKeluargaId: kkId || null, ...formData, createdAt: timestampNow, updatedAt: timestampNow });
                 let newSummary = `Nama: ${formData.nama_lengkap}, Kelamin: ${formData.jenis_kelamin}, Tgl Lahir: ${formData.tanggal_lahir}, Status: ${formData.status_keluarga}`;
                 if (kkId) {
                     let head = dataJemaat.find(j => j.id === kkId);
@@ -1298,106 +3243,64 @@
                 }
                 showAlert("Berhasil", `Data jemaat tersimpan dengan NIJ: ${finalNIJ}`, "success");
             }
-            recomputeActiveJemaat();
             saveDataToLocalStorage();
             closeModalJemaat();
             renderTableJemaat();
             renderDashboardIfActive();
         }
 
-        // Fungsi hapus data (gunakan deleteRawJemaat)
-        function confirmResetAllData() {
-            openConfirm("Hapus Semua Data Jemaat?", "Seluruh data jemaat (" + dataJemaat.length + " entri) dan riwayat log aktivitas akan dihapus permanen.", function() {
-                // Tandai semua data sebagai deleted
-                allJemaatRaw.forEach(j => {
-                    if (!j.deleted) {
-                        allJemaatRaw.push({ id: j.id, deleted: true, updatedAt: new Date().toISOString() });
-                    }
-                });
-                auditLogs = [];
-                recomputeActiveJemaat();
-                saveDataToLocalStorage();
-                renderTableJemaat();
-                renderDashboardIfActive();
-                showAlert("Berhasil", "Seluruh data jemaat telah dihapus.", "success");
-            });
+        function openModalSuksesi(headId, anggotaLain) {
+            let head = dataJemaat.find(j => j.id === headId);
+            document.getElementById('suksesiHeadName').innerText = head ? head.nama_lengkap : '';
+            const order = { "Suami": 1, "Istri": 1, "Anak": 2 };
+            let sortedAnggota = [...anggotaLain].sort((a, b) => (order[a.status_keluarga] || 99) - (order[b.status_keluarga] || 99));
+            let el = document.getElementById('suksesiOptions');
+            let optTetap = `
+                <label class="flex items-start space-x-2 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                    <input type="radio" name="suksesiPilihan" value="tetap" checked class="mt-0.5">
+                    <span><span class="font-semibold text-slate-800 block">Tetap — Tidak ada Kepala Keluarga baru</span><span class="text-slate-500">Kartu Keluarga tetap tercatat di bawah almarhum/almarhumah.</span></span>
+                </label>
+            `;
+            let optsAnggota = sortedAnggota.map(m => `
+                    <label class="flex items-start space-x-2 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                        <input type="radio" name="suksesiPilihan" value="${m.id}" class="mt-0.5">
+                        <span><span class="font-semibold text-slate-800 block">Jadikan ${m.nama_lengkap} (${m.status_keluarga}) sebagai Kepala Keluarga baru</span></span>
+                    </label>
+                `);
+            el.innerHTML = optTetap + optsAnggota.join('');
+            document.getElementById('modalSuksesi').classList.remove('hidden');
         }
 
-        // Duplicate check harus menggunakan allJemaatRaw (atau dataJemaat) - untuk cleansing kita gunakan dataJemaat
-        function checkDuplicates() {
-            let seen = new Set();
-            let duplicates = [];
-            let uniqueData = [];
-            dataJemaat.forEach(j => {
-                let key = j.nij ? j.nij.trim().toLowerCase() : (j.nama_lengkap + "_" + j.tanggal_lahir).toLowerCase();
-                if (seen.has(key)) duplicates.push(j);
-                else { seen.add(key);
-                    uniqueData.push(j); }
-            });
-            // Dedupe log
-            let logDedupe = dedupeAuditLogs(auditLogs);
-            let totalDuplicateLogs = logDedupe.duplicateCount;
-            if (duplicates.length > 0 || totalDuplicateLogs > 0) {
-                let pesanBagian = [];
-                if (duplicates.length > 0) pesanBagian.push(`${duplicates.length} data jemaat duplikat (Nomor Induk Jemaat sama)`);
-                if (totalDuplicateLogs > 0) pesanBagian.push(`${totalDuplicateLogs} baris histori log yang identik/duplikat`);
-                openConfirm("Ditemukan Duplikat", `Sistem mendeteksi ${pesanBagian.join(" dan ")}. Apakah Anda yakin ingin membersihkannya?`, () => {
-                    // Hapus duplikat dari allJemaatRaw dengan menandai yang tidak unik sebagai deleted
-                    const uniqueIds = new Set(uniqueData.map(j => j.id));
-                    allJemaatRaw.forEach(j => {
-                        if (!j.deleted && !uniqueIds.has(j.id)) {
-                            allJemaatRaw.push({ id: j.id, deleted: true, updatedAt: new Date().toISOString() });
-                        }
-                    });
-                    auditLogs = logDedupe.uniqueLogs;
-                    recomputeActiveJemaat();
-                    saveDataToLocalStorage();
-                    renderTableJemaat();
-                    renderDashboardIfActive();
-                    let detailLog = [];
-                    if (duplicates.length > 0) detailLog.push(`${duplicates.length} data jemaat duplikat`);
-                    if (totalDuplicateLogs > 0) detailLog.push(`${totalDuplicateLogs} baris log duplikat`);
-                    writeLog("SYSTEM", "Cleansing Duplikat", `Membersihkan ${detailLog.join(" & ")} hasil impor/kesalahan input.`);
-                    saveDataToLocalStorage();
-                    let pesanHasil = [];
-                    if (duplicates.length > 0) pesanHasil.push(`${duplicates.length} data jemaat duplikat`);
-                    if (totalDuplicateLogs > 0) pesanHasil.push(`${totalDuplicateLogs} baris log duplikat`);
-                    showAlert("Cleansing Berhasil", `${pesanHasil.join(" dan ")} telah dihapus dari sistem secara permanen.`, "success");
-                });
-            } else {
-                showAlert("Sudah Bersih", "Tidak ditemukan indikasi data jemaat maupun histori log yang berduplikat di dalam sistem.", "success");
+        function batalSuksesi() {
+            if (pendingMeninggalData) {
+                let original = dataJemaat.find(j => j.id === pendingMeninggalData.editId);
+                if (original) document.getElementById('statusJemaat').value = original.status_jemaat;
             }
+            pendingMeninggalData = null;
+            document.getElementById('modalSuksesi').classList.add('hidden');
         }
 
-        // Fungsi suksesi: saat mengubah status menjadi Meninggal, kita menggunakan upsert
         function konfirmasiSuksesi() {
             if (!pendingMeninggalData) return;
             let pilihanEl = document.querySelector('input[name="suksesiPilihan"]:checked');
             if (!pilihanEl) return;
             let pilihan = pilihanEl.value;
             let { editId, formData } = pendingMeninggalData;
-            let original = dataJemaat.find(j => j.id === editId);
-            if (!original) { pendingMeninggalData = null; return; }
-            // Update data kepala keluarga
-            const updatedHead = { ...original, ...formData, updatedAt: new Date().toISOString() };
-            upsertRawJemaat(updatedHead);
-
+            let idx = dataJemaat.findIndex(j => j.id === editId);
+            if (idx === -1) { pendingMeninggalData = null; return; }
+            dataJemaat[idx] = { ...dataJemaat[idx], ...formData };
             if (pilihan !== 'tetap') {
                 let newHead = dataJemaat.find(j => j.id === pilihan);
                 if (newHead) {
                     let perananSebelumnya = newHead.status_keluarga;
-                    const updatedNewHead = { ...newHead, status_keluarga: "Anggota Utama", kepalaKeluargaId: null, updatedAt: new Date().toISOString() };
-                    upsertRawJemaat(updatedNewHead);
-                    // Update status keluarga kepala yang meninggal
-                    const updatedHead2 = { ...updatedHead, status_keluarga: (perananSebelumnya === "Suami" ? "Istri" : "Suami"), kepalaKeluargaId: newHead.id, updatedAt: new Date().toISOString() };
-                    upsertRawJemaat(updatedHead2);
-                    // Update anggota lain yang mengikuti
+                    newHead.status_keluarga = "Anggota Utama";
+                    newHead.kepalaKeluargaId = null;
+                    if (perananSebelumnya === "Suami") dataJemaat[idx].status_keluarga = "Istri";
+                    else if (perananSebelumnya === "Istri") dataJemaat[idx].status_keluarga = "Suami";
                     dataJemaat.forEach(j => {
-                        if (j.id !== newHead.id && j.id !== editId && j.kepalaKeluargaId === editId) {
-                            const updatedAnggota = { ...j, kepalaKeluargaId: newHead.id, updatedAt: new Date().toISOString() };
-                            upsertRawJemaat(updatedAnggota);
-                        }
+                        if (j.id !== newHead.id && j.id !== editId && j.kepalaKeluargaId === editId) j.kepalaKeluargaId = newHead.id;
                     });
+                    dataJemaat[idx].kepalaKeluargaId = newHead.id;
                     writeLog(newHead.nij, "Suksesi KK", `Menetapkan sebagai Kepala Keluarga baru menggantikan almarhum/ah ${formData.nama_lengkap}`, `Status: ${perananSebelumnya}`, `Status: Anggota Utama`);
                     writeLog(formData.nij, "Ubah Data", `Status berubah menjadi Meninggal Dunia. Suksesi KK diserahkan ke ${newHead.nama_lengkap}`, `Status: Aktif`, `Status: Meninggal (Suksesi)`);
                 }
@@ -1406,7 +3309,6 @@
             }
             pendingMeninggalData = null;
             document.getElementById('modalSuksesi').classList.add('hidden');
-            recomputeActiveJemaat();
             saveDataToLocalStorage();
             closeModalJemaat();
             renderTableJemaat();
@@ -1414,57 +3316,378 @@
             showAlert("Berhasil", "Status suksesi berhasil disimpan.", "success");
         }
 
-        // --- Hapus data (panggil deleteRawJemaat) untuk tombol hapus di detail? ---
-        // Tidak ada tombol hapus langsung di daftar, hanya di cleansing. Tapi jika ada, kita akan gunakan deleteRawJemaat.
+        function editJemaat(id) {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) return;
+            document.getElementById('modalJemaatTitle').innerText = "Edit Data Jemaat";
+            document.getElementById('editIndex').value = j.id;
+            document.getElementById('kepalaKeluargaId').value = j.kepalaKeluargaId || "";
+            document.getElementById('nomorIndukJemaat').value = j.nij;
+            document.getElementById('nomorInduk').value = j.nomorInduk || "";
+            document.getElementById('emailJemaat').value = j.email || "";
+            document.getElementById('namaLengkap').value = j.nama_lengkap;
+            let statusSelect = document.getElementById('statusKeluarga');
+            statusSelect.innerHTML = `<option value="Anggota Utama">Anggota Utama</option><option value="Suami">Suami</option><option value="Istri">Istri</option><option value="Anak">Anak</option>`;
+            statusSelect.value = j.status_keluarga;
+            statusSelect.disabled = true;
+            document.getElementById('statusKeluargaNote').classList.remove('hidden');
+            document.getElementById('jenisKelamin').value = j.jenis_kelamin;
+            document.getElementById('jenisKelamin').disabled = (j.status_keluarga === 'Istri' || j.status_keluarga === 'Suami');
+            document.getElementById('statusPernikahan').value = j.status_pernikahan || "Belum Menikah";
+            document.getElementById('tanggalPernikahan').value = j.tanggal_pernikahan || "";
+            handlePernikahanChange();
+            document.getElementById('pendidikan').value = j.pendidikan || "Belum/Tidak Sekolah";
+            document.getElementById('pekerjaan').value = j.pekerjaan || "Lainnya";
+            document.getElementById('sudahBerpelayanan').checked = j.sudah_berpelayanan === "Ya";
+            if (j.sudah_berpelayanan === "Ya") {
+                document.getElementById('bidangPelayananWrapper').classList.remove('hidden');
+                let opsiTersedia = ["Pelayanan Musik / Worship", "Pelayanan Anak (Sekolah Minggu)", "Usher / Penyambut Jemaat", "Sound System & Teknisi", "Multimedia & Dokumentasi", "Doa & Konseling", "Diakonia / Sosial", "Keamanan & Parkir"];
+                if (j.bidang_pelayanan && opsiTersedia.includes(j.bidang_pelayanan)) {
+                    document.getElementById('bidangPelayanan').value = j.bidang_pelayanan;
+                    document.getElementById('bidangPelayananLainnya').classList.add('hidden');
+                } else {
+                    document.getElementById('bidangPelayanan').value = "Lainnya";
+                    document.getElementById('bidangPelayananLainnya').classList.remove('hidden');
+                    document.getElementById('bidangPelayananLainnya').value = j.bidang_pelayanan || "";
+                }
+            } else {
+                document.getElementById('bidangPelayananWrapper').classList.add('hidden');
+                document.getElementById('bidangPelayananLainnya').classList.add('hidden');
+            }
+            document.getElementById('tanggalLahir').value = j.tanggal_lahir;
+            document.getElementById('alamat').value = j.alamat;
+            document.getElementById('noTelepon').value = j.no_telepon || "";
+            document.getElementById('statusJemaat').value = j.status_jemaat;
+            document.getElementById('jalurMasuk').value = j.jalur_masuk;
+            document.getElementById('tanggalBergabung').value = j.tanggal_bergabung;
+            document.getElementById('jenisBaptis').value = j.jenis_baptis || "Belum Baptis";
+            document.getElementById('statusSidi').value = j.status_sidi || "Belum Sidi";
+            handleBaptisChange();
+            if (j.jenis_baptis && j.jenis_baptis !== 'Belum Baptis') {
+                document.getElementById('noSuratBaptis').value = j.no_surat_baptis || "";
+                document.getElementById('tanggalBaptis').value = j.tanggal_baptis || "";
+            }
+            handleJalurMasukChange();
+            if (j.kepalaKeluargaId) { document.getElementById('alamat').readOnly = true;
+                document.getElementById('alamatNote').classList.remove('hidden'); } 
+            else { document.getElementById('alamat').readOnly = false;
+                document.getElementById('alamatNote').classList.add('hidden'); }
+            document.getElementById('modalJemaat').classList.remove('hidden');
+        }
 
-        // --- Semua fungsi lain tetap (render, export, import, dll) ---
-        // Tapi kita perlu menyesuaikan di bagian import: saat menambah data, gunakan upsertRawJemaat
+        function pecahKk(id) {
+            let j = dataJemaat.find(item => item.id === id);
+            if (!j) return;
+            openConfirm("Pecah Kartu Keluarga", `Yakin memproses Pecah KK untuk ${j.nama_lengkap}? Data akan memisahkan diri dan membentuk Kartu Keluarga mandiri.`, () => {
+                let oldStatus = j.status_keluarga;
+                let oldKkId = j.kepalaKeluargaId;
+                j.kepalaKeluargaId = null;
+                j.status_keluarga = "Anggota Utama";
+                writeLog(j.nij, "Pecah KK", `Memisahkan diri menjadi Kepala Keluarga mandiri`, `Status: ${oldStatus}, KK Induk: ${oldKkId}`, `Status: Anggota Utama, KK Induk: null`);
+                saveDataToLocalStorage();
+                showAlert("Berhasil", `${j.nama_lengkap} kini membentuk Kartu Keluarga mandiri.`, "success");
+                renderTableJemaat();
+            });
+        }
+
+        function closeModalJemaat() { document.getElementById('modalJemaat').classList.add('hidden'); }
+
+        // --- IMPOR / EKSPOR EXCEL ---
+        const PARAMETER_SHEET_NAME = "Parameter";
+        const PARAMETER_HEADERS = ["Tipe", "Isi Pesan", "Nama Kategori", "Min Umur", "Max Umur", "Tampil di Dashboard", "Warna Chart", "Gender", "Syarat Pelayanan", "Bidang Pelayanan", "Pekerjaan", "Status Pernikahan", "Syarat Baptis", "Syarat Sidi"];
+        const TIPE_UCAPAN_ULTAH = "Ucapan Ulang Tahun";
+        const TIPE_UCAPAN_ANNIV = "Ucapan Ulang Tahun Pernikahan";
+        const TIPE_DEMOGRAFI = "Demografi Usia";
+        const TIPE_KOMISI = "Komisi Pelayanan";
+
+        function buildParameterSheetRows() {
+            let rows = [];
+            rows.push({ "Tipe": TIPE_UCAPAN_ULTAH, "Isi Pesan": settingsUcapanUlangTahun, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
+            rows.push({ "Tipe": TIPE_UCAPAN_ANNIV, "Isi Pesan": settingsUcapanAnniv, "Nama Kategori": "", "Min Umur": "", "Max Umur": "", "Tampil di Dashboard": "", "Warna Chart": "", "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
+            settingsDemographics.forEach(cat => {
+                rows.push({ "Tipe": TIPE_DEMOGRAFI, "Isi Pesan": "", "Nama Kategori": cat.name, "Min Umur": cat.minAge, "Max Umur": cat.maxAge, "Tampil di Dashboard": cat.isVisible ? "Ya" : "Tidak", "Warna Chart": cat.color, "Gender": "", "Syarat Pelayanan": "", "Bidang Pelayanan": "", "Pekerjaan": "", "Status Pernikahan": "", "Syarat Baptis": "", "Syarat Sidi": "" });
+            });
+            settingsKomisi.forEach(k => {
+                rows.push({ "Tipe": TIPE_KOMISI, "Isi Pesan": "", "Nama Kategori": k.name, "Min Umur": k.minAge, "Max Umur": k.maxAge, "Tampil di Dashboard": k.isVisible ? "Ya" : "Tidak", "Warna Chart": k.color, "Gender": k.gender, "Syarat Pelayanan": k.pelayananSyarat, "Bidang Pelayanan": (k.bidangPelayanan || []).join(" | "), "Pekerjaan": k.pekerjaan || "Semua", "Status Pernikahan": k.statusPernikahan || "Semua", "Syarat Baptis": k.baptisSyarat || "Semua", "Syarat Sidi": k.sidiSyarat || "Semua" });
+            });
+            return rows;
+        }
+
+        function appendParameterSheet(workbook, rows) {
+            let worksheetParam = XLSX.utils.json_to_sheet(rows, { header: PARAMETER_HEADERS });
+            XLSX.utils.book_append_sheet(workbook, worksheetParam, PARAMETER_SHEET_NAME);
+        }
+
+        function parseParameterSheet(workbook) {
+            let sheetName = workbook.SheetNames.find(name => name.trim().toLowerCase() === PARAMETER_SHEET_NAME.toLowerCase());
+            let result = { ucapanUlangTahun: null, ucapanAnniv: null, demographics: null, komisi: null, found: false };
+            if (!sheetName) return result;
+            let rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "", raw: false });
+            if (!rows.length) return result;
+            let demographics = [];
+            let komisi = [];
+            rows.forEach(row => {
+                let tipe = String(row["Tipe"] || "").trim();
+                if (tipe === TIPE_UCAPAN_ULTAH) {
+                    let pesan = String(row["Isi Pesan"] || "").trim();
+                    if (pesan) result.ucapanUlangTahun = pesan;
+                } else if (tipe === TIPE_UCAPAN_ANNIV) {
+                    let pesan = String(row["Isi Pesan"] || "").trim();
+                    if (pesan) result.ucapanAnniv = pesan;
+                } else if (tipe === TIPE_DEMOGRAFI) {
+                    demographics.push({
+                        name: String(row["Nama Kategori"] || "Kategori"),
+                        minAge: parseInt(row["Min Umur"]) || 0,
+                        maxAge: parseInt(row["Max Umur"]) || 99,
+                        isVisible: String(row["Tampil di Dashboard"]).trim().toLowerCase() === "ya",
+                        color: String(row["Warna Chart"] || "bg-slate-400")
+                    });
+                } else if (tipe === TIPE_KOMISI) {
+                    komisi.push({
+                        name: String(row["Nama Kategori"] || "Komisi"),
+                        minAge: parseInt(row["Min Umur"]) || 0,
+                        maxAge: parseInt(row["Max Umur"]) || 99,
+                        gender: String(row["Gender"] || "Semua"),
+                        pelayananSyarat: String(row["Syarat Pelayanan"] || "Tidak Disyaratkan"),
+                        bidangPelayanan: String(row["Bidang Pelayanan"] || "").split("|").map(s => s.trim()).filter(Boolean),
+                        pekerjaan: String(row["Pekerjaan"] || "Semua"),
+                        isVisible: String(row["Tampil di Dashboard"]).trim().toLowerCase() === "ya",
+                        color: String(row["Warna Chart"] || "bg-slate-400"),
+                        statusPernikahan: String(row["Status Pernikahan"] || "Semua"),
+                        baptisSyarat: String(row["Syarat Baptis"] || "Semua"),
+                        sidiSyarat: String(row["Syarat Sidi"] || "Semua")
+                    });
+                }
+            });
+            if (demographics.length > 0) result.demographics = demographics;
+            if (komisi.length > 0) result.komisi = komisi;
+            result.found = true;
+            return result;
+        }
+
+        function waitForFirebaseReady() {
+            return new Promise((resolve) => {
+                if (window.firebaseReady) return resolve();
+                const check = setInterval(() => {
+                    if (window.firebaseReady) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
+        function exportData() {
+            if (dataJemaat.length === 0) {
+                showAlert("Ekspor Gagal", "Belum ada data jemaat untuk diekspor.", "error");
+                return;
+            }
+            try {
+                let wb = XLSX.utils.book_new();
+                let flatData = dataJemaat.map(j => ({
+                    "ID Jemaat (Abaikan)": j.id,
+                    "ID Kepala Keluarga (Abaikan)": j.kepalaKeluargaId || "",
+                    "NIJ": j.nij || "",
+                    "NIK": j.nomorInduk || "",
+                    "Nama Lengkap": j.nama_lengkap,
+                    "Status Keluarga": j.status_keluarga,
+                    "Jenis Kelamin": j.jenis_kelamin,
+                    "Tempat/Tgl Lahir": j.tanggal_lahir,
+                    "Pendidikan": j.pendidikan,
+                    "Pekerjaan": j.pekerjaan,
+                    "Status Jemaat": j.status_jemaat,
+                    "Jalur Masuk": j.jalur_masuk,
+                    "Tanggal Bergabung": j.tanggal_bergabung,
+                    "Jenis Baptis": j.jenis_baptis,
+                    "No. Surat Baptis": j.no_surat_baptis || "",
+                    "Tanggal Baptis": j.tanggal_baptis || "",
+                    "Status Sidi": j.status_sidi,
+                    "Sudah Berpelayanan": j.sudah_berpelayanan,
+                    "Bidang Pelayanan": j.bidang_pelayanan || "",
+                    "Status Pernikahan": j.status_pernikahan,
+                    "Tanggal Pernikahan": j.tanggal_pernikahan || "",
+                    "No Telepon": j.no_telepon || "",
+                    "Email": j.email || "",
+                    "Alamat Lengkap": j.alamat
+                }));
+                let ws = XLSX.utils.json_to_sheet(flatData);
+                XLSX.utils.book_append_sheet(wb, ws, "Data Jemaat");
+                appendParameterSheet(wb, buildParameterSheetRows());
+                XLSX.writeFile(wb, `Database_Jemaat_${new Date().toISOString().split('T')[0]}.xlsx`);
+                writeLog("SYSTEM", "Export Excel", `Mengekspor ${dataJemaat.length} data jemaat ke file Excel.`);
+                saveDataToLocalStorage();
+                showAlert("Berhasil", "Data berhasil diekspor ke Excel.", "success");
+            } catch (e) {
+                showAlert("Error", "Gagal mengekspor data: " + e.message, "error");
+            }
+        }
+
+        function downloadTemplateCSV() {
+            let wb = XLSX.utils.book_new();
+            let templateData = [{
+                "Nama Lengkap": "John Doe",
+                "Status Keluarga": "Anggota Utama",
+                "Jenis Kelamin": "L",
+                "Tempat/Tgl Lahir": "1990-01-01",
+                "Pendidikan": "Sarjana (S1)",
+                "Pekerjaan": "Karyawan Swasta",
+                "Status Jemaat": "Aktif",
+                "Jalur Masuk": "Baru Percaya",
+                "Tanggal Bergabung": "2023-01-15",
+                "Jenis Baptis": "Baptis Selam",
+                "No. Surat Baptis": "BPT/001/2023",
+                "Tanggal Baptis": "2023-02-20",
+                "Status Sidi": "Sudah Sidi",
+                "Sudah Berpelayanan": "Ya",
+                "Bidang Pelayanan": "Pelayanan Musik / Worship",
+                "Status Pernikahan": "Menikah",
+                "Tanggal Pernikahan": "2015-05-10",
+                "No Telepon": "081234567890",
+                "Email": "john.doe@email.com",
+                "Alamat Lengkap": "Jl. Merdeka No. 123",
+                "NIK": "3171234567890001",
+                "NIJ": "LOC0000001"
+            }];
+            let ws = XLSX.utils.json_to_sheet(templateData);
+            XLSX.utils.book_append_sheet(wb, ws, "Template Jemaat");
+            appendParameterSheet(wb, buildParameterSheetRows());
+            XLSX.writeFile(wb, `Template_Impor_Jemaat.xlsx`);
+        }
+
+        function openModalImport() {
+            document.getElementById('fileImportCSV').value = '';
+            document.getElementById('fileNameSelected').innerText = '';
+            document.getElementById('fileNameSelected').classList.add('hidden');
+            selectedImportFile = null;
+            document.getElementById('modalImport').classList.remove('hidden');
+        }
+
+        function closeModalImport() { document.getElementById('modalImport').classList.add('hidden'); }
+
+        function handleFileSelected(e) {
+            if (e.target.files && e.target.files.length > 0) {
+                selectedImportFile = e.target.files[0];
+                let label = document.getElementById('fileNameSelected');
+                label.innerText = `Terpilih: ${selectedImportFile.name}`;
+                label.classList.remove('hidden');
+            }
+        }
 
         function processImportCSV() {
-            // ... (kode import) ... di bagian menambah data, gunakan upsertRawJemaat
-            // dan terakhir panggil recomputeActiveJemaat() serta saveDataToLocalStorage()
+            if (!selectedImportFile) { showAlert("Error", "Silakan pilih berkas Excel terlebih dahulu.", "error"); return; }
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    let data = new Uint8Array(e.target.result);
+                    let workbook = XLSX.read(data, { type: 'array' });
+                    
+                    let paramParsed = parseParameterSheet(workbook);
+                    let parameterUpdatesMsg = [];
+                    if (paramParsed.found) {
+                        if (paramParsed.ucapanUlangTahun) { settingsUcapanUlangTahun = paramParsed.ucapanUlangTahun; parameterUpdatesMsg.push("Ucapan Ultah"); }
+                        if (paramParsed.ucapanAnniv) { settingsUcapanAnniv = paramParsed.ucapanAnniv; parameterUpdatesMsg.push("Ucapan Anniv"); }
+                        if (paramParsed.demographics) { settingsDemographics = paramParsed.demographics; parameterUpdatesMsg.push("Demografi"); }
+                        if (paramParsed.komisi) { 
+                            settingsKomisi = paramParsed.komisi; 
+                            ensureKomisiFields(); // ⬅️ tambahkan baris ini
+                            parameterUpdatesMsg.push("Komisi"); 
+                        }
+                    }
+
+                    let sheetName = workbook.SheetNames[0];
+                    if (sheetName.trim().toLowerCase() === PARAMETER_SHEET_NAME.toLowerCase() && workbook.SheetNames.length > 1) {
+                        sheetName = workbook.SheetNames[1];
+                    }
+                    let jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+                    if (jsonData.length === 0) { showAlert("Error", "Berkas Excel kosong atau format tidak sesuai.", "error"); return; }
+                    
+                    let importedCount = 0, failedCount = 0;
+                    
+                    jsonData.forEach(row => {
+                        try {
+                            if (!row["Nama Lengkap"]) return;
+                            let newId = row["ID Jemaat (Abaikan)"] || generateUniqueId();
+                            let kkIdStr = String(row["ID Kepala Keluarga (Abaikan)"] || "").trim();
+                            let kkId = kkIdStr ? kkIdStr : null;
+                            
+                            let existIdx = dataJemaat.findIndex(j => j.id === newId);
+                            let tglLahirStr = row["Tempat/Tgl Lahir"] || row["Tanggal Lahir"] || "";
+                            if (!isNaN(tglLahirStr)) {
+                                let parsed = parseRobustDate(tglLahirStr);
+                                if (parsed) tglLahirStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglGabungStr = row["Tanggal Bergabung"] || "";
+                            if (!isNaN(tglGabungStr)) {
+                                let parsed = parseRobustDate(tglGabungStr);
+                                if (parsed) tglGabungStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglNikahStr = row["Tanggal Pernikahan"] || "";
+                            if (!isNaN(tglNikahStr)) {
+                                let parsed = parseRobustDate(tglNikahStr);
+                                if (parsed) tglNikahStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+                            let tglBaptisStr = row["Tanggal Baptis"] || "";
+                            if (!isNaN(tglBaptisStr)) {
+                                let parsed = parseRobustDate(tglBaptisStr);
+                                if (parsed) tglBaptisStr = `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+                            }
+
+                            let jemaatObj = {
+                                id: newId,
+                                kepalaKeluargaId: kkId,
+                                nij: row["NIJ"] || generateNextNIJ(),
+                                nomorInduk: row["NIK"] || "",
+                                nama_lengkap: row["Nama Lengkap"],
+                                status_keluarga: row["Status Keluarga"] || "Anggota Utama",
+                                jenis_kelamin: row["Jenis Kelamin"] || "L",
+                                tanggal_lahir: tglLahirStr,
+                                pendidikan: row["Pendidikan"] || "Belum/Tidak Sekolah",
+                                pekerjaan: row["Pekerjaan"] || "Lainnya",
+                                status_jemaat: row["Status Jemaat"] || "Aktif",
+                                jalur_masuk: row["Jalur Masuk"] || "Baru Percaya",
+                                tanggal_bergabung: tglGabungStr,
+                                jenis_baptis: row["Jenis Baptis"] || "Belum Baptis",
+                                no_surat_baptis: row["No. Surat Baptis"] || "",
+                                tanggal_baptis: tglBaptisStr,
+                                status_sidi: row["Status Sidi"] || "Belum Sidi",
+                                sudah_berpelayanan: row["Sudah Berpelayanan"] || "Tidak",
+                                bidang_pelayanan: row["Bidang Pelayanan"] || "",
+                                status_pernikahan: row["Status Pernikahan"] || "Belum Menikah",
+                                tanggal_pernikahan: tglNikahStr,
+                                no_telepon: row["No Telepon"] || "",
+                                email: row["Email"] || "",
+                                alamat: row["Alamat Lengkap"] || "",
+                                createdAt: getTimestampString(),
+                                updatedAt: getTimestampString()
+                            };
+
+                            if (existIdx >= 0) {
+                                jemaatObj.createdAt = dataJemaat[existIdx].createdAt;
+                                dataJemaat[existIdx] = jemaatObj;
+                            } else {
+                                dataJemaat.push(jemaatObj);
+                            }
+                            importedCount++;
+                        } catch(err) {
+                            failedCount++;
+                        }
+                    });
+
+                    closeModalImport();
+                    currentPage = 1;
+                    renderTableJemaat();
+                    renderDashboardIfActive();
+                    let paramMsg = parameterUpdatesMsg.length > 0 ? `\nParameter sistem diperbarui: ${parameterUpdatesMsg.join(', ')}` : '';
+                    writeLog("SYSTEM", "Impor Excel", `Berhasil impor ${importedCount} data jemaat. Gagal: ${failedCount}. ${paramMsg}`);
+                    saveDataToLocalStorage();
+                    showAlert("Impor Selesai", `Berhasil: ${importedCount} baris.\nGagal diabaikan: ${failedCount}.${paramMsg}`, "success");
+                } catch (err) {
+                    console.error(err);
+                    showAlert("Error", "Gagal membaca berkas Excel.", "error");
+                }
+            };
+            reader.readAsArrayBuffer(selectedImportFile);
         }
-
-        // Kita juga perlu menambahkan fungsi untuk menyimpan settings dengan timestamp
-        function saveSettings() {
-            let t1 = document.getElementById('inputTemplateUlangTahun').value.trim();
-            let t2 = document.getElementById('inputTemplateAnniv').value.trim();
-            if (!t1 || !t2) { showAlert("Gagal Disimpan", "Template ucapan tidak boleh kosong.", "error"); return; }
-            settingsUcapanUlangTahun = t1;
-            settingsUcapanAnniv = t2;
-            settingsDemographics = gatherDemographicsSettings();
-            settingsKomisi = gatherKomisiSettings();
-            // Simpan settingsUpdatedAt di localStorage agar bisa dibandingkan dengan cloud
-            localStorage.setItem('settingsUpdatedAt', new Date().toISOString());
-            saveSettingsToLocalStorage();
-            renderDashboardIfActive();
-            showAlert("Berhasil", "Parameter sistem berhasil disimpan.", "success");
-        }
-
-        // ========================================================================
-        // SISA KODE (render, dashboard, dll) TIDAK BERUBAH, hanya pastikan mengakses dataJemaat
-        // dan allJemaatRaw dengan benar.
-        // Untuk singkatnya, saya tidak menulis ulang seluruh kode karena sangat panjang.
-        // Namun semua fungsi yang memakai dataJemaat tetap menggunakan dataJemaat (yang sudah recompute).
-        // ========================================================================
-
-        // ... (semua fungsi yang sudah ada di file asli, tidak diubah)
-        // Hanya pastikan di akhir loadDataFromLocalStorage() panggil recomputeActiveJemaat() dan render.
-
-        // Karena keterbatasan, saya tidak menuliskan seluruh 2000+ baris sisanya, 
-        // tetapi semua fungsi tetap sama, hanya mengganti operasi langsung ke dataJemaat 
-        // dengan upsertRawJemaat / deleteRawJemaat dan recomputeActiveJemaat() setelah perubahan.
-
-        // On load:
-        window.onload = async function() {
-            document.getElementById('nav-church-name').innerText = 'Memuat data...';
-            await loadDataFromLocalStorage();
-            loadAcaraEventsData();
-            document.getElementById('nav-church-name').innerText = churchName;
-            switchTab('jemaat');
-        };
-
-        // ... sisanya tetap
 
     </script>
 </body>
