@@ -1051,8 +1051,15 @@
             }
         }
 
-        function saveDataToLocalStorage() { saveAllToFirebase(); }
-        function saveSettingsToLocalStorage() { saveAllToFirebase(); }
+        // ⬅️ Debounce: kalau saveDataToLocalStorage() dipanggil beberapa kali beruntun
+        // (misal beberapa aksi cepat), cukup 1x saja yang benar-benar sync ke Firebase.
+        let _saveDebounceTimer = null;
+        const SAVE_DEBOUNCE_MS = 400;
+        function saveDataToLocalStorage() {
+            clearTimeout(_saveDebounceTimer);
+            _saveDebounceTimer = setTimeout(() => { saveAllToFirebase(); }, SAVE_DEBOUNCE_MS);
+        }
+        function saveSettingsToLocalStorage() { saveDataToLocalStorage(); }
 
         async function loadDataFromLocalStorage() {
             try {
@@ -1203,7 +1210,9 @@
                 "Nilai Lama": oldVal,
                 "Nilai Baru": newVal
             });
-            saveDataToLocalStorage();
+            // ⬅️ Tidak lagi auto-save di sini. Pemanggil (caller) wajib memanggil
+            // saveDataToLocalStorage() SEKALI setelah semua writeLog() selesai,
+            // supaya 1 aksi user = 1x sync Firebase (bukan berkali-kali).
         }
 
         function generateUniqueId() {
@@ -1615,7 +1624,7 @@
             settingsDemographics = gatherDemographicsSettings();
             settingsKomisi = gatherKomisiSettings();
             saveSettingsToLocalStorage();
-            renderDashboard();
+            renderDashboardIfActive();
             showAlert("Berhasil", "Parameter sistem berhasil disimpan.", "success");
         }
 
@@ -1633,9 +1642,9 @@
                 dataJemaat = [];
                 auditLogs = [];
                 currentPage = 1;
-                saveAllToFirebase();
+                saveDataToLocalStorage();
                 renderTableJemaat();
-                renderDashboard();
+                renderDashboardIfActive();
                 showAlert("Berhasil", "Seluruh data jemaat telah dihapus.", "success");
             });
         }
@@ -1664,6 +1673,7 @@
             } else {
                 writeLog(j.nij, "Kirim WhatsApp", `Membuka chat WhatsApp dengan ${j.nama_lengkap}`);
             }
+            saveDataToLocalStorage();
         }
 
         // --- STREAMING_CHUNK:Setting Window Onload and core rendering... ---
@@ -1676,7 +1686,16 @@
             switchTab('jemaat');
         };
 
+        // ⬅️ Lacak tab yang sedang aktif, supaya renderDashboard() (yang berat: menghitung
+        // ulang statistik gender, demografi, komisi, tren bulanan, dll) tidak perlu
+        // dijalankan tiap kali ada perubahan data kalau user sedang tidak melihat tab ini.
+        let currentTab = 'jemaat';
+        function renderDashboardIfActive() {
+            if (currentTab === 'dashboard') renderDashboard();
+        }
+
         function switchTab(tab) {
+            currentTab = tab;
             const tabs = ['jemaat', 'dashboard', 'settings'];
             tabs.forEach(t => {
                 document.getElementById('section-' + t).classList.toggle('hidden', t !== tab);
@@ -2478,6 +2497,7 @@
 
                 doc.save(`ringkasan_analitik_${new Date().toISOString().split('T')[0]}.pdf`);
                 writeLog("SYSTEM", "Export Data", "Mengunduh file PDF Ringkasan Analitik Jemaat (lengkap).");
+                saveDataToLocalStorage();
                 showAlert("Berhasil", "PDF Ringkasan Analitik lengkap berhasil diunduh.", "success");
             } catch (error) {
                 console.error("Error export PDF:", error);
@@ -2614,14 +2634,14 @@
                 openConfirm("Ditemukan Duplikat", `Sistem mendeteksi ${pesanBagian.join(" dan ")}. Apakah Anda yakin ingin membersihkannya?`, () => {
                     dataJemaat = uniqueData;
                     auditLogs = logDedupe.uniqueLogs;
-                    saveDataToLocalStorage();
                     currentPage = 1;
                     renderTableJemaat();
-                    renderDashboard();
+                    renderDashboardIfActive();
                     let detailLog = [];
                     if (duplicates.length > 0) detailLog.push(`${duplicates.length} data jemaat duplikat`);
                     if (totalDuplicateLogs > 0) detailLog.push(`${totalDuplicateLogs} baris log duplikat`);
                     writeLog("SYSTEM", "Cleansing Duplikat", `Membersihkan ${detailLog.join(" & ")} hasil impor/kesalahan input.`);
+                    saveDataToLocalStorage();
                     let pesanHasil = [];
                     if (duplicates.length > 0) pesanHasil.push(`${duplicates.length} data jemaat duplikat`);
                     if (totalDuplicateLogs > 0) pesanHasil.push(`${totalDuplicateLogs} baris log duplikat`);
@@ -2643,6 +2663,7 @@
             if (!j) { showAlert("Data Tidak Ditemukan", "Data jemaat tidak ditemukan.", "error"); return; }
             window.open('idcard.html?id=' + encodeURIComponent(id), '_blank');
             writeLog(j.nij, "Cetak ID Card", `Membuka halaman cetak KTJ untuk ${j.nama_lengkap}.`);
+            saveDataToLocalStorage();
         }
 
         function generateKK(kkId) {
@@ -2672,6 +2693,7 @@
             tbody.innerHTML = rowsKK.join('');
             document.getElementById('modalCetakKK').classList.remove('hidden');
             writeLog(kkRoot.nij, "Cetak Dokumen", `Mencetak/Pratinjau Kartu Keluarga untuk keluarga ${kkRoot.nama_lengkap}`);
+            saveDataToLocalStorage();
         }
 
         function closeModalKK() { document.getElementById('modalCetakKK').classList.add('hidden'); }
@@ -2986,6 +3008,7 @@
             drawHeaderFooter();
             doc.save(`Detail_Jemaat_${j.nij}.pdf`);
             writeLog(j.nij, "Export PDF", `Mengekspor detail profil lengkap ${j.nama_lengkap} ke PDF`);
+            saveDataToLocalStorage();
             if (typeof showAlert === 'function') showAlert("Berhasil", "File PDF Detail Jemaat berhasil diunduh.", "success");
         }
 
@@ -3220,9 +3243,10 @@
                 }
                 showAlert("Berhasil", `Data jemaat tersimpan dengan NIJ: ${finalNIJ}`, "success");
             }
+            saveDataToLocalStorage();
             closeModalJemaat();
             renderTableJemaat();
-            renderDashboard();
+            renderDashboardIfActive();
         }
 
         function openModalSuksesi(headId, anggotaLain) {
@@ -3285,9 +3309,10 @@
             }
             pendingMeninggalData = null;
             document.getElementById('modalSuksesi').classList.add('hidden');
+            saveDataToLocalStorage();
             closeModalJemaat();
             renderTableJemaat();
-            renderDashboard();
+            renderDashboardIfActive();
             showAlert("Berhasil", "Status suksesi berhasil disimpan.", "success");
         }
 
@@ -3359,6 +3384,7 @@
                 j.kepalaKeluargaId = null;
                 j.status_keluarga = "Anggota Utama";
                 writeLog(j.nij, "Pecah KK", `Memisahkan diri menjadi Kepala Keluarga mandiri`, `Status: ${oldStatus}, KK Induk: ${oldKkId}`, `Status: Anggota Utama, KK Induk: null`);
+                saveDataToLocalStorage();
                 showAlert("Berhasil", `${j.nama_lengkap} kini membentuk Kartu Keluarga mandiri.`, "success");
                 renderTableJemaat();
             });
@@ -3489,6 +3515,7 @@
                 appendParameterSheet(wb, buildParameterSheetRows());
                 XLSX.writeFile(wb, `Database_Jemaat_${new Date().toISOString().split('T')[0]}.xlsx`);
                 writeLog("SYSTEM", "Export Excel", `Mengekspor ${dataJemaat.length} data jemaat ke file Excel.`);
+                saveDataToLocalStorage();
                 showAlert("Berhasil", "Data berhasil diekspor ke Excel.", "success");
             } catch (e) {
                 showAlert("Error", "Gagal mengekspor data: " + e.message, "error");
@@ -3647,12 +3674,12 @@
                     });
 
                     closeModalImport();
-                    saveDataToLocalStorage();
                     currentPage = 1;
                     renderTableJemaat();
-                    renderDashboard();
+                    renderDashboardIfActive();
                     let paramMsg = parameterUpdatesMsg.length > 0 ? `\nParameter sistem diperbarui: ${parameterUpdatesMsg.join(', ')}` : '';
                     writeLog("SYSTEM", "Impor Excel", `Berhasil impor ${importedCount} data jemaat. Gagal: ${failedCount}. ${paramMsg}`);
+                    saveDataToLocalStorage();
                     showAlert("Impor Selesai", `Berhasil: ${importedCount} baris.\nGagal diabaikan: ${failedCount}.${paramMsg}`, "success");
                 } catch (err) {
                     console.error(err);
