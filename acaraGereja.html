@@ -83,7 +83,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row justify-between items-center py-3 sm:py-0 sm:h-16 gap-4">
                 <div class="flex items-center self-start sm:self-auto gap-3 w-full sm:w-auto">
-                    <a href="homepage.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
+                    <a href="index.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
                         <i class="fa-solid fa-house text-lg"></i>
                     </a>
                     <div class="flex flex-col justify-center flex-1">
@@ -2823,14 +2823,22 @@
                 if (snap.exists()) {
                     const data = snap.data();
                     if (Array.isArray(data.eventsData)) {
-                        eventsData = data.eventsData;
+                        // PENTING: GABUNGKAN data cloud + data lokal berdasarkan id, JANGAN pernah
+                        // menimpa total (replace). Kalau langsung ditimpa, device mana pun yang
+                        // datanya kebetulan lebih sedikit/basi di Firestore bisa "menular" dan
+                        // menghapus data lengkap di device lain. Dengan digabung, data yang sudah
+                        // ada di salah satu sisi (lokal ATAU cloud) tidak akan pernah hilang.
+                        const merged = new Map();
+                        data.eventsData.forEach(ev => { if (ev && ev.id) merged.set(ev.id, ev); });
+                        eventsData.forEach(ev => { if (ev && ev.id) merged.set(ev.id, ev); }); // versi lokal menang kalau id sama (lagi diedit di device ini)
+                        eventsData = Array.from(merged.values());
                     }
                 }
             } catch (e) {
                 console.error('Gagal memuat riwayat acara dari Firebase:', e);
             } finally {
                 firebaseEventsLoaded = true;
-                updateUI(); // render ulang dengan data final & sinkronkan kembali ke localStorage
+                updateUI(); // render ulang dengan hasil gabungan & sinkronkan ke localStorage + Firestore
             }
         }
 
