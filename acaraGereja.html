@@ -1230,13 +1230,30 @@
             const search = (document.getElementById('checklist-search')?.value || '').toLowerCase().trim();
             const komisiId = document.getElementById('form-komisi-id')?.value || '';
             
-            // Filter jemaat berdasarkan komisi
-            let activeJemaat = getJemaatByKomisi(komisiId);
+            // Daftar jemaat komisi terpilih (ditampilkan default)
+            const komisiJemaat = getJemaatByKomisi(komisiId);
+            // Semua jemaat aktif (dipakai untuk pencarian & jemaat luar komisi yang sudah join)
+            const allActiveJemaat = getActiveJemaatList();
+
+            let activeJemaat;
+            if (komisiId) {
+                if (search) {
+                    // Saat mencari, jangan batasi ke komisi saja agar jemaat luar komisi/department bisa ditemukan & join
+                    activeJemaat = allActiveJemaat;
+                } else {
+                    // Tampilkan jemaat komisi + jemaat luar komisi yang sudah tercentang (sudah join) agar tidak hilang dari daftar
+                    const komisiIds = new Set(komisiJemaat.map(j => j.id));
+                    const extraSelected = allActiveJemaat.filter(j => selectedAttendeeIds.has(j.id) && !komisiIds.has(j.id));
+                    activeJemaat = [...komisiJemaat, ...extraSelected];
+                }
+            } else {
+                activeJemaat = allActiveJemaat;
+            }
             
             if (komisiId) {
                 if (filterInfo) filterInfo.classList.remove('hidden');
                 const komisiName = komisiMasterData.find(k => k.name === komisiId)?.name || komisiId;
-                filterInfo.innerHTML = `<i class="fa-solid fa-filter mr-1"></i> Menampilkan jemaat dari komisi <b>${komisiName}</b> (${activeJemaat.length} orang).`;
+                filterInfo.innerHTML = `<i class="fa-solid fa-filter mr-1"></i> Menampilkan jemaat dari komisi <b>${komisiName}</b> (${komisiJemaat.length} orang). Gunakan pencarian untuk menambahkan jemaat luar komisi/department yang ikut hadir.`;
             } else {
                 if (filterInfo) filterInfo.classList.add('hidden');
             }
@@ -1247,7 +1264,7 @@
                 container.innerHTML = '';
                 emptyState?.classList.remove('hidden');
                 if (komisiId) {
-                    emptyState.innerHTML = 'Tidak ada jemaat aktif yang masuk dalam komisi ini. Periksa kriteria komisi di dbJemaat.';
+                    emptyState.innerHTML = 'Tidak ada jemaat aktif yang masuk dalam komisi ini. Periksa kriteria komisi di dbJemaat, atau gunakan pencarian untuk menambahkan jemaat luar komisi.';
                 } else {
                     emptyState.innerHTML = 'Data jemaat belum termuat / kosong. Pastikan Database Jemaat sudah diisi lalu klik tombol muat ulang.';
                 }
