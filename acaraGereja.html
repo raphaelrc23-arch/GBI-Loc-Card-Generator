@@ -1038,7 +1038,14 @@
         const STORAGE_KEY_TEMPLATES = 'jemaatid_regular_templates_v1';
         
         // State Variables
-        let eventsData = JSON.parse(localStorage.getItem(STORAGE_KEY_EVENTS)) || [];
+        // PENTING (sinkronisasi antar-device): `allEventsRaw` adalah data MENTAH yang disimpan &
+        // disinkronkan ke Firestore, termasuk "tombstone" (penanda terhapus: {id, deleted:true, updatedAt}).
+        // `eventsData` adalah versi TURUNAN yang cuma berisi data aktif (belum dihapus) — inilah yang
+        // dipakai oleh semua fungsi tampilan/kalkulasi (dashboard, tabel, kalender, export, dsb) TANPA
+        // perlu diubah satu per satu. Setiap kali ada perubahan data, panggil recomputeActiveEvents()
+        // lalu updateUI() supaya keduanya tetap sinkron.
+        let allEventsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_EVENTS)) || [];
+        let eventsData = allEventsRaw.filter(e => !e.deleted);
         let activitiesData = JSON.parse(localStorage.getItem(STORAGE_KEY_ACTIVITIES)) || [];
         let regularTemplates = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES)) || [];
         let churchName = localStorage.getItem(CHURCH_NAME_KEY) || 'Gereja JemaatID';
@@ -1055,6 +1062,38 @@
         const STORAGE_KEY_VISIT_THRESHOLD = 'jemaatid_visit_threshold_v1';
 
         function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        // ========================================================================
+        // HELPER SINKRONISASI DATA IBADAH (allEventsRaw)
+        // Semua perubahan (tambah/edit/hapus) WAJIB lewat fungsi-fungsi ini, supaya setiap
+        // record punya jejak waktu (updatedAt) yang benar. Timestamp inilah yang dipakai untuk
+        // memutuskan versi mana yang menang saat data dari perangkat lain digabung (Last-Write-Wins),
+        // termasuk membedakan "dihapus setelah diedit" vs "diedit setelah dihapus".
+        // ========================================================================
+        function upsertRawEvent(newData) {
+            newData.updatedAt = new Date().toISOString();
+            const idx = allEventsRaw.findIndex(e => e.id === newData.id);
+            if (idx !== -1) allEventsRaw[idx] = newData; else allEventsRaw.push(newData);
+        }
+
+        function deleteRawEvent(id) {
+            allEventsRaw.push({ id, deleted: true, updatedAt: new Date().toISOString() });
+        }
+
+        function recomputeActiveEvents() {
+            // Kalau ada beberapa record dengan id yang sama (mis. sisa gabungan lama), ambil yang
+            // updatedAt paling baru saja per id sebelum menyaring yang terhapus.
+            const latestById = new Map();
+            allEventsRaw.forEach(ev => {
+                if (!ev || !ev.id) return;
+                const prev = latestById.get(ev.id);
+                const prevT = prev && prev.updatedAt ? new Date(prev.updatedAt).getTime() : -1;
+                const curT = ev.updatedAt ? new Date(ev.updatedAt).getTime() : 0;
+                if (!prev || curT >= prevT) latestById.set(ev.id, ev);
+            });
+            allEventsRaw = Array.from(latestById.values());
+            eventsData = allEventsRaw.filter(e => !e.deleted);
+        }
 
         function waitForFirebaseJemaatReady() {
             return new Promise((resolve) => {
@@ -1810,7 +1849,8 @@
                         isMultiDay: false, endDate: '', sessions: [],
                         komisiId: tpl.komisiId || ''
                     };
-                    if (existingIdx !== -1) { eventsData[existingIdx] = newEvent; replaced++; } else { eventsData.push(newEvent); added++; }
+                    upsertRawEvent(newEvent);
+                    if (existingIdx !== -1) { replaced++; } else { added++; }
                 });
                 updateUI(); closeGenerateModal(); Swal.fire('Berhasil', `Jadwal dibuat: ${added} baru${replaced > 0 ? `, ${replaced} ditimpa` : ''}.`, 'success');
             };
@@ -2196,12 +2236,13 @@
             };
 
             if (id) {
-                const index = eventsData.findIndex(item => item.id === id);
-                if (index !== -1) { newData.income = eventsData[index].income || 0; newData.expense = eventsData[index].expense || 0; eventsData[index] = newData; }
+                const existing = eventsData.find(item => item.id === id);
+                if (existing) { newData.income = existing.income || 0; newData.expense = existing.expense || 0; }
                 Swal.fire({ title: 'Berhasil', text: 'Ibadah diupdate.', icon: 'success', timer: 1200, showConfirmButton: false });
             } else {
-                eventsData.push(newData); Swal.fire({ title: 'Berhasil', text: 'Ibadah ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+                Swal.fire({ title: 'Berhasil', text: 'Ibadah ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
             }
+            upsertRawEvent(newData);
             closeModal(); updateUI();
         }
 
@@ -2365,7 +2406,7 @@
 
         function confirmDelete(id) {
             Swal.fire({ title: 'Hapus data ibadah?', text: "Data tidak dapat dikembalikan!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
-            .then((result) => { if (result.isConfirmed) { eventsData = eventsData.filter(item => item.id !== id); updateUI(); Swal.fire('Terhapus!', 'Data ibadah dihapus.', 'success'); } });
+            .then((result) => { if (result.isConfirmed) { deleteRawEvent(id); updateUI(); Swal.fire('Terhapus!', 'Data ibadah dihapus.', 'success'); } });
         }
 
         function checkActivityBackdateStatus() {
@@ -2606,7 +2647,7 @@
         function clearAllData() {
             if (eventsData.length === 0) return;
             Swal.fire({ title: 'Kosongkan Laporan Ibadah?', text:'Master Data tidak akan terhapus.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
-            .then(res => { if (res.isConfirmed) { eventsData = []; updateUI(); Swal.fire('Dikosongkan!', '', 'success'); } });
+            .then(res => { if (res.isConfirmed) { eventsData.map(ev => ev.id).forEach(deleteRawEvent); updateUI(); Swal.fire('Dikosongkan!', '', 'success'); } });
         }
         function clearAllActivities() {
             if (activitiesData.length === 0) return;
@@ -2749,7 +2790,7 @@
                                     otherServers: row['Pelayan Lainnya'] || '', notes: row['Catatan'] || '', isMultiDay: false, endDate: '', sessions: [],
                                     komisiId: row['Komisi / Departemen'] || ''
                                 };
-                                const idx = eventsData.findIndex(d => d.id === id); if (idx !== -1) eventsData[idx] = item; else eventsData.push(item); importedEvents++;
+                                upsertRawEvent(item); importedEvents++;
                             }
                         });
                     }
@@ -2805,15 +2846,23 @@
         async function mirrorEventsToFirebase() {
             try {
                 if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
-                await window.firestoreSetDocAcara(window.acaraDocRef, { eventsData: eventsData, lastUpdated: new Date().toISOString() });
+                // Kirim data MENTAH (allEventsRaw), termasuk tombstone (record terhapus).
+                // Kalau yang dikirim cuma `eventsData` (versi aktif saja), info "ini sudah
+                // dihapus" akan hilang dan device lain bisa menghidupkannya lagi.
+                await window.firestoreSetDocAcara(window.acaraDocRef, { eventsData: allEventsRaw, lastUpdated: new Date().toISOString() });
             } catch (e) {
                 console.error('Gagal menyalin data acara ke Firebase:', e);
             }
         }
 
-        // BARU: tarik histori acara dari Firestore (dokumen "acara") supaya data tidak hilang
-        // ketika localStorage di perangkat/browser ini kosong (mis. setelah login ulang, ganti
-        // perangkat, atau cache dibersihkan). Firestore diperlakukan sebagai sumber kebenaran.
+        // Tarik histori acara dari Firestore lalu GABUNG dengan data lokal memakai
+        // Last-Write-Wins PER RECORD (dibandingkan lewat field `updatedAt` di tiap ibadah),
+        // bukan menimpa total dan bukan sekadar union ID. Dengan cara ini:
+        //  - Device dengan data lebih sedikit/basi TIDAK BISA menghapus data yang lebih baru di device lain.
+        //  - Penghapusan (tombstone: {id, deleted:true, updatedAt}) tetap menang kalau memang
+        //    dilakukan setelah edit terakhir, jadi data yang dihapus tidak "hidup lagi".
+        //  - Kalau suatu id diedit lagi SETELAH ditandai terhapus di tempat lain, edit yang lebih
+        //    baru itu yang menang (dianggap "dibuat ulang").
         let firebaseEventsLoaded = false;
         async function loadEventsFromFirebase() {
             try {
@@ -2823,34 +2872,38 @@
                 if (snap.exists()) {
                     const data = snap.data();
                     if (Array.isArray(data.eventsData)) {
-                        // PENTING: GABUNGKAN data cloud + data lokal berdasarkan id, JANGAN pernah
-                        // menimpa total (replace). Kalau langsung ditimpa, device mana pun yang
-                        // datanya kebetulan lebih sedikit/basi di Firestore bisa "menular" dan
-                        // menghapus data lengkap di device lain. Dengan digabung, data yang sudah
-                        // ada di salah satu sisi (lokal ATAU cloud) tidak akan pernah hilang.
                         const merged = new Map();
-                        data.eventsData.forEach(ev => { if (ev && ev.id) merged.set(ev.id, ev); });
-                        eventsData.forEach(ev => { if (ev && ev.id) merged.set(ev.id, ev); }); // versi lokal menang kalau id sama (lagi diedit di device ini)
-                        eventsData = Array.from(merged.values());
+                        const consider = (ev) => {
+                            if (!ev || !ev.id) return;
+                            const existing = merged.get(ev.id);
+                            if (!existing) { merged.set(ev.id, ev); return; }
+                            const tExisting = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                            const tNew = ev.updatedAt ? new Date(ev.updatedAt).getTime() : 0;
+                            if (tNew >= tExisting) merged.set(ev.id, ev);
+                        };
+                        data.eventsData.forEach(consider); // versi cloud
+                        allEventsRaw.forEach(consider);     // versi lokal (ikut ditimbang bareng, bukan otomatis menang/kalah)
+                        allEventsRaw = Array.from(merged.values());
                     }
                 }
             } catch (e) {
                 console.error('Gagal memuat riwayat acara dari Firebase:', e);
             } finally {
                 firebaseEventsLoaded = true;
-                updateUI(); // render ulang dengan hasil gabungan & sinkronkan ke localStorage + Firestore
+                updateUI(); // render ulang dengan hasil merge & sinkronkan balik ke localStorage + Firestore
             }
         }
 
         function updateUI(options = {}) {
             const { skipMirror = false } = options;
+            recomputeActiveEvents(); // pastikan `eventsData` (aktif saja) selalu sinkron dengan `allEventsRaw`
             document.getElementById('nav-church-name').innerText = churchName;
             eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
             activitiesData.sort((a, b) => new Date(b.date) - new Date(a.date));
             
             populateMonthFilter(); renderDashboard(); renderTable(); renderActivityTable();
             renderCalendar(); renderHolidayTable(); renderParameterTab();
-            localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(eventsData));
+            localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(allEventsRaw)); // simpan data MENTAH (termasuk tombstone) secara lokal
             localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
             // Jangan menimpa Firestore sebelum histori dari cloud selesai ditarik (lihat loadEventsFromFirebase),
             // supaya localStorage kosong di sesi/login baru tidak menghapus histori yang sudah tersimpan.
