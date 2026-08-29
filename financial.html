@@ -18,7 +18,6 @@
     <script type="module">
         // Import Firebase App dan layanan yang dibutuhkan dari CDN (link gstatic)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // Konfigurasi Firebase Anda (project sama dengan Database Jemaat)
@@ -33,8 +32,13 @@
         };
 
         // Inisialisasi Firebase
+        // Catatan: Analytics SENGAJA tidak diinisialisasi di sini. Variabel itu
+        // tidak pernah dipakai oleh aplikasi ini, dan skrip firebase-analytics.js
+        // sering diblokir oleh ad blocker / mode privasi browser. Jika itu terjadi
+        // di dalam <script type="module">, SELURUH baris di bawahnya berhenti
+        // dieksekusi -- termasuk window.firebaseReady = true -- sehingga aplikasi
+        // akan macet selamanya menunggu Firebase tanpa pesan error apapun.
         const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
 
         // Inisialisasi Database (Firestore)
         const db = getFirestore(app);
@@ -843,14 +847,23 @@
 
     // Menunggu sampai Firebase (modul di <head>) benar-benar siap dipakai
     function waitForFirebaseReady() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         if (window.firebaseReady && window.financeDocRef) return resolve();
         const check = setInterval(() => {
         if (window.firebaseReady && window.financeDocRef) {
             clearInterval(check);
+            clearTimeout(timeout);
             resolve();
         }
         }, 50);
+        // Batas tunggu 10 detik: kalau Firebase tidak pernah siap (mis. koneksi
+        // internet mati, domain gstatic.com diblokir firewall/adblocker, atau
+        // konfigurasi salah), hentikan menunggu dan lempar error yang jelas
+        // alih-alih membuat aplikasi tampak macet/hang tanpa pesan apapun.
+        const timeout = setTimeout(() => {
+        clearInterval(check);
+        reject(new Error('Firebase tidak siap dalam 10 detik (cek koneksi internet / firewall).'));
+        }, 10000);
     });
     }
 
