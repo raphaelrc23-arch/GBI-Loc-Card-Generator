@@ -2811,7 +2811,31 @@
             }
         }
 
-        function updateUI() {
+        // BARU: tarik histori acara dari Firestore (dokumen "acara") supaya data tidak hilang
+        // ketika localStorage di perangkat/browser ini kosong (mis. setelah login ulang, ganti
+        // perangkat, atau cache dibersihkan). Firestore diperlakukan sebagai sumber kebenaran.
+        let firebaseEventsLoaded = false;
+        async function loadEventsFromFirebase() {
+            try {
+                await waitForFirebaseJemaatReady();
+                if (!window.acaraDocRef || !window.firestoreGetDocJemaat) return;
+                const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
+                if (snap.exists()) {
+                    const data = snap.data();
+                    if (Array.isArray(data.eventsData)) {
+                        eventsData = data.eventsData;
+                    }
+                }
+            } catch (e) {
+                console.error('Gagal memuat riwayat acara dari Firebase:', e);
+            } finally {
+                firebaseEventsLoaded = true;
+                updateUI(); // render ulang dengan data final & sinkronkan kembali ke localStorage
+            }
+        }
+
+        function updateUI(options = {}) {
+            const { skipMirror = false } = options;
             document.getElementById('nav-church-name').innerText = churchName;
             eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
             activitiesData.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2820,7 +2844,9 @@
             renderCalendar(); renderHolidayTable(); renderParameterTab();
             localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(eventsData));
             localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
-            mirrorEventsToFirebase();
+            // Jangan menimpa Firestore sebelum histori dari cloud selesai ditarik (lihat loadEventsFromFirebase),
+            // supaya localStorage kosong di sesi/login baru tidak menghapus histori yang sudah tersimpan.
+            if (!skipMirror && firebaseEventsLoaded) mirrorEventsToFirebase();
         }
 
         const MAIN_TABS = ['data', 'calendar', 'parameter'];
@@ -3322,7 +3348,8 @@
         }
 
         window.onload = function() {
-            updateUI();
+            updateUI({ skipMirror: true }); // tampilkan dulu data lokal cepat, TANPA push (biar tidak menimpa Firestore)
+            loadEventsFromFirebase();        // lalu tarik histori resmi dari Firestore & sinkronkan
             loadJemaatMasterData();
         };
     </script>
