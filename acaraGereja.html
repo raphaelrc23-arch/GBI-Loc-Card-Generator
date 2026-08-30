@@ -83,7 +83,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row justify-between items-center py-3 sm:py-0 sm:h-16 gap-4">
                 <div class="flex items-center self-start sm:self-auto gap-3 w-full sm:w-auto">
-                    <a href="index.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
+                    <a href="homepage.html" class="flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors shadow-inner flex-shrink-0" title="Kembali ke Homepage">
                         <i class="fa-solid fa-house text-lg"></i>
                     </a>
                     <div class="flex flex-col justify-center flex-1">
@@ -2910,8 +2910,9 @@
                     },
                     lastUpdated: new Date().toISOString()
                 });
+                console.log('[Sync] Berhasil kirim data ke Firestore pada', new Date().toLocaleTimeString());
             } catch (e) {
-                console.error('Gagal menyalin data ke Firebase:', e);
+                console.error('[Sync] GAGAL mengirim data ke Firestore:', e);
             }
         }
 
@@ -2923,30 +2924,39 @@
         //  - Penghapusan (tombstone) tetap menang kalau memang dilakukan setelah edit terakhir.
         //  - Ambang batas / nama gereja yang baru saja diubah di satu device tidak akan ketiban
         //    nilai lama dari device lain — yang menang selalu yang PALING BARU diubah.
-        let firebaseEventsLoaded = false;
+        //
+        // `initialSyncPromise` (di-set dari window.onload) menandai kapan proses tarik+gabung
+        // data awal ini SELESAI. Ini dipakai oleh updateUI() supaya kalau ada perubahan yang
+        // kamu simpan SEBELUM proses ini selesai, perubahan itu TIDAK dibuang diam-diam,
+        // melainkan otomatis ikut terkirim ke Firestore begitu proses ini selesai.
+        let initialSyncPromise = null;
         async function loadEventsFromFirebase() {
             try {
                 await waitForFirebaseJemaatReady();
-                if (!window.acaraDocRef || !window.firestoreGetDocJemaat) return;
-                const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
-                if (snap.exists()) {
-                    const data = snap.data();
-                    if (Array.isArray(data.eventsData)) allEventsRaw = mergeRawLists(data.eventsData, allEventsRaw);
-                    if (Array.isArray(data.regularTemplates)) regularTemplatesRaw = mergeRawLists(data.regularTemplates, regularTemplatesRaw);
-                    if (Array.isArray(data.masterLocations)) masterLocationsRaw = mergeRawLists(data.masterLocations, masterLocationsRaw);
-                    if (Array.isArray(data.holidaysData)) holidaysDataRaw = mergeRawLists(data.holidaysData, holidaysDataRaw);
-                    if (data.settings) {
-                        churchNameSetting = mergeScalarSetting(data.settings.churchName, churchNameSetting);
-                        churchName = churchNameSetting.value || churchName;
-                        attendanceThresholdSetting = mergeScalarSetting(data.settings.attendanceThreshold, attendanceThresholdSetting);
-                        visitThresholdSetting = mergeScalarSetting(data.settings.visitThreshold, visitThresholdSetting);
+                if (!window.acaraDocRef || !window.firestoreGetDocJemaat) {
+                    console.warn('[Sync] Firebase belum terhubung (cek koneksi internet / apakah gstatic.com diblokir jaringan Anda). Data hanya tersimpan lokal untuk sesi ini.');
+                } else {
+                    const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        console.log('[Sync] Berhasil tarik data dari Firestore. Terakhir diubah:', data.lastUpdated);
+                        if (Array.isArray(data.eventsData)) allEventsRaw = mergeRawLists(data.eventsData, allEventsRaw);
+                        if (Array.isArray(data.regularTemplates)) regularTemplatesRaw = mergeRawLists(data.regularTemplates, regularTemplatesRaw);
+                        if (Array.isArray(data.masterLocations)) masterLocationsRaw = mergeRawLists(data.masterLocations, masterLocationsRaw);
+                        if (Array.isArray(data.holidaysData)) holidaysDataRaw = mergeRawLists(data.holidaysData, holidaysDataRaw);
+                        if (data.settings) {
+                            churchNameSetting = mergeScalarSetting(data.settings.churchName, churchNameSetting);
+                            churchName = churchNameSetting.value || churchName;
+                            attendanceThresholdSetting = mergeScalarSetting(data.settings.attendanceThreshold, attendanceThresholdSetting);
+                            visitThresholdSetting = mergeScalarSetting(data.settings.visitThreshold, visitThresholdSetting);
+                        }
                     }
                 }
             } catch (e) {
                 console.error('Gagal memuat data dari Firebase:', e);
             } finally {
-                firebaseEventsLoaded = true;
-                updateUI(); // render ulang dengan hasil merge & sinkronkan balik ke localStorage + Firestore
+                updateUI({ skipMirror: true }); // tampilkan dulu hasil gabungan (cepat)
+                await mirrorAllToFirebase();     // lalu SELALU dorong hasil akhirnya ke Firestore, apapun hasil tarik-datanya
             }
         }
 
@@ -2973,9 +2983,14 @@
             localStorage.setItem(STORAGE_KEY_THRESHOLD, JSON.stringify(attendanceThresholdSetting));
             localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, JSON.stringify(visitThresholdSetting));
 
-            // Jangan menimpa Firestore sebelum data dari cloud selesai ditarik (lihat loadEventsFromFirebase),
-            // supaya localStorage kosong/lama di sesi/login baru tidak menghapus data yang sudah tersimpan.
-            if (!skipMirror && firebaseEventsLoaded) mirrorAllToFirebase();
+            if (!skipMirror) {
+                // PENTING: jangan pernah dorong ke Firestore SEBELUM sinkronisasi awal (tarik+gabung
+                // data cloud) selesai — supaya data lokal yang belum digabung tidak menimpa data
+                // yang lebih lengkap di cloud. TAPI perubahan ini juga TIDAK BOLEH hilang diam-diam:
+                // begitu sinkronisasi awal selesai, perubahan ini otomatis ikut terkirim lewat antrian
+                // promise di bawah ini (bukan gerbang boolean yang bisa membuang perubahan permanen).
+                (initialSyncPromise || Promise.resolve()).then(mirrorAllToFirebase);
+            }
         }
 
         const MAIN_TABS = ['data', 'calendar', 'parameter'];
@@ -3473,7 +3488,7 @@
 
         window.onload = function() {
             updateUI({ skipMirror: true }); // tampilkan dulu data lokal cepat, TANPA push (biar tidak menimpa Firestore)
-            loadEventsFromFirebase();        // lalu tarik histori resmi dari Firestore & sinkronkan
+            initialSyncPromise = loadEventsFromFirebase(); // tarik & gabung data resmi dari Firestore; simpan promise-nya
             loadJemaatMasterData();
         };
     </script>
