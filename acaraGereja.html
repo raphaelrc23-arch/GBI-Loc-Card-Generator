@@ -1047,8 +1047,12 @@
         let allEventsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_EVENTS)) || [];
         let eventsData = allEventsRaw.filter(e => !e.deleted);
         let activitiesData = JSON.parse(localStorage.getItem(STORAGE_KEY_ACTIVITIES)) || [];
-        let regularTemplates = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES)) || [];
-        let churchName = localStorage.getItem(CHURCH_NAME_KEY) || 'Gereja JemaatID';
+        // Master Ibadah Reguler ikut pola raw+tombstone yang sama dengan data ibadah supaya tersinkron.
+        let regularTemplatesRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES)) || [];
+        let regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
+        // Nama gereja disimpan sebagai {value, updatedAt} supaya ikut Last-Write-Wins antar device.
+        let churchNameSetting = loadScalarSetting(CHURCH_NAME_KEY, 'Gereja JemaatID');
+        let churchName = churchNameSetting.value;
         let isFirstLoad = true;
         let currentAnalyticsData = {};
 
@@ -1064,34 +1068,78 @@
         function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
         // ========================================================================
-        // HELPER SINKRONISASI DATA IBADAH (allEventsRaw)
-        // Semua perubahan (tambah/edit/hapus) WAJIB lewat fungsi-fungsi ini, supaya setiap
-        // record punya jejak waktu (updatedAt) yang benar. Timestamp inilah yang dipakai untuk
-        // memutuskan versi mana yang menang saat data dari perangkat lain digabung (Last-Write-Wins),
+        // HELPER SINKRONISASI DATA (dipakai bersama untuk: data ibadah, master ibadah
+        // reguler, master lokasi, tanggal merah, DAN pengaturan skalar seperti nama
+        // gereja & ambang batas). Semua perubahan (tambah/edit/hapus) WAJIB lewat
+        // fungsi-fungsi ini, supaya setiap perubahan punya jejak waktu (updatedAt) yang
+        // benar. Timestamp inilah yang dipakai untuk memutuskan versi mana yang menang
+        // saat data dari perangkat lain digabung (Last-Write-Wins per item/per field),
         // termasuk membedakan "dihapus setelah diedit" vs "diedit setelah dihapus".
         // ========================================================================
-        function upsertRawEvent(newData) {
-            newData.updatedAt = new Date().toISOString();
-            const idx = allEventsRaw.findIndex(e => e.id === newData.id);
-            if (idx !== -1) allEventsRaw[idx] = newData; else allEventsRaw.push(newData);
+        function upsertInRawList(rawArr, item) {
+            item.updatedAt = new Date().toISOString();
+            const idx = rawArr.findIndex(e => e.id === item.id);
+            if (idx !== -1) rawArr[idx] = item; else rawArr.push(item);
         }
-
-        function deleteRawEvent(id) {
-            allEventsRaw.push({ id, deleted: true, updatedAt: new Date().toISOString() });
+        function deleteFromRawList(rawArr, id) {
+            rawArr.push({ id, deleted: true, updatedAt: new Date().toISOString() });
         }
-
-        function recomputeActiveEvents() {
-            // Kalau ada beberapa record dengan id yang sama (mis. sisa gabungan lama), ambil yang
-            // updatedAt paling baru saja per id sebelum menyaring yang terhapus.
+        // Buang duplikat id (sisa proses gabung), sisakan versi ber-updatedAt paling baru per id.
+        function dedupeRawList(rawArr) {
             const latestById = new Map();
-            allEventsRaw.forEach(ev => {
+            rawArr.forEach(ev => {
                 if (!ev || !ev.id) return;
                 const prev = latestById.get(ev.id);
                 const prevT = prev && prev.updatedAt ? new Date(prev.updatedAt).getTime() : -1;
                 const curT = ev.updatedAt ? new Date(ev.updatedAt).getTime() : 0;
                 if (!prev || curT >= prevT) latestById.set(ev.id, ev);
             });
-            allEventsRaw = Array.from(latestById.values());
+            return Array.from(latestById.values());
+        }
+        // Gabungkan dua daftar mentah (cloud & lokal) dengan Last-Write-Wins per id.
+        function mergeRawLists(cloudArr, localArr) {
+            const merged = new Map();
+            const consider = (ev) => {
+                if (!ev || !ev.id) return;
+                const existing = merged.get(ev.id);
+                if (!existing) { merged.set(ev.id, ev); return; }
+                const tE = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                const tN = ev.updatedAt ? new Date(ev.updatedAt).getTime() : 0;
+                if (tN >= tE) merged.set(ev.id, ev);
+            };
+            (cloudArr || []).forEach(consider);
+            (localArr || []).forEach(consider);
+            return Array.from(merged.values());
+        }
+
+        // Untuk nilai tunggal (bukan daftar) seperti nama gereja / ambang batas: simpan sebagai
+        // {value, updatedAt} supaya bisa ikut dibandingkan "siapa yang terakhir mengubah".
+        function makeScalarSetting(value) { return { value, updatedAt: new Date().toISOString() }; }
+        function loadScalarSetting(key, fallbackValue) {
+            const raw = localStorage.getItem(key);
+            if (raw === null) return { value: fallbackValue, updatedAt: null };
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && 'value' in parsed) return { value: parsed.value, updatedAt: parsed.updatedAt || null };
+                // JSON valid tapi bukan format {value, updatedAt} (mis. angka polos "10" dari versi lama)
+                return { value: parsed, updatedAt: null };
+            } catch (e) {
+                // Bukan JSON sama sekali (mis. nama gereja tersimpan sebagai teks polos di versi lama)
+                return { value: raw, updatedAt: null };
+            }
+        }
+        function mergeScalarSetting(cloudSetting, localSetting) {
+            if (!cloudSetting) return localSetting;
+            if (!localSetting) return cloudSetting;
+            const tCloud = cloudSetting.updatedAt ? new Date(cloudSetting.updatedAt).getTime() : 0;
+            const tLocal = localSetting.updatedAt ? new Date(localSetting.updatedAt).getTime() : 0;
+            return tCloud > tLocal ? cloudSetting : localSetting;
+        }
+
+        function upsertRawEvent(newData) { upsertInRawList(allEventsRaw, newData); }
+        function deleteRawEvent(id) { deleteFromRawList(allEventsRaw, id); }
+        function recomputeActiveEvents() {
+            allEventsRaw = dedupeRawList(allEventsRaw);
             eventsData = allEventsRaw.filter(e => !e.deleted);
         }
 
@@ -1336,9 +1384,9 @@
         }
 
         // ---- Deteksi Jemaat Perlu Dikunjungi ----
+        let visitThresholdSetting = loadScalarSetting(STORAGE_KEY_VISIT_THRESHOLD, null);
         function getVisitThreshold() {
-            const raw = localStorage.getItem(STORAGE_KEY_VISIT_THRESHOLD);
-            const n = parseInt(raw);
+            const n = parseInt(visitThresholdSetting.value);
             return (!isNaN(n) && n > 0) ? n : 3;
         }
 
@@ -1346,7 +1394,8 @@
             e.preventDefault();
             const val = document.getElementById('param-visit-threshold').value;
             if (!val || parseInt(val) <= 0) { Swal.fire('Info', 'Masukkan angka minggu berturut-turut yang valid.', 'info'); return; }
-            localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, parseInt(val).toString());
+            visitThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
             Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kunjungan pastoral diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
             renderPastoralVisitList();
         }
@@ -1440,8 +1489,9 @@
             }).then((result) => {
                 if (result.isConfirmed) {
                     churchName = result.value.trim();
-                    localStorage.setItem(CHURCH_NAME_KEY, churchName);
+                    churchNameSetting = makeScalarSetting(churchName);
                     document.getElementById('nav-church-name').innerText = churchName;
+                    updateUI();
                     Swal.fire({ title: 'Tersimpan', text: 'Nama gereja diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
                 }
             });
@@ -1705,7 +1755,7 @@
                 frequency = { type: 'monthly', weekday: parseInt(document.getElementById('tpl-freq-monthly-weekday').value), occurrences: occurrences };
             }
 
-            regularTemplates.push({
+            upsertInRawList(regularTemplatesRaw, {
                 id: 'tpl_' + Date.now().toString(),
                 name: document.getElementById('tpl-name').value.trim(),
                 defaultLocation: document.getElementById('tpl-loc').value.trim(),
@@ -1714,9 +1764,8 @@
                 frequency: frequency
             });
             
-            localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplates));
             document.getElementById('template-form').reset();
-            toggleTplFrequencyFields(); renderTemplateTable(); populateTplKomisiDropdown();
+            toggleTplFrequencyFields(); updateUI(); renderTemplateTable(); populateTplKomisiDropdown();
             Swal.fire({ title: 'Tersimpan', text: 'Master ditambahkan.', icon: 'success', timer: 1000, showConfirmButton: false });
         }
 
@@ -1724,9 +1773,8 @@
             Swal.fire({ title: 'Hapus Master?', text: "Ibadah yang sudah diinput tidak akan terhapus.", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
             .then((result) => {
                 if (result.isConfirmed) {
-                    regularTemplates = regularTemplates.filter(t => t.id !== id);
-                    localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplates));
-                    renderTemplateTable(); Swal.fire('Terhapus!', '', 'success');
+                    deleteFromRawList(regularTemplatesRaw, id);
+                    updateUI(); renderTemplateTable(); Swal.fire('Terhapus!', '', 'success');
                 }
             });
         }
@@ -2770,10 +2818,9 @@
                                     if (occurrences.length > 0) frequency = { type: 'monthly', weekday: weekdayIdx, occurrences: occurrences };
                                 }
                                 const tpl = { id, name: row['Nama Ibadah'], defaultLocation: row['Lokasi Default'] || '', defaultTime: row['Waktu Default']?.toString() || '', frequency };
-                                const idx = regularTemplates.findIndex(t => t.id === id); if (idx !== -1) regularTemplates[idx] = tpl; else regularTemplates.push(tpl); importedTemplates++;
+                                upsertInRawList(regularTemplatesRaw, tpl); importedTemplates++;
                             }
                         });
-                        localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplates));
                     }
 
                     if (workbook.SheetNames.includes("Laporan Ibadah")) {
@@ -2843,26 +2890,39 @@
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
 
-        async function mirrorEventsToFirebase() {
+        async function mirrorAllToFirebase() {
             try {
                 if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
-                // Kirim data MENTAH (allEventsRaw), termasuk tombstone (record terhapus).
-                // Kalau yang dikirim cuma `eventsData` (versi aktif saja), info "ini sudah
-                // dihapus" akan hilang dan device lain bisa menghidupkannya lagi.
-                await window.firestoreSetDocAcara(window.acaraDocRef, { eventsData: allEventsRaw, lastUpdated: new Date().toISOString() });
+                // Kirim data MENTAH (termasuk tombstone / record terhapus) untuk semua daftar,
+                // plus pengaturan skalar (nama gereja, ambang batas) dengan jejak waktunya
+                // masing-masing. Kalau yang dikirim cuma versi "aktif saja", info penghapusan
+                // dan info "siapa yang terakhir mengubah" akan hilang, dan device lain bisa
+                // menimpa balik dengan versi yang lebih basi.
+                await window.firestoreSetDocAcara(window.acaraDocRef, {
+                    eventsData: allEventsRaw,
+                    regularTemplates: regularTemplatesRaw,
+                    masterLocations: masterLocationsRaw,
+                    holidaysData: holidaysDataRaw,
+                    settings: {
+                        churchName: churchNameSetting,
+                        attendanceThreshold: attendanceThresholdSetting,
+                        visitThreshold: visitThresholdSetting
+                    },
+                    lastUpdated: new Date().toISOString()
+                });
             } catch (e) {
-                console.error('Gagal menyalin data acara ke Firebase:', e);
+                console.error('Gagal menyalin data ke Firebase:', e);
             }
         }
 
-        // Tarik histori acara dari Firestore lalu GABUNG dengan data lokal memakai
-        // Last-Write-Wins PER RECORD (dibandingkan lewat field `updatedAt` di tiap ibadah),
-        // bukan menimpa total dan bukan sekadar union ID. Dengan cara ini:
+        // Tarik SEMUA data (ibadah, master ibadah reguler, master lokasi, tanggal merah, dan
+        // pengaturan tab Parameter) dari Firestore, lalu GABUNG dengan data lokal memakai
+        // Last-Write-Wins PER ITEM / PER FIELD (dibandingkan lewat `updatedAt`), bukan menimpa
+        // total. Dengan cara ini:
         //  - Device dengan data lebih sedikit/basi TIDAK BISA menghapus data yang lebih baru di device lain.
-        //  - Penghapusan (tombstone: {id, deleted:true, updatedAt}) tetap menang kalau memang
-        //    dilakukan setelah edit terakhir, jadi data yang dihapus tidak "hidup lagi".
-        //  - Kalau suatu id diedit lagi SETELAH ditandai terhapus di tempat lain, edit yang lebih
-        //    baru itu yang menang (dianggap "dibuat ulang").
+        //  - Penghapusan (tombstone) tetap menang kalau memang dilakukan setelah edit terakhir.
+        //  - Ambang batas / nama gereja yang baru saja diubah di satu device tidak akan ketiban
+        //    nilai lama dari device lain — yang menang selalu yang PALING BARU diubah.
         let firebaseEventsLoaded = false;
         async function loadEventsFromFirebase() {
             try {
@@ -2871,23 +2931,19 @@
                 const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
                 if (snap.exists()) {
                     const data = snap.data();
-                    if (Array.isArray(data.eventsData)) {
-                        const merged = new Map();
-                        const consider = (ev) => {
-                            if (!ev || !ev.id) return;
-                            const existing = merged.get(ev.id);
-                            if (!existing) { merged.set(ev.id, ev); return; }
-                            const tExisting = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-                            const tNew = ev.updatedAt ? new Date(ev.updatedAt).getTime() : 0;
-                            if (tNew >= tExisting) merged.set(ev.id, ev);
-                        };
-                        data.eventsData.forEach(consider); // versi cloud
-                        allEventsRaw.forEach(consider);     // versi lokal (ikut ditimbang bareng, bukan otomatis menang/kalah)
-                        allEventsRaw = Array.from(merged.values());
+                    if (Array.isArray(data.eventsData)) allEventsRaw = mergeRawLists(data.eventsData, allEventsRaw);
+                    if (Array.isArray(data.regularTemplates)) regularTemplatesRaw = mergeRawLists(data.regularTemplates, regularTemplatesRaw);
+                    if (Array.isArray(data.masterLocations)) masterLocationsRaw = mergeRawLists(data.masterLocations, masterLocationsRaw);
+                    if (Array.isArray(data.holidaysData)) holidaysDataRaw = mergeRawLists(data.holidaysData, holidaysDataRaw);
+                    if (data.settings) {
+                        churchNameSetting = mergeScalarSetting(data.settings.churchName, churchNameSetting);
+                        churchName = churchNameSetting.value || churchName;
+                        attendanceThresholdSetting = mergeScalarSetting(data.settings.attendanceThreshold, attendanceThresholdSetting);
+                        visitThresholdSetting = mergeScalarSetting(data.settings.visitThreshold, visitThresholdSetting);
                     }
                 }
             } catch (e) {
-                console.error('Gagal memuat riwayat acara dari Firebase:', e);
+                console.error('Gagal memuat data dari Firebase:', e);
             } finally {
                 firebaseEventsLoaded = true;
                 updateUI(); // render ulang dengan hasil merge & sinkronkan balik ke localStorage + Firestore
@@ -2897,17 +2953,29 @@
         function updateUI(options = {}) {
             const { skipMirror = false } = options;
             recomputeActiveEvents(); // pastikan `eventsData` (aktif saja) selalu sinkron dengan `allEventsRaw`
+            regularTemplatesRaw = dedupeRawList(regularTemplatesRaw); regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
+            masterLocationsRaw = dedupeRawList(masterLocationsRaw); masterLocations = masterLocationsRaw.filter(e => !e.deleted);
+            holidaysDataRaw = dedupeRawList(holidaysDataRaw); holidaysData = holidaysDataRaw.filter(e => !e.deleted);
+
             document.getElementById('nav-church-name').innerText = churchName;
             eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
             activitiesData.sort((a, b) => new Date(b.date) - new Date(a.date));
             
             populateMonthFilter(); renderDashboard(); renderTable(); renderActivityTable();
             renderCalendar(); renderHolidayTable(); renderParameterTab();
+
             localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(allEventsRaw)); // simpan data MENTAH (termasuk tombstone) secara lokal
             localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
-            // Jangan menimpa Firestore sebelum histori dari cloud selesai ditarik (lihat loadEventsFromFirebase),
-            // supaya localStorage kosong di sesi/login baru tidak menghapus histori yang sudah tersimpan.
-            if (!skipMirror && firebaseEventsLoaded) mirrorEventsToFirebase();
+            localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplatesRaw));
+            localStorage.setItem(STORAGE_KEY_LOCATIONS, JSON.stringify(masterLocationsRaw));
+            localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysDataRaw));
+            localStorage.setItem(CHURCH_NAME_KEY, JSON.stringify(churchNameSetting));
+            localStorage.setItem(STORAGE_KEY_THRESHOLD, JSON.stringify(attendanceThresholdSetting));
+            localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, JSON.stringify(visitThresholdSetting));
+
+            // Jangan menimpa Firestore sebelum data dari cloud selesai ditarik (lihat loadEventsFromFirebase),
+            // supaya localStorage kosong/lama di sesi/login baru tidak menghapus data yang sudah tersimpan.
+            if (!skipMirror && firebaseEventsLoaded) mirrorAllToFirebase();
         }
 
         const MAIN_TABS = ['data', 'calendar', 'parameter'];
@@ -2936,7 +3004,8 @@
         // KALENDER ACARA BULANAN & TANGGAL MERAH / HARI LIBUR
         // ========================================================================
         const STORAGE_KEY_HOLIDAYS = 'jemaatid_holidays_v1';
-        let holidaysData = JSON.parse(localStorage.getItem(STORAGE_KEY_HOLIDAYS)) || [];
+        let holidaysDataRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_HOLIDAYS)) || [];
+        let holidaysData = holidaysDataRaw.filter(e => !e.deleted);
         let calViewDate = new Date();
 
         function pad2(n) { return String(n).padStart(2, '0'); }
@@ -3197,10 +3266,9 @@
             const type = document.getElementById('hol-type').value;
             if (!date || !name) return;
 
-            holidaysData.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), date, name, type });
-            localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysData));
+            upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), date, name, type });
             document.getElementById('holiday-form').reset();
-            renderHolidayTable(); renderCalendar();
+            updateUI();
             Swal.fire({ title: 'Tersimpan', text: 'Tanggal merah berhasil ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
         }
 
@@ -3210,9 +3278,8 @@
                 showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    holidaysData = holidaysData.filter(h => h.id !== id);
-                    localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysData));
-                    renderHolidayTable(); renderCalendar();
+                    deleteFromRawList(holidaysDataRaw, id);
+                    updateUI();
                 }
             });
         }
@@ -3224,9 +3291,8 @@
                 showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus Semua', cancelButtonText: 'Batal'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    holidaysData = [];
-                    localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysData));
-                    renderHolidayTable(); renderCalendar();
+                    holidaysData.map(h => h.id).forEach(deleteFromRawList.bind(null, holidaysDataRaw));
+                    updateUI();
                     Swal.fire({ title: 'Terhapus', icon: 'success', timer: 1000, showConfirmButton: false });
                 }
             });
@@ -3237,12 +3303,12 @@
         // ========================================================================
         const STORAGE_KEY_THRESHOLD = 'jemaatid_attendance_threshold_v1';
         const STORAGE_KEY_LOCATIONS = 'jemaatid_master_locations_v1';
-        let masterLocations = JSON.parse(localStorage.getItem(STORAGE_KEY_LOCATIONS)) || [];
+        let attendanceThresholdSetting = loadScalarSetting(STORAGE_KEY_THRESHOLD, null);
+        let masterLocationsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_LOCATIONS)) || [];
+        let masterLocations = masterLocationsRaw.filter(e => !e.deleted);
 
         function getAttendanceThreshold() {
-            const raw = localStorage.getItem(STORAGE_KEY_THRESHOLD);
-            if (raw === null || raw === '') return null;
-            const val = parseInt(raw);
+            const val = parseInt(attendanceThresholdSetting.value);
             return isNaN(val) ? null : val;
         }
 
@@ -3253,15 +3319,15 @@
                 Swal.fire('Info', 'Masukkan angka ambang batas kehadiran terlebih dahulu.', 'info');
                 return;
             }
-            localStorage.setItem(STORAGE_KEY_THRESHOLD, parseInt(val).toString());
-            renderCalendar();
+            attendanceThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
             Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kehadiran diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
         }
 
         function clearAttendanceThreshold() {
-            localStorage.removeItem(STORAGE_KEY_THRESHOLD);
+            attendanceThresholdSetting = makeScalarSetting(null);
             document.getElementById('param-threshold').value = '';
-            renderCalendar();
+            updateUI();
             Swal.fire({ title: 'Dinonaktifkan', icon: 'success', timer: 1000, showConfirmButton: false });
         }
 
@@ -3274,16 +3340,14 @@
                 Swal.fire('Info', 'Lokasi tersebut sudah ada di daftar.', 'info');
                 return;
             }
-            masterLocations.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name });
-            localStorage.setItem(STORAGE_KEY_LOCATIONS, JSON.stringify(masterLocations));
+            upsertInRawList(masterLocationsRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name });
             input.value = '';
-            renderLocationList();
+            updateUI();
         }
 
         function deleteLocation(id) {
-            masterLocations = masterLocations.filter(l => l.id !== id);
-            localStorage.setItem(STORAGE_KEY_LOCATIONS, JSON.stringify(masterLocations));
-            renderLocationList();
+            deleteFromRawList(masterLocationsRaw, id);
+            updateUI();
         }
 
         function renderLocationList() {
@@ -3398,12 +3462,11 @@
                 dataset.forEach(h => {
                     const exists = holidaysData.some(x => x.date === h.date && x.name === h.name);
                     if (!exists) {
-                        holidaysData.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), ...h });
+                        upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), ...h });
                         added++;
                     }
                 });
-                localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysData));
-                renderHolidayTable(); renderCalendar();
+                updateUI();
                 Swal.fire('Berhasil', `${added} tanggal merah baru ditambahkan.`, 'success');
             });
         }
