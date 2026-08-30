@@ -1061,6 +1061,17 @@
         }
         function saveSettingsToLocalStorage() { saveDataToLocalStorage(); }
 
+        // Jaga-jaga: kalau ada perubahan yang BELUM sempat terkirim ke Firestore (masih dalam
+        // masa tunggu debounce 400ms) saat pengguna menutup/pindah dari halaman ini, tampilkan
+        // peringatan bawaan browser dulu. Ini mencegah perubahan terakhir hilang karena tab
+        // ditutup terlalu cepat setelah edit.
+        window.addEventListener('beforeunload', function (e) {
+            if (_saveDebounceTimer) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
         async function loadDataFromLocalStorage() {
             try {
                 await waitForFirebaseReady();
@@ -2805,7 +2816,8 @@
             currentDetailJemaatId = j.id;
             const periodSelect = document.getElementById('detailAttendancePeriod');
             if (periodSelect) periodSelect.value = 'month';
-            renderAttendanceHistory();
+            renderAttendanceHistory(); // tampilkan dulu pakai cache (instan)
+            loadAcaraEventsData();      // lalu tarik riwayat ibadah TERBARU dari Firestore & render ulang
 
             document.getElementById('modalDetailJemaat').classList.remove('hidden');
         }
