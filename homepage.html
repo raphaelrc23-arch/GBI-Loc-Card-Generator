@@ -162,8 +162,8 @@ html[data-theme="light"] .icon-moon{display:none}
   </section>
 
   <section class="modules">
-    <!-- MODUL 1: DATABASE -->
-    <article class="card" style="--d:.15s">
+    <!-- MODUL 1: DATABASE (disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardJemaat" style="--d:.15s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
         <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -180,8 +180,8 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="dbJemaat.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
-    <!-- MODUL 2: ID CARD -->
-    <article class="card" style="--d:.3s">
+    <!-- MODUL 2: ID CARD (disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardIdCard" style="--d:.3s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
       <div class="icon-frame">
         <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
@@ -260,11 +260,11 @@ html[data-theme="light"] .icon-moon{display:none}
 <!-- ================= FIREBASE & SESSION SCRIPT ================= -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { 
-    getFirestore, 
+  import {
+    getFirestore,
     collection,
-    query,
-    where,
+    doc,
+    getDoc,
     getDocs
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
@@ -280,42 +280,81 @@ html[data-theme="light"] .icon-moon{display:none}
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const usersCol = collection(db, "users");
+  const rolesCol = collection(db, "roles");
 
   const userNameDisplay = document.getElementById('userNameDisplay');
   const logoutBtn = document.getElementById('logoutBtn');
-  const cardUserMatrix = document.getElementById('cardUserMatrix');
-  const cardFinance = document.getElementById('cardFinance');
-  const cardAcaraGereja = document.getElementById('cardAcaraGereja');
 
-  // CEK SESSION STORAGE
-  const loggedUser = sessionStorage.getItem('loggedUser');
+  // id menu di sini HARUS sama persis dengan id menu di UserMatrix (usermatrix.html)
+  const MENU_CARDS = {
+    jemaat: document.getElementById('cardJemaat'),
+    idcard: document.getElementById('cardIdCard'),
+    keuangan: document.getElementById('cardFinance'),
+    acara: document.getElementById('cardAcaraGereja'),
+    usermatrix: document.getElementById('cardUserMatrix')
+  };
 
-  if (!loggedUser) {
+  function forceLogout(message) {
+    sessionStorage.removeItem('loggedUser');
+    sessionStorage.removeItem('userRole');
+    if (message) alert(message);
     window.location.href = "index.html";
-  } else {
-    userNameDisplay.textContent = "Hi, " + loggedUser;
-    const q = query(collection(db, "users"), where("username", "==", loggedUser));
-    getDocs(q).then((snap) => {
-        if (!snap.empty) {
-            const data = snap.docs[0].data();
-            if (data.name) {
-                userNameDisplay.textContent = "Hi " + data.name;
-            }
-            // Tampilkan menu User Matrix HANYA jika role = admin.
-            if (data.role === 'admin') {
-                cardUserMatrix.style.display = '';
-            }
-            // Tampilkan menu Laporan Keuangan dan Acara Gereja HANYA jika role = admin ATAU gembala.
-            if (data.role === 'admin' || data.role === 'gembala') {
-                cardFinance.style.display = '';
-                cardAcaraGereja.style.display = '';
-            }
-        }
-    }).catch(err => console.log("Gagal ambil data user:", err));
   }
+
+  async function applyAccess() {
+    const loggedUser = sessionStorage.getItem('loggedUser');
+    if (!loggedUser) { window.location.href = "index.html"; return; }
+
+    userNameDisplay.textContent = "Hi, " + loggedUser;
+
+    try {
+      const userSnap = await getDoc(doc(usersCol, loggedUser));
+      if (!userSnap.exists()) { forceLogout(); return; }
+      const userData = userSnap.data();
+
+      // Kalau admin baru saja memblokir akun ini, langsung tendang keluar.
+      if (userData.blocked === true) {
+        forceLogout('Akun Anda diblokir. Hubungi administrator.');
+        return;
+      }
+
+      if (userData.name) userNameDisplay.textContent = "Hi " + userData.name;
+      const roleName = (userData.role || '').trim();
+      sessionStorage.setItem('userRole', roleName);
+
+      const isAdmin = roleName.toLowerCase() === 'admin';
+
+      if (isAdmin) {
+        // Admin selalu punya akses penuh ke semua modul.
+        Object.values(MENU_CARDS).forEach(card => { if (card) card.style.display = ''; });
+        return;
+      }
+
+      // Ambil hak akses menu dari role milik user ini (diatur lewat User Matrix).
+      const rolesSnap = await getDocs(rolesCol);
+      let roleMenus = {};
+      rolesSnap.forEach(r => {
+        if (r.id.toLowerCase() === roleName.toLowerCase()) {
+          roleMenus = r.data().menus || {};
+        }
+      });
+
+      Object.entries(MENU_CARDS).forEach(([menuId, card]) => {
+        if (!card) return;
+        card.style.display = roleMenus[menuId] === true ? '' : 'none';
+      });
+
+    } catch (err) {
+      console.log("Gagal memuat hak akses:", err);
+    }
+  }
+
+  applyAccess();
 
   logoutBtn.onclick = () => {
     sessionStorage.removeItem('loggedUser');
+    sessionStorage.removeItem('userRole');
     window.location.href = "index.html";
   };
 </script>
