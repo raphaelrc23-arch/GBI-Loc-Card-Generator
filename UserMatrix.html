@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Matrix Dashboard</title>
+    <title>User Matrix Dashboard - Light of the City</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -11,22 +11,24 @@
         body { font-family: 'Inter', sans-serif; }
         .toast-enter { animation: slideInRight 0.3s ease-out forwards; }
         .toast-leave { animation: slideOutRight 0.3s ease-in forwards; }
-        @keyframes slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes slideOutRight {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(100%); opacity: 0; }
-        }
-        /* Custom scrollbar for matrix table */
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slideOutRight { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
         .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        .menu-check:disabled { opacity: 0.6; cursor: not-allowed; }
     </style>
 </head>
 <body class="bg-gray-50 flex flex-col min-h-screen">
+
+    <!-- Gate: shown while checking access -->
+    <div id="accessGate" class="fixed inset-0 bg-white z-[999] flex items-center justify-center">
+        <div class="text-center text-gray-500">
+            <i class="fas fa-shield-halved text-3xl text-indigo-400 mb-3"></i>
+            <p>Memeriksa hak akses...</p>
+        </div>
+    </div>
 
     <!-- Header -->
     <header class="bg-indigo-800 text-white shadow-md z-10 sticky top-0">
@@ -34,11 +36,10 @@
             <div class="flex items-center gap-6">
                 <div class="flex items-center gap-3">
                     <i class="fas fa-church text-2xl text-indigo-300"></i>
-                    <h1 class="text-xl font-bold tracking-tight">Sistem Gereja</h1>
+                    <h1 class="text-xl font-bold tracking-tight">Light of the City</h1>
                 </div>
-                <!-- Navigasi Tambahan -->
                 <nav class="hidden md:flex gap-4">
-                    <a href="#" class="text-indigo-200 hover:text-white transition-colors flex items-center gap-2 text-sm font-medium">
+                    <a href="homepage.html" class="text-indigo-200 hover:text-white transition-colors flex items-center gap-2 text-sm font-medium">
                         <i class="fas fa-home"></i> Home Page
                     </a>
                 </nav>
@@ -47,9 +48,9 @@
                 <div class="hidden sm:block">
                     <span id="currentUserDisplay" class="text-indigo-200">Memuat...</span>
                 </div>
-                <div class="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center border-2 border-indigo-400">
-                    <i class="fas fa-user"></i>
-                </div>
+                <button onclick="handleLogout()" title="Keluar" class="h-8 w-8 rounded-full bg-indigo-600 hover:bg-red-500 transition-colors flex items-center justify-center border-2 border-indigo-400">
+                    <i class="fas fa-right-from-bracket text-sm"></i>
+                </button>
             </div>
         </div>
     </header>
@@ -59,10 +60,9 @@
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-gray-800">User Matrix & Hak Akses</h2>
-                <p class="text-gray-500 text-sm mt-1">Kelola data pengguna, role, dan izin akses menu sistem.</p>
+                <p class="text-gray-500 text-sm mt-1">Kelola pengguna, reset password, blokir akses, dan atur menu per role.</p>
             </div>
-            
-            <!-- Tabs Navigation -->
+
             <div class="bg-white rounded-lg p-1 shadow-sm border border-gray-200 flex">
                 <button onclick="switchTab('users')" id="tab-btn-users" class="px-4 py-2 text-sm font-medium rounded-md bg-indigo-100 text-indigo-700 transition-colors">
                     <i class="fas fa-users mr-2"></i> Data Pengguna
@@ -75,9 +75,12 @@
 
         <!-- View: Users -->
         <div id="view-users" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden block">
-            <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                <h3 class="font-semibold text-gray-700">Daftar Pengguna</h3>
-                <button onclick="openUserModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+            <div class="p-4 border-b border-gray-200 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center bg-gray-50">
+                <div class="relative w-full sm:w-72">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                    <input type="text" id="userSearchInput" oninput="renderUsersTable()" placeholder="Cari nama atau username..." class="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button onclick="openUserModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm flex items-center gap-2 whitespace-nowrap">
                     <i class="fas fa-plus"></i> Tambah User
                 </button>
             </div>
@@ -86,7 +89,7 @@
                     <thead class="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <tr>
                             <th class="px-6 py-4">Nama Lengkap</th>
-                            <th class="px-6 py-4">Email / Username</th>
+                            <th class="px-6 py-4">Username</th>
                             <th class="px-6 py-4">Role</th>
                             <th class="px-6 py-4 text-center">Status Akses</th>
                             <th class="px-6 py-4 text-right">Aksi</th>
@@ -102,7 +105,7 @@
         <!-- View: Matrix -->
         <div id="view-matrix" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hidden">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                <h3 class="font-semibold text-gray-700">Matrix Hak Akses Berdasarkan Role</h3>
+                <h3 class="font-semibold text-gray-700">Menu yang Dapat Diakses per Role</h3>
                 <button onclick="openRoleModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
                     <i class="fas fa-plus"></i> Tambah Role
                 </button>
@@ -110,31 +113,26 @@
             <div class="overflow-x-auto custom-scrollbar w-full relative">
                 <table class="min-w-full divide-y divide-gray-200 border-collapse">
                     <thead id="matrixTableHeader" class="bg-gray-100 text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                        <!-- Matrix header injected by JS -->
+                        <!-- injected -->
                     </thead>
                     <tbody id="matrixTableBody" class="bg-white divide-y divide-gray-200">
-                        <!-- Matrix body injected by JS -->
+                        <!-- injected -->
                     </tbody>
                 </table>
             </div>
             <div class="p-4 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex items-center gap-2">
-                <i class="fas fa-info-circle text-indigo-500"></i> Perubahan pada matrix disimpan secara otomatis.
+                <i class="fas fa-info-circle text-indigo-500"></i> Centang menu untuk mengizinkan role tersebut mengaksesnya. Perubahan tersimpan otomatis. Role <strong class="mx-1">Admin</strong> selalu memiliki akses penuh dan tidak bisa dihapus.
             </div>
         </div>
     </main>
 
-    <!-- Footer -->
     <footer class="bg-indigo-900 text-indigo-300 py-6 mt-auto">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center text-sm">
-            <p>&copy; 2026 Powered by <a href="https://jemaatid.com" target="_blank" class="text-white hover:underline font-semibold">jemaatid.com</a></p>
-            <div class="mt-2 md:mt-0 flex gap-4">
-                <a href="#" class="hover:text-white transition-colors">Bantuan</a>
-                <a href="#" class="hover:text-white transition-colors">Kebijakan Privasi</a>
-            </div>
+            <p>&copy; 2026 Light of the City</p>
         </div>
     </footer>
 
-    <!-- Modal: Form User -->
+    <!-- Modal: Tambah/Edit User -->
     <div id="userModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden transform transition-all scale-95 opacity-0" id="userModalContent">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -144,47 +142,78 @@
                 </button>
             </div>
             <form id="userForm" class="p-6 space-y-4" onsubmit="handleUserSubmit(event)">
-                <input type="hidden" id="userId">
-                
+                <input type="hidden" id="userDocId">
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
-                    <input type="text" id="userName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Email / Username</label>
-                    <input type="text" id="userEmail" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Role</label>
-                    <select id="userRole" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white">
-                        <!-- Roles populated by JS -->
-                    </select>
+                    <input type="text" id="userName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Password Akses</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" id="userUsername" required pattern="^\S+$" title="Tanpa spasi" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                    <p class="text-xs text-gray-400 mt-1" id="userUsernameHint">Username dipakai sebagai ID unik, tidak dapat diubah setelah dibuat.</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Role</label>
+                    <select id="userRole" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                        <!-- populated by JS -->
+                    </select>
+                </div>
+
+                <div id="userPasswordField">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password Awal</label>
                     <div class="relative">
-                        <input type="password" id="userPassword" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm pr-10" placeholder="Minimal 6 karakter">
+                        <input type="password" id="userPassword" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm pr-10" placeholder="Minimal 6 karakter">
                         <button type="button" onclick="togglePasswordVis('userPassword')" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
                             <i class="fas fa-eye" id="userPasswordIcon"></i>
                         </button>
                     </div>
-                    <p class="text-xs text-gray-500 mt-1"><i class="fas fa-info-circle"></i> Gunakan password yang kuat. Anda dapat mengubahnya kapan saja di sini.</p>
                 </div>
 
                 <div class="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
                     <button type="button" onclick="closeUserModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Batal</button>
                     <button type="submit" id="userSubmitBtn" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm flex items-center gap-2">
-                        <i class="fas fa-save"></i> Simpan Data
+                        <i class="fas fa-save"></i> Simpan
                     </button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Modal: Form Role -->
+    <!-- Modal: Reset Password -->
+    <div id="resetModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all scale-95 opacity-0" id="resetModalContent">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="text-lg font-semibold text-gray-800">Reset Password</h3>
+                <button onclick="closeResetModal()" class="text-gray-400 hover:text-red-500 transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <form id="resetForm" class="p-6 space-y-4" onsubmit="handleResetSubmit(event)">
+                <input type="hidden" id="resetUserId">
+                <p class="text-sm text-gray-600">Atur password baru untuk <strong id="resetUserLabel">-</strong>.</p>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password Baru</label>
+                    <div class="relative">
+                        <input type="password" id="resetPassword" required minlength="6" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm pr-10" placeholder="Minimal 6 karakter">
+                        <button type="button" onclick="togglePasswordVis('resetPassword')" class="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-eye" id="resetPasswordIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
+                    <button type="button" onclick="closeResetModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Batal</button>
+                    <button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 shadow-sm flex items-center gap-2">
+                        <i class="fas fa-key"></i> Reset Password
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Tambah Role -->
     <div id="roleModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all scale-95 opacity-0" id="roleModalContent">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -196,7 +225,7 @@
             <form id="roleForm" class="p-6 space-y-4" onsubmit="handleRoleSubmit(event)">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Nama Role</label>
-                    <input type="text" id="roleName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm" placeholder="Contoh: Supervisor, Kasir">
+                    <input type="text" id="roleName" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm" placeholder="Contoh: Supervisor, Kasir">
                 </div>
                 <div class="pt-4 flex justify-end gap-3 border-t border-gray-100 mt-6">
                     <button type="button" onclick="closeRoleModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Batal</button>
@@ -208,614 +237,571 @@
         </div>
     </div>
 
-    <!-- Toast Container -->
+    <!-- Modal: Konfirmasi (block/unblock/delete) -->
+    <div id="confirmModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all scale-95 opacity-0" id="confirmModalContent">
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-3">
+                    <div id="confirmIconWrap" class="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <i id="confirmIcon" class="fas fa-triangle-exclamation text-red-500"></i>
+                    </div>
+                    <h3 id="confirmTitle" class="text-lg font-semibold text-gray-800">Konfirmasi</h3>
+                </div>
+                <p id="confirmMessage" class="text-sm text-gray-600 mb-6">Apakah Anda yakin?</p>
+                <div class="flex justify-end gap-3">
+                    <button onclick="closeConfirmModal()" class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Batal</button>
+                    <button id="confirmActionBtn" class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-sm">Ya, Lanjutkan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import {
+            getFirestore, collection, doc, setDoc, updateDoc, deleteDoc,
+            getDocs, getDoc, query, where, onSnapshot, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Global State & Configuration
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-user-matrix-app';
-        let firebaseConfig = null;
-        
-        try {
-            if (typeof __firebase_config !== 'undefined') {
-                firebaseConfig = JSON.parse(__firebase_config);
-            }
-        } catch (e) {
-            console.warn("Using fallback mock config for UI design if env is missing");
-            firebaseConfig = { apiKey: "mock", projectId: "mock-project" }; // Will fail gracefully if not real
-        }
-
-        let app, db, auth;
-        let currentUserUid = null;
-        
-        // App State
-        window.appState = {
-            users: [],
-            roles: [],
-            menus: [
-                { id: 'dashboard', name: 'Dashboard', icon: 'fa-chart-pie' },
-                { id: 'jemaat', name: 'Data Jemaat', icon: 'fa-users' },
-                { id: 'keuangan', name: 'Keuangan', icon: 'fa-file-invoice-dollar' },
-                { id: 'kegiatan', name: 'Jadwal & Kegiatan', icon: 'fa-calendar-alt' },
-                { id: 'inventaris', name: 'Inventaris', icon: 'fa-boxes-stacked' },
-                { id: 'pengaturan', name: 'Pengaturan', icon: 'fa-cog' }
-            ],
-            collections: {
-                users: null, // Initialized later with appId
-                roles: null
-            }
+        // Konfigurasi Firebase - SAMA dengan halaman login (project dbjemaatloc)
+        const firebaseConfig = {
+            apiKey: "AIzaSyAdbzCOIjdZjo4xIKoeuPYNF8CdW59EeLw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.appspot.com",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e",
+            measurementId: "G-H7Y4N3OPER"
         };
 
-        async function initFirebase() {
-            if (!firebaseConfig) {
-                showToast("Sistem tidak terhubung dengan database cloud.", "error");
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const usersCol = collection(db, "users");
+        const rolesCol = collection(db, "roles");
+
+        // Menu ini HARUS sama persis dengan modul yang ada di homepage.html
+        const DEFAULT_MENUS = [
+            { id: 'jemaat', name: 'Database Jemaat', icon: 'fa-users', file: 'dbJemaat.html' },
+            { id: 'idcard', name: 'ID Card Generator', icon: 'fa-id-card', file: 'idcard.html' },
+            { id: 'keuangan', name: 'Laporan Keuangan', icon: 'fa-file-invoice-dollar', file: 'financial.html' },
+            { id: 'acara', name: 'Acara Gereja', icon: 'fa-calendar-alt', file: 'acaraGereja.html' },
+            { id: 'usermatrix', name: 'User Matrix', icon: 'fa-users-gear', file: 'usermatrix.html' }
+        ];
+
+        window.appState = { users: [], roles: [], menus: DEFAULT_MENUS };
+
+        // ---------- ACCESS GUARD ----------
+        // Hanya role "admin" yang boleh membuka halaman ini (cocok dengan homepage.html).
+        (function guard() {
+            const loggedUser = sessionStorage.getItem('loggedUser');
+            const role = sessionStorage.getItem('userRole');
+            if (!loggedUser) {
+                window.location.href = 'index.html';
                 return;
             }
+            if ((role || '').toLowerCase() !== 'admin') {
+                showToast('Halaman ini khusus Admin.', 'error');
+                setTimeout(() => { window.location.href = 'homepage.html'; }, 1200);
+                return;
+            }
+            document.getElementById('currentUserDisplay').innerHTML =
+                `<i class="fas fa-circle text-[10px] text-green-400 mr-1"></i> ${escapeHtml(loggedUser)} (Admin)`;
+            document.getElementById('accessGate').remove();
+            init();
+        })();
 
+        window.handleLogout = function () {
+            sessionStorage.removeItem('loggedUser');
+            sessionStorage.removeItem('userRole');
+            window.location.href = 'index.html';
+        };
+
+        async function init() {
+            await ensureAdminRole();
+            listenRoles();
+            listenUsers();
+        }
+
+        // Pastikan role "admin" selalu ada dan punya akses penuh (id huruf kecil, cocok dengan homepage.html)
+        async function ensureAdminRole() {
             try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Setup paths
-                window.appState.collections.users = collection(db, 'artifacts', appId, 'public', 'data', 'matrix_users');
-                window.appState.collections.roles = collection(db, 'artifacts', appId, 'public', 'data', 'matrix_roles');
-
-                // Authentication
-                const token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-                if (token) {
-                    await signInWithCustomToken(auth, token);
-                } else {
-                    await signInAnonymously(auth);
+                const ref = doc(rolesCol, 'admin');
+                const snap = await getDoc(ref);
+                if (!snap.exists()) {
+                    const fullAccess = {};
+                    DEFAULT_MENUS.forEach(m => fullAccess[m.id] = true);
+                    await setDoc(ref, { name: 'admin', isSystem: true, menus: fullAccess, createdAt: serverTimestamp() });
                 }
-
-                currentUserUid = auth.currentUser?.uid;
-                document.getElementById('currentUserDisplay').innerHTML = `<i class="fas fa-circle text-[10px] text-green-400 mr-1"></i> Admin (${currentUserUid.substring(0,6)}...)`;
-
-                // Load Data
-                loadRoles();
-                loadUsers();
-
-            } catch (error) {
-                console.error("Firebase init error:", error);
-                showToast("Gagal menginisialisasi database.", "error");
-                document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="5" class="text-center py-8 text-red-500">Koneksi Database Gagal.</td></tr>`;
+            } catch (e) {
+                console.error('ensureAdminRole error', e);
             }
         }
 
-        function loadRoles() {
-            onSnapshot(window.appState.collections.roles, (snapshot) => {
+        // Kalau ada user dengan nama role yang belum punya dokumen di koleksi "roles"
+        // (misalnya role default hasil self-register), buatkan otomatis dengan akses kosong,
+        // supaya admin bisa langsung atur menunya di tab Matrix.
+        async function ensureRolesForExistingUsers() {
+            const knownRoleIds = new Set(window.appState.roles.map(r => r.id));
+            const rolesInUse = new Set(window.appState.users.map(u => u.role).filter(Boolean));
+            for (const roleName of rolesInUse) {
+                if (!knownRoleIds.has(roleName)) {
+                    try {
+                        const emptyMenus = {};
+                        DEFAULT_MENUS.forEach(m => emptyMenus[m.id] = false);
+                        await setDoc(doc(rolesCol, roleName), {
+                            name: roleName, isSystem: false, menus: emptyMenus, createdAt: serverTimestamp()
+                        });
+                    } catch (e) {
+                        console.error('ensureRolesForExistingUsers error', e);
+                    }
+                }
+            }
+        }
+
+        function listenRoles() {
+            onSnapshot(rolesCol, (snapshot) => {
                 const roles = [];
-                snapshot.forEach(doc => {
-                    roles.push({ id: doc.id, ...doc.data() });
-                });
-                
-                // Sort roles, ensure 'Admin' is usually first if it exists
-                roles.sort((a,b) => a.name.localeCompare(b.name));
+                snapshot.forEach(d => roles.push({ id: d.id, ...d.data() }));
+                roles.sort((a, b) => (a.id === 'admin' ? -1 : b.id === 'admin' ? 1 : a.name.localeCompare(b.name)));
                 window.appState.roles = roles;
-                
-                // If completely empty (first run), seed data
-                if (roles.length === 0) {
-                    seedInitialRoles();
-                } else {
-                    renderMatrixTable();
-                    updateRoleDropdowns();
-                }
-            }, (error) => {
-                console.error("Error fetching roles:", error);
-                showToast("Gagal mengambil data role.", "error");
+                populateRoleSelect();
+                renderMatrixTable();
+                renderUsersTable();
+                ensureRolesForExistingUsers();
+            }, (err) => {
+                console.error(err);
+                showToast('Gagal memuat data role.', 'error');
             });
         }
 
-        function loadUsers() {
-            onSnapshot(window.appState.collections.users, (snapshot) => {
+        function listenUsers() {
+            onSnapshot(usersCol, (snapshot) => {
                 const users = [];
-                snapshot.forEach(doc => {
-                    users.push({ id: doc.id, ...doc.data() });
-                });
-                
+                snapshot.forEach(d => users.push({ id: d.id, ...d.data() }));
+                users.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
                 window.appState.users = users;
-                
-                if (users.length === 0 && window.appState.roles.length > 0) {
-                   seedInitialUsers();
-                } else {
-                   renderUsersTable();
-                }
-            }, (error) => {
-                console.error("Error fetching users:", error);
-                showToast("Gagal mengambil data pengguna.", "error");
+                renderUsersTable();
+                ensureRolesForExistingUsers();
+            }, (err) => {
+                console.error(err);
+                document.getElementById('usersTableBody').innerHTML =
+                    `<tr><td colspan="5" class="text-center py-8 text-red-500">Gagal memuat data pengguna.</td></tr>`;
+                showToast('Gagal memuat data pengguna.', 'error');
             });
         }
 
-        async function seedInitialRoles() {
-            showToast("Menginisialisasi struktur Role pertama kali...", "info");
-            const defaultRoles = [
-                { id: 'role_admin', name: 'Administrator', permissions: {
-                    dashboard: { read: true, edit: true, report: true },
-                    jemaat: { read: true, edit: true, report: true },
-                    keuangan: { read: true, edit: true, report: true },
-                    kegiatan: { read: true, edit: true, report: true },
-                    inventaris: { read: true, edit: true, report: true },
-                    pengaturan: { read: true, edit: true, report: true }
-                }},
-                { id: 'role_gembala', name: 'Gembala Sidang', permissions: {
-                    dashboard: { read: true, edit: false, report: true },
-                    jemaat: { read: true, edit: false, report: true },
-                    keuangan: { read: true, edit: false, report: true }
-                }},
-                { id: 'role_admin_jemaat', name: 'Admin Jemaat', permissions: {
-                    dashboard: { read: true, edit: false, report: false },
-                    jemaat: { read: true, edit: true, report: true },
-                    kegiatan: { read: true, edit: true, report: false }
-                }}
-            ];
-
-            for (const r of defaultRoles) {
-                const docRef = doc(window.appState.collections.roles, r.id);
-                await setDoc(docRef, { name: r.name, permissions: r.permissions });
-            }
-        }
-
-        async function seedInitialUsers() {
-             const defaultUser = {
-                 name: 'Admin Utama',
-                 email: 'admin@system.local',
-                 roleId: 'role_admin',
-                 password: 'password123',
-                 status: 'active'
-             };
-             const docRef = doc(window.appState.collections.users, 'user_default_1');
-             await setDoc(docRef, defaultUser);
-        }
-
-        function renderUsersTable() {
+        // ---------- RENDER: USERS ----------
+        window.renderUsersTable = function () {
             const tbody = document.getElementById('usersTableBody');
-            tbody.innerHTML = '';
-            
-            if (window.appState.users.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-500">Belum ada data pengguna.</td></tr>`;
+            const term = (document.getElementById('userSearchInput')?.value || '').toLowerCase().trim();
+            let list = window.appState.users;
+            if (term) {
+                list = list.filter(u =>
+                    (u.name || '').toLowerCase().includes(term) ||
+                    (u.username || u.id || '').toLowerCase().includes(term)
+                );
+            }
+
+            if (list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-400">Tidak ada pengguna ditemukan.</td></tr>`;
                 return;
             }
 
-            window.appState.users.forEach(user => {
-                const role = window.appState.roles.find(r => r.id === user.roleId);
-                const roleName = role ? role.name : '<span class="text-red-500 text-xs">Role Hilang/Dihapus</span>';
-                const roleBadgeClass = role?.id === 'role_admin' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' : 'bg-blue-50 text-blue-700 border-blue-200';
-                
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-50 transition-colors group';
-                tr.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-tr from-indigo-500 to-blue-400 flex items-center justify-center text-white font-bold text-sm shadow-inner">
-                                ${user.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div class="ml-4">
-                                <div class="text-sm font-medium text-gray-900">${escapeHtml(user.name)}</div>
-                            </div>
+            tbody.innerHTML = list.map(u => {
+                const blocked = u.blocked === true;
+                const statusBadge = blocked
+                    ? `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700"><i class="fas fa-ban mr-1"></i>Diblokir</span>`
+                    : `<span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700"><i class="fas fa-check mr-1"></i>Aktif</span>`;
+                const isAdminRow = (u.role || '').toLowerCase() === 'admin';
+
+                return `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 text-sm font-medium text-gray-800">${escapeHtml(u.name || '-')}</td>
+                    <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(u.username || u.id)}</td>
+                    <td class="px-6 py-4 text-sm">
+                        <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700">${escapeHtml(u.role || '-')}</span>
+                    </td>
+                    <td class="px-6 py-4 text-center">${statusBadge}</td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex justify-end gap-1.5">
+                            <button onclick="editUser('${u.id}')" title="Edit Role" class="h-8 w-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition-colors">
+                                <i class="fas fa-user-pen text-xs"></i>
+                            </button>
+                            <button onclick="openResetModal('${u.id}')" title="Reset Password" class="h-8 w-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors">
+                                <i class="fas fa-key text-xs"></i>
+                            </button>
+                            <button onclick="confirmToggleBlock('${u.id}', ${blocked})" title="${blocked ? 'Buka Blokir' : 'Blokir Akses'}" ${isAdminRow ? 'disabled' : ''}
+                                class="h-8 w-8 rounded-lg ${blocked ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-600' : 'bg-amber-50 hover:bg-amber-100 text-amber-600'} flex items-center justify-center transition-colors ${isAdminRow ? 'opacity-40 cursor-not-allowed' : ''}">
+                                <i class="fas ${blocked ? 'fa-unlock' : 'fa-ban'} text-xs"></i>
+                            </button>
+                            <button onclick="confirmDeleteUser('${u.id}')" title="Hapus" ${isAdminRow ? 'disabled' : ''}
+                                class="h-8 w-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-colors ${isAdminRow ? 'opacity-40 cursor-not-allowed' : ''}">
+                                <i class="fas fa-trash text-xs"></i>
+                            </button>
                         </div>
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm text-gray-600"><i class="fas fa-envelope text-gray-400 mr-1"></i> ${escapeHtml(user.email)}</div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${roleBadgeClass}">
-                            ${roleName}
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-center">
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Aktif</span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button onclick="editUser('${user.id}')" class="text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 p-2 rounded-md transition-colors tooltip" title="Ubah Profil / Password">
-                            <i class="fas fa-edit"></i> Edit
-                        </button>
-                        <button onclick="deleteUser('${user.id}')" class="ml-2 text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 p-2 rounded-md transition-colors">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
+                </tr>`;
+            }).join('');
+        };
 
-        function renderMatrixTable() {
-            const thead = document.getElementById('matrixTableHeader');
-            const tbody = document.getElementById('matrixTableBody');
-            
-            // Render Header
-            let headerHtml = `<tr><th class="px-6 py-4 text-left font-bold text-gray-700 bg-gray-50 border-b-2 border-indigo-200 sticky left-0 z-10 w-48">Daftar Role</th>`;
-            window.appState.menus.forEach(menu => {
-                headerHtml += `<th class="px-4 py-4 text-center border-b-2 border-indigo-200 min-w-[120px]">
-                    <div class="flex flex-col items-center justify-center gap-1">
-                        <i class="fas ${menu.icon} text-indigo-400 text-lg"></i>
-                        <span class="whitespace-nowrap">${menu.name}</span>
-                    </div>
-                </th>`;
-            });
-            headerHtml += `<th class="px-4 py-4 text-center border-b-2 border-indigo-200">Aksi</th></tr>`;
-            thead.innerHTML = headerHtml;
-
-            // Render Body
-            tbody.innerHTML = '';
-            
-            if (window.appState.roles.length === 0) {
-                 tbody.innerHTML = `<tr><td colspan="${window.appState.menus.length + 2}" class="text-center py-8 text-gray-500">Belum ada role tersedia.</td></tr>`;
-                 return;
-            }
-
-            window.appState.roles.forEach(role => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-indigo-50/30 transition-colors';
-                
-                let rowHtml = `<td class="px-6 py-4 whitespace-nowrap font-medium text-gray-900 bg-white sticky left-0 z-10 border-r border-gray-100 shadow-[1px_0_0_0_#f3f4f6]">
-                    <div class="flex items-center gap-2">
-                        <i class="fas fa-user-shield text-gray-400"></i> ${escapeHtml(role.name)}
-                    </div>
-                </td>`;
-                
-                // Format lama array diubah ke object bila ada sisa data lama
-                let perms = role.permissions || {};
-                if (Array.isArray(perms)) perms = {}; 
-                
-                window.appState.menus.forEach(menu => {
-                    const menuPerms = perms[menu.id] || { read: false, edit: false, report: false };
-                    const isLocked = role.id === 'role_admin' && menu.id === 'pengaturan'; 
-                    
-                    rowHtml += `<td class="px-4 py-4 text-left align-top border-l border-gray-100">
-                        <div class="flex flex-col gap-2.5">
-                            <label class="inline-flex items-center cursor-pointer ${isLocked ? 'opacity-50' : 'hover:opacity-80'}" title="Hanya melihat data">
-                                <input type="checkbox" class="h-4 w-4 accent-indigo-600 rounded cursor-pointer" 
-                                    ${menuPerms.read ? 'checked' : ''} 
-                                    ${isLocked ? 'disabled' : ''}
-                                    onchange="togglePermission('${role.id}', '${menu.id}', 'read', this.checked)">
-                                <span class="ml-2 text-xs font-medium text-gray-700">Lihat Data</span>
-                            </label>
-                            <label class="inline-flex items-center cursor-pointer ${isLocked ? 'opacity-50' : 'hover:opacity-80'}" title="Menambah & mengubah data">
-                                <input type="checkbox" class="h-4 w-4 accent-indigo-600 rounded cursor-pointer" 
-                                    ${menuPerms.edit ? 'checked' : ''} 
-                                    ${isLocked ? 'disabled' : ''}
-                                    onchange="togglePermission('${role.id}', '${menu.id}', 'edit', this.checked)">
-                                <span class="ml-2 text-xs font-medium text-gray-700">Aksi Edit/Simpan</span>
-                            </label>
-                            <label class="inline-flex items-center cursor-pointer ${isLocked ? 'opacity-50' : 'hover:opacity-80'}" title="Mencetak & mengunduh laporan">
-                                <input type="checkbox" class="h-4 w-4 accent-indigo-600 rounded cursor-pointer" 
-                                    ${menuPerms.report ? 'checked' : ''} 
-                                    ${isLocked ? 'disabled' : ''}
-                                    onchange="togglePermission('${role.id}', '${menu.id}', 'report', this.checked)">
-                                <span class="ml-2 text-xs font-medium text-gray-700">Akses Laporan</span>
-                            </label>
-                        </div>
-                    </td>`;
-                });
-                
-                // Delete role action (prevent deleting admin)
-                if (role.id === 'role_admin') {
-                     rowHtml += `<td class="px-4 py-4 text-center"><span class="text-xs text-gray-400 italic">Protected</span></td>`;
-                } else {
-                     rowHtml += `<td class="px-4 py-4 text-center">
-                        <button onclick="deleteRole('${role.id}')" class="text-red-500 hover:text-red-700 p-1 rounded transition-colors" title="Hapus Role">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </td>`;
-                }
-
-                tr.innerHTML = rowHtml;
-                tbody.appendChild(tr);
-            });
-        }
-
-        function updateRoleDropdowns() {
+        function populateRoleSelect() {
             const select = document.getElementById('userRole');
-            const currentVal = select.value;
-            select.innerHTML = '<option value="">-- Pilih Role --</option>';
-            
-            window.appState.roles.forEach(role => {
-                const opt = document.createElement('option');
-                opt.value = role.id;
-                opt.textContent = role.name;
-                select.appendChild(opt);
-            });
-            
-            if (currentVal) select.value = currentVal;
+            const current = select.value;
+            select.innerHTML = window.appState.roles.map(r => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`).join('');
+            if (current) select.value = current;
         }
 
-        window.switchTab = function(tab) {
+        // ---------- RENDER: MATRIX ----------
+        window.renderMatrixTable = function () {
+            const header = document.getElementById('matrixTableHeader');
+            const body = document.getElementById('matrixTableBody');
+            const roles = window.appState.roles;
+
+            header.innerHTML = `
+                <tr>
+                    <th class="px-6 py-3 text-left sticky left-0 bg-gray-100 z-10">Menu</th>
+                    ${roles.map(r => `
+                        <th class="px-6 py-3 text-center min-w-[120px]">
+                            <div class="flex items-center justify-center gap-2">
+                                <span>${escapeHtml(r.name)}</span>
+                                ${r.id !== 'admin' ? `<button onclick="confirmDeleteRole('${r.id}')" title="Hapus Role" class="text-gray-400 hover:text-red-500"><i class="fas fa-trash text-[11px]"></i></button>` : `<i class="fas fa-lock text-[11px] text-gray-400" title="Role sistem"></i>`}
+                            </div>
+                        </th>`).join('')}
+                </tr>`;
+
+            body.innerHTML = window.appState.menus.map(menu => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-3 text-sm font-medium text-gray-700 sticky left-0 bg-white flex items-center gap-2">
+                        <i class="fas ${menu.icon} text-indigo-400 w-4"></i> ${escapeHtml(menu.name)}
+                    </td>
+                    ${roles.map(r => {
+                        const isAdmin = r.id === 'admin';
+                        const checked = isAdmin ? true : !!(r.menus && r.menus[menu.id]);
+                        return `
+                        <td class="px-6 py-3 text-center">
+                            <input type="checkbox" class="menu-check w-4 h-4 accent-indigo-600 cursor-pointer"
+                                ${checked ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}
+                                onchange="toggleMenuAccess('${r.id}', '${menu.id}', this.checked)">
+                        </td>`;
+                    }).join('')}
+                </tr>`).join('');
+        };
+
+        // ---------- TABS ----------
+        window.switchTab = function (tab) {
             const btnUsers = document.getElementById('tab-btn-users');
             const btnMatrix = document.getElementById('tab-btn-matrix');
             const viewUsers = document.getElementById('view-users');
             const viewMatrix = document.getElementById('view-matrix');
+            const active = 'px-4 py-2 text-sm font-medium rounded-md bg-indigo-100 text-indigo-700 transition-colors';
+            const inactive = 'px-4 py-2 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700 transition-colors';
 
             if (tab === 'users') {
-                btnUsers.className = 'px-4 py-2 text-sm font-medium rounded-md bg-indigo-100 text-indigo-700 transition-colors';
-                btnMatrix.className = 'px-4 py-2 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700 transition-colors';
-                viewUsers.classList.remove('hidden');
-                viewUsers.classList.add('block');
-                viewMatrix.classList.remove('block');
-                viewMatrix.classList.add('hidden');
+                btnUsers.className = active; btnMatrix.className = inactive;
+                viewUsers.classList.remove('hidden'); viewMatrix.classList.add('hidden');
             } else {
-                btnMatrix.className = 'px-4 py-2 text-sm font-medium rounded-md bg-indigo-100 text-indigo-700 transition-colors';
-                btnUsers.className = 'px-4 py-2 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700 transition-colors';
-                viewMatrix.classList.remove('hidden');
-                viewMatrix.classList.add('block');
-                viewUsers.classList.remove('block');
-                viewUsers.classList.add('hidden');
+                btnMatrix.className = active; btnUsers.className = inactive;
+                viewMatrix.classList.remove('hidden'); viewUsers.classList.add('hidden');
             }
-        }
+        };
 
-        window.openUserModal = function() {
+        // ---------- USER MODAL ----------
+        window.openUserModal = function () {
             document.getElementById('userForm').reset();
-            document.getElementById('userId').value = '';
+            document.getElementById('userDocId').value = '';
             document.getElementById('userModalTitle').innerText = 'Tambah Pengguna Baru';
-            document.getElementById('userSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Simpan Data';
-            
-            const modal = document.getElementById('userModal');
-            const content = document.getElementById('userModalContent');
-            modal.classList.remove('hidden');
-            // Trigger animation
-            setTimeout(() => {
-                content.classList.remove('scale-95', 'opacity-0');
-                content.classList.add('scale-100', 'opacity-100');
-            }, 10);
+            document.getElementById('userSubmitBtn').innerHTML = '<i class="fas fa-save"></i> Simpan';
+            document.getElementById('userUsername').disabled = false;
+            document.getElementById('userUsernameHint').classList.remove('hidden');
+            document.getElementById('userPasswordField').classList.remove('hidden');
+            document.getElementById('userPassword').required = true;
+            populateRoleSelect();
+            showModal('userModal', 'userModalContent');
         };
 
-        window.closeUserModal = function() {
-            const modal = document.getElementById('userModal');
-            const content = document.getElementById('userModalContent');
-            content.classList.remove('scale-100', 'opacity-100');
-            content.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 200); // match transition duration roughly
-        };
+        window.closeUserModal = function () { hideModal('userModal', 'userModalContent'); };
 
-        window.editUser = function(id) {
+        window.editUser = function (id) {
             const user = window.appState.users.find(u => u.id === id);
-            if(!user) return;
-            
-            document.getElementById('userId').value = user.id;
-            document.getElementById('userName').value = user.name;
-            document.getElementById('userEmail').value = user.email;
-            document.getElementById('userRole').value = user.roleId;
-            document.getElementById('userPassword').value = user.password || '';
-            
-            document.getElementById('userModalTitle').innerText = 'Edit Pengguna & Hak Akses';
-            document.getElementById('userSubmitBtn').innerHTML = '<i class="fas fa-sync-alt"></i> Perbarui Data';
-            
-            const modal = document.getElementById('userModal');
-            const content = document.getElementById('userModalContent');
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                content.classList.remove('scale-95', 'opacity-0');
-                content.classList.add('scale-100', 'opacity-100');
-            }, 10);
+            if (!user) return;
+
+            document.getElementById('userForm').reset();
+            document.getElementById('userDocId').value = user.id;
+            document.getElementById('userName').value = user.name || '';
+            document.getElementById('userUsername').value = user.username || user.id;
+            document.getElementById('userUsername').disabled = true;
+            document.getElementById('userUsernameHint').classList.add('hidden');
+            populateRoleSelect();
+            document.getElementById('userRole').value = user.role || '';
+            document.getElementById('userPasswordField').classList.add('hidden');
+            document.getElementById('userPassword').required = false;
+
+            document.getElementById('userModalTitle').innerText = 'Edit Pengguna';
+            document.getElementById('userSubmitBtn').innerHTML = '<i class="fas fa-sync-alt"></i> Perbarui';
+            showModal('userModal', 'userModalContent');
         };
 
-        window.handleUserSubmit = async function(e) {
+        window.handleUserSubmit = async function (e) {
             e.preventDefault();
-            if(!auth.currentUser) { showToast("Sesi tidak valid.", "error"); return; }
-            
             const btn = document.getElementById('userSubmitBtn');
             const originalHtml = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
             btn.disabled = true;
 
-            const id = document.getElementById('userId').value;
-            const data = {
-                name: document.getElementById('userName').value.trim(),
-                email: document.getElementById('userEmail').value.trim(),
-                roleId: document.getElementById('userRole').value,
-                password: document.getElementById('userPassword').value,
-                updatedAt: new Date().toISOString()
-            };
+            const docId = document.getElementById('userDocId').value;
+            const username = document.getElementById('userUsername').value.trim().toLowerCase();
+            const name = document.getElementById('userName').value.trim();
+            const role = document.getElementById('userRole').value;
+            const password = document.getElementById('userPassword').value;
 
             try {
-                if (id) {
-                    // Update
-                    const docRef = doc(window.appState.collections.users, id);
-                    await updateDoc(docRef, data);
-                    showToast("Data pengguna berhasil diperbarui.", "success");
+                if (docId) {
+                    // Update: hanya nama & role yang bisa diubah lewat form ini
+                    await updateDoc(doc(usersCol, docId), { name, role, updatedAt: serverTimestamp() });
+                    showToast('Data pengguna diperbarui.', 'success');
                 } else {
-                    // Create
-                    data.createdAt = new Date().toISOString();
-                    const newDocRef = doc(window.appState.collections.users);
-                    await setDoc(newDocRef, data);
-                    showToast("Pengguna baru berhasil ditambahkan.", "success");
+                    // Tambah user baru
+                    const existing = await getDoc(doc(usersCol, username));
+                    if (existing.exists()) {
+                        showToast('Username sudah digunakan.', 'error');
+                        btn.innerHTML = originalHtml; btn.disabled = false;
+                        return;
+                    }
+                    if (!password || password.length < 6) {
+                        showToast('Password minimal 6 karakter.', 'error');
+                        btn.innerHTML = originalHtml; btn.disabled = false;
+                        return;
+                    }
+                    await setDoc(doc(usersCol, username), {
+                        name, username, password, role, blocked: false, createdAt: serverTimestamp()
+                    });
+                    showToast('Pengguna baru berhasil ditambahkan.', 'success');
                 }
                 closeUserModal();
             } catch (error) {
-                console.error("Error saving user:", error);
-                showToast("Gagal menyimpan data.", "error");
+                console.error(error);
+                showToast('Gagal menyimpan data: ' + error.message, 'error');
             } finally {
                 btn.innerHTML = originalHtml;
                 btn.disabled = false;
             }
         };
 
-        window.deleteUser = async function(id) {
-            if(!auth.currentUser) return;
-            
-            // Replace with custom modal instead of confirm per instructions, 
-            // but for simple demo, using a toast + soft timeout logic if we wanted. 
-            // Since we can't use confirm(), we'll implement a fast soft-delete or immediate delete with toast notification.
-            // A real app should use a custom modal for confirmation. Here we just execute and notify.
-            try {
-                const docRef = doc(window.appState.collections.users, id);
-                await deleteDoc(docRef);
-                showToast("Pengguna berhasil dihapus.", "success");
-            } catch (error) {
-                showToast("Gagal menghapus pengguna.", "error");
-            }
+        // ---------- RESET PASSWORD ----------
+        window.openResetModal = function (id) {
+            const user = window.appState.users.find(u => u.id === id);
+            if (!user) return;
+            document.getElementById('resetForm').reset();
+            document.getElementById('resetUserId').value = id;
+            document.getElementById('resetUserLabel').innerText = `${user.name} (${user.username || id})`;
+            showModal('resetModal', 'resetModalContent');
         };
 
-        window.openRoleModal = function() {
-            document.getElementById('roleForm').reset();
-            const modal = document.getElementById('roleModal');
-            const content = document.getElementById('roleModalContent');
-            modal.classList.remove('hidden');
-            setTimeout(() => {
-                content.classList.remove('scale-95', 'opacity-0');
-                content.classList.add('scale-100', 'opacity-100');
-            }, 10);
-        };
+        window.closeResetModal = function () { hideModal('resetModal', 'resetModalContent'); };
 
-        window.closeRoleModal = function() {
-            const modal = document.getElementById('roleModal');
-            const content = document.getElementById('roleModalContent');
-            content.classList.remove('scale-100', 'opacity-100');
-            content.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 200);
-        };
-
-        window.handleRoleSubmit = async function(e) {
+        window.handleResetSubmit = async function (e) {
             e.preventDefault();
-            if(!auth.currentUser) return;
-
-            const name = document.getElementById('roleName').value.trim();
-            if (!name) return;
-
-            const roleId = 'role_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now().toString().slice(-4);
-            
+            const id = document.getElementById('resetUserId').value;
+            const newPassword = document.getElementById('resetPassword').value;
             try {
-                const docRef = doc(window.appState.collections.roles, roleId);
-                // Default akses untuk role baru
-                await setDoc(docRef, { name: name, permissions: { dashboard: { read: true, edit: false, report: false } } });
-                showToast("Role baru berhasil ditambahkan.", "success");
-                closeRoleModal();
-            } catch (error) {
-                showToast("Gagal menyimpan Role.", "error");
-            }
-        };
-
-        window.deleteRole = async function(id) {
-            if(!auth.currentUser) return;
-            if(id === 'role_admin') { showToast("Role Admin tidak dapat dihapus.", "error"); return; }
-            
-            // Check if users are using this role
-            const inUse = window.appState.users.some(u => u.roleId === id);
-            if (inUse) {
-                showToast("Role masih digunakan oleh beberapa pengguna. Ubah role mereka terlebih dahulu.", "error");
-                return;
-            }
-
-            try {
-                const docRef = doc(window.appState.collections.roles, id);
-                await deleteDoc(docRef);
-                showToast("Role berhasil dihapus.", "success");
-            } catch (error) {
-                showToast("Gagal menghapus role.", "error");
-            }
-        };
-
-        // This handles the matrix checkbox toggles
-        window.togglePermission = async function(roleId, menuId, actionType, isChecked) {
-            if(!auth.currentUser) return;
-            
-            const role = window.appState.roles.find(r => r.id === roleId);
-            if (!role) return;
-
-            let currentPermissions = role.permissions || {};
-            if (Array.isArray(currentPermissions)) currentPermissions = {}; // Fallback jika data lama berbentuk array
-
-            if (!currentPermissions[menuId]) {
-                currentPermissions[menuId] = { read: false, edit: false, report: false };
-            }
-            
-            currentPermissions[menuId][actionType] = isChecked;
-
-            // Logika Pintar Hak Akses:
-            // Jika mengaktifkan Edit atau Laporan, wajib mengaktifkan Lihat
-            if (isChecked && (actionType === 'edit' || actionType === 'report')) {
-                currentPermissions[menuId]['read'] = true;
-            }
-            // Jika menonaktifkan Lihat, matikan juga Edit dan Laporan
-            if (!isChecked && actionType === 'read') {
-                currentPermissions[menuId]['edit'] = false;
-                currentPermissions[menuId]['report'] = false;
-            }
-
-            try {
-                const docRef = doc(window.appState.collections.roles, roleId);
-                await updateDoc(docRef, { permissions: currentPermissions });
-                // We use toast to confirm save, it acts implicitly since DB auto syncs
-                showToast(`Hak akses diperbarui.`, "success");
+                await updateDoc(doc(usersCol, id), { password: newPassword, updatedAt: serverTimestamp() });
+                showToast('Password berhasil direset.', 'success');
+                closeResetModal();
             } catch (error) {
                 console.error(error);
-                showToast("Gagal memperbarui hak akses.", "error");
-                renderMatrixTable(); // Revert UI
+                showToast('Gagal mereset password.', 'error');
             }
         };
 
-        window.togglePasswordVis = function(inputId) {
+        // ---------- BLOCK / DELETE (via confirm modal) ----------
+        window.confirmToggleBlock = function (id, currentlyBlocked) {
+            const user = window.appState.users.find(u => u.id === id);
+            const willBlock = !currentlyBlocked;
+            openConfirm({
+                title: willBlock ? 'Blokir Akses Pengguna' : 'Buka Blokir Pengguna',
+                message: willBlock
+                    ? `Blokir akses login untuk ${user?.name || id}? Pengguna tidak akan bisa login sampai dibuka kembali.`
+                    : `Buka kembali akses login untuk ${user?.name || id}?`,
+                icon: willBlock ? 'fa-ban' : 'fa-unlock',
+                confirmLabel: willBlock ? 'Ya, Blokir' : 'Ya, Buka Blokir',
+                danger: willBlock,
+                onConfirm: async () => {
+                    try {
+                        await updateDoc(doc(usersCol, id), { blocked: willBlock, updatedAt: serverTimestamp() });
+                        showToast(willBlock ? 'Pengguna diblokir.' : 'Blokir dibuka.', 'success');
+                    } catch (error) {
+                        console.error(error);
+                        showToast('Gagal mengubah status akses.', 'error');
+                    }
+                }
+            });
+        };
+
+        window.confirmDeleteUser = function (id) {
+            const user = window.appState.users.find(u => u.id === id);
+            openConfirm({
+                title: 'Hapus Pengguna',
+                message: `Hapus permanen akun ${user?.name || id}? Tindakan ini tidak dapat dibatalkan.`,
+                icon: 'fa-trash',
+                confirmLabel: 'Ya, Hapus',
+                danger: true,
+                onConfirm: async () => {
+                    try {
+                        await deleteDoc(doc(usersCol, id));
+                        showToast('Pengguna berhasil dihapus.', 'success');
+                    } catch (error) {
+                        showToast('Gagal menghapus pengguna.', 'error');
+                    }
+                }
+            });
+        };
+
+        window.confirmDeleteRole = function (id) {
+            const inUse = window.appState.users.some(u => u.role === id);
+            if (inUse) {
+                showToast('Role masih dipakai pengguna. Ubah role mereka dahulu.', 'error');
+                return;
+            }
+            openConfirm({
+                title: 'Hapus Role',
+                message: `Hapus role "${id}"?`,
+                icon: 'fa-trash',
+                confirmLabel: 'Ya, Hapus',
+                danger: true,
+                onConfirm: async () => {
+                    try {
+                        await deleteDoc(doc(rolesCol, id));
+                        showToast('Role berhasil dihapus.', 'success');
+                    } catch (error) {
+                        showToast('Gagal menghapus role.', 'error');
+                    }
+                }
+            });
+        };
+
+        // ---------- ROLE MODAL ----------
+        window.openRoleModal = function () {
+            document.getElementById('roleForm').reset();
+            showModal('roleModal', 'roleModalContent');
+        };
+        window.closeRoleModal = function () { hideModal('roleModal', 'roleModalContent'); };
+
+        window.handleRoleSubmit = async function (e) {
+            e.preventDefault();
+            const name = document.getElementById('roleName').value.trim();
+            if (!name) return;
+            if (name.toLowerCase() === 'admin') {
+                showToast('Role "Admin" sudah ada secara default.', 'error');
+                return;
+            }
+            const existing = window.appState.roles.find(r => r.name.toLowerCase() === name.toLowerCase());
+            if (existing) {
+                showToast('Nama role sudah digunakan.', 'error');
+                return;
+            }
+            try {
+                const defaultMenus = {};
+                DEFAULT_MENUS.forEach(m => defaultMenus[m.id] = m.id === 'jemaat');
+                await setDoc(doc(rolesCol, name), { name, isSystem: false, menus: defaultMenus, createdAt: serverTimestamp() });
+                showToast('Role baru berhasil ditambahkan.', 'success');
+                closeRoleModal();
+            } catch (error) {
+                console.error(error);
+                showToast('Gagal menyimpan role.', 'error');
+            }
+        };
+
+        // ---------- MATRIX TOGGLE ----------
+        window.toggleMenuAccess = async function (roleId, menuId, isChecked) {
+            if (roleId === 'admin') return; // Admin selalu penuh
+            const role = window.appState.roles.find(r => r.id === roleId);
+            if (!role) return;
+            const menus = { ...(role.menus || {}) };
+            menus[menuId] = isChecked;
+            try {
+                await updateDoc(doc(rolesCol, roleId), { menus });
+                showToast('Akses menu diperbarui.', 'success');
+            } catch (error) {
+                console.error(error);
+                showToast('Gagal memperbarui akses menu.', 'error');
+                renderMatrixTable();
+            }
+        };
+
+        // ---------- GENERIC CONFIRM MODAL ----------
+        let pendingConfirmAction = null;
+        function openConfirm({ title, message, icon, confirmLabel, danger, onConfirm }) {
+            document.getElementById('confirmTitle').innerText = title;
+            document.getElementById('confirmMessage').innerText = message;
+            document.getElementById('confirmIcon').className = `fas ${icon} ${danger ? 'text-red-500' : 'text-emerald-500'}`;
+            document.getElementById('confirmIconWrap').className = `h-10 w-10 rounded-full ${danger ? 'bg-red-100' : 'bg-emerald-100'} flex items-center justify-center flex-shrink-0`;
+            const actionBtn = document.getElementById('confirmActionBtn');
+            actionBtn.innerText = confirmLabel;
+            actionBtn.className = `px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`;
+            pendingConfirmAction = onConfirm;
+            showModal('confirmModal', 'confirmModalContent');
+        }
+        window.closeConfirmModal = function () { hideModal('confirmModal', 'confirmModalContent'); pendingConfirmAction = null; };
+        document.getElementById('confirmActionBtn').addEventListener('click', async () => {
+            if (pendingConfirmAction) await pendingConfirmAction();
+            closeConfirmModal();
+        });
+
+        // ---------- HELPERS ----------
+        function showModal(modalId, contentId) {
+            const modal = document.getElementById(modalId);
+            const content = document.getElementById(contentId);
+            modal.classList.remove('hidden');
+            setTimeout(() => { content.classList.remove('scale-95', 'opacity-0'); content.classList.add('scale-100', 'opacity-100'); }, 10);
+        }
+        function hideModal(modalId, contentId) {
+            const modal = document.getElementById(modalId);
+            const content = document.getElementById(contentId);
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+        }
+
+        window.togglePasswordVis = function (inputId) {
             const input = document.getElementById(inputId);
             const icon = document.getElementById(inputId + 'Icon');
-            if (input.type === 'password') {
-                input.type = 'text';
-                icon.classList.remove('fa-eye');
-                icon.classList.add('fa-eye-slash');
-            } else {
-                input.type = 'password';
-                icon.classList.remove('fa-eye-slash');
-                icon.classList.add('fa-eye');
-            }
+            if (input.type === 'password') { input.type = 'text'; icon.classList.replace('fa-eye', 'fa-eye-slash'); }
+            else { input.type = 'password'; icon.classList.replace('fa-eye-slash', 'fa-eye'); }
         };
 
         function escapeHtml(unsafe) {
-            if(!unsafe) return '';
-            return unsafe
-                 .replace(/&/g, "&amp;")
-                 .replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;")
-                 .replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
+            if (!unsafe) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
 
         let toastCount = 0;
         function showToast(message, type = 'info') {
             const container = document.getElementById('toastContainer');
             const id = 'toast-' + (++toastCount);
-            
             const toast = document.createElement('div');
             toast.id = id;
             toast.className = `toast-enter flex items-center p-4 w-full max-w-xs text-gray-700 bg-white rounded-lg shadow-lg border-l-4 ${type === 'success' ? 'border-green-500' : type === 'error' ? 'border-red-500' : 'border-blue-500'}`;
-            
-            const icon = type === 'success' ? '<i class="fas fa-check-circle text-green-500"></i>' 
-                       : type === 'error' ? '<i class="fas fa-exclamation-circle text-red-500"></i>'
-                       : '<i class="fas fa-info-circle text-blue-500"></i>';
-
+            const icon = type === 'success' ? '<i class="fas fa-check-circle text-green-500"></i>'
+                : type === 'error' ? '<i class="fas fa-exclamation-circle text-red-500"></i>'
+                : '<i class="fas fa-info-circle text-blue-500"></i>';
             toast.innerHTML = `
-                <div class="inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg">
-                    ${icon}
-                </div>
+                <div class="inline-flex items-center justify-center flex-shrink-0 w-8 h-8 rounded-lg">${icon}</div>
                 <div class="ml-3 text-sm font-normal">${escapeHtml(message)}</div>
                 <button type="button" onclick="document.getElementById('${id}').remove()" class="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex h-8 w-8">
-                    <span class="sr-only">Close</span>
-                    <i class="fas fa-times text-sm mt-1 mx-auto"></i>
-                </button>
-            `;
-            
+                    <span class="sr-only">Close</span><i class="fas fa-times text-sm mt-1 mx-auto"></i>
+                </button>`;
             container.appendChild(toast);
-            
             setTimeout(() => {
                 const el = document.getElementById(id);
-                if(el) {
-                    el.classList.remove('toast-enter');
-                    el.classList.add('toast-leave');
-                    setTimeout(() => el.remove(), 300);
-                }
+                if (el) { el.classList.remove('toast-enter'); el.classList.add('toast-leave'); setTimeout(() => el.remove(), 300); }
             }, 3000);
         }
-
-        // Initialize Application
-        document.addEventListener('DOMContentLoaded', () => {
-            initFirebase();
-        });
+        window.showToast = showToast;
     </script>
 </body>
 </html>
