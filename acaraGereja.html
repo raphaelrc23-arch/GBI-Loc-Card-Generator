@@ -431,6 +431,9 @@
                     <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-location-dot text-emerald-600 mr-2"></i>Master Lokasi Ibadah</h2>
                     <p class="text-xs text-gray-500">Daftar lokasi/ruangan yang biasa dipakai, sebagai catatan referensi cepat.</p>
                 </div>
+                <button onclick="clearAllLocations()" class="bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm flex items-center cursor-pointer" title="Kosongkan Semua Lokasi">
+                    <i class="fa-solid fa-trash-can mr-2"></i> Hapus Semua
+                </button>
             </div>
             <div class="p-5 border-b border-gray-100 bg-gray-50/60">
                 <form onsubmit="saveLocation(event)" class="flex flex-wrap gap-3 items-end">
@@ -543,8 +546,9 @@
 
             <div class="flex-1 p-6 overflow-y-auto min-h-0 bg-white">
                 <div class="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <h4 class="text-sm font-bold text-slate-800 mb-3">Tambah Master Baru</h4>
+                    <h4 id="tpl-form-title" class="text-sm font-bold text-slate-800 mb-3">Tambah Master Baru</h4>
                     <form id="template-form" onsubmit="saveTemplate(event)">
+                        <input type="hidden" id="tpl-edit-id" value="">
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                             <div class="sm:col-span-1">
                                 <input type="text" id="tpl-name" required placeholder="Nama (Mis: Ibadah Minggu Raya)" class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 outline-none">
@@ -637,8 +641,11 @@
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-medium transition shadow-sm cursor-pointer">
+                        <button type="submit" id="tpl-submit-btn" class="w-full bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm font-medium transition shadow-sm cursor-pointer">
                             <i class="fa-solid fa-plus mr-1"></i> Tambah Master
+                        </button>
+                        <button type="button" id="tpl-cancel-edit-btn" onclick="cancelEditTemplate()" class="hidden w-full mt-2 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-2 rounded-lg text-sm font-medium transition cursor-pointer">
+                            Batal Edit
                         </button>
                     </form>
                 </div>
@@ -868,7 +875,8 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah Jemaat Baru (Jiwa)</label>
-                            <input type="number" id="form-new-visitors" min="0" placeholder="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
+                            <input type="number" id="form-new-visitors" min="0" placeholder="0" oninput="updateChecklistTotal()" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none">
+                            <p class="text-[11px] text-gray-400 mt-1">Ikut ditambahkan ke Total Kehadiran pada mode Checklist.</p>
                         </div>
                     </div>
 
@@ -889,7 +897,7 @@
                             <label class="block text-xs text-blue-800 mb-1">Tamu / Belum Terdaftar di Database Jemaat (Jiwa)</label>
                             <input type="number" id="form-attendance-guests" min="0" placeholder="0" oninput="updateChecklistTotal()" class="w-full px-3 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-sm">
                         </div>
-                        <p class="text-xs text-blue-700 mt-2">Total Kehadiran otomatis terhitung: <b id="checklist-total-display">0</b> jiwa (jumlah dicentang + tamu).</p>
+                        <p class="text-xs text-blue-700 mt-2">Total Kehadiran otomatis terhitung: <b id="checklist-total-display">0</b> jiwa (jemaat dicentang + tamu + jemaat baru).</p>
                     </div>
 
                     <div id="single-preacher-wrapper" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -1375,7 +1383,8 @@
         function updateChecklistTotal() {
             const checked = selectedAttendeeIds.size;
             const guests = parseInt(document.getElementById('form-attendance-guests')?.value) || 0;
-            const total = checked + guests;
+            const newV = parseInt(document.getElementById('form-new-visitors')?.value) || 0;
+            const total = checked + guests + newV;
             const badge = document.getElementById('checklist-count-badge'); if (badge) badge.innerText = checked;
             const totalDisplay = document.getElementById('checklist-total-display'); if (totalDisplay) totalDisplay.innerText = total;
             const attInput = document.getElementById('form-attendance');
@@ -1681,6 +1690,8 @@
             const backdrop = document.getElementById('template-modal-backdrop');
             modal.classList.remove('modal-enter'); modal.classList.add('modal-leave');
             setTimeout(() => { backdrop.classList.add('hidden'); modal.classList.add('hidden'); }, 200);
+            document.getElementById('template-form').reset();
+            cancelEditTemplate();
             populateTemplateDropdown();
         }
 
@@ -1727,6 +1738,9 @@
                             <button type="button" onclick="closeTemplateModal(); openGenerateModal('${tpl.id}');" class="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 p-1.5 rounded transition cursor-pointer" title="Generate Jadwal">
                                 <i class="fa-solid fa-calendar-plus"></i>
                             </button>
+                            <button type="button" onclick="editTemplate('${tpl.id}')" class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded transition cursor-pointer" title="Edit Master">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
                             <button type="button" onclick="deleteTemplate('${tpl.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded transition cursor-pointer" title="Hapus Master">
                                 <i class="fa-solid fa-trash"></i>
                             </button>
@@ -1755,18 +1769,59 @@
                 frequency = { type: 'monthly', weekday: parseInt(document.getElementById('tpl-freq-monthly-weekday').value), occurrences: occurrences };
             }
 
+            const editId = document.getElementById('tpl-edit-id').value;
             upsertInRawList(regularTemplatesRaw, {
-                id: 'tpl_' + Date.now().toString(),
+                id: editId ? editId : 'tpl_' + Date.now().toString(),
                 name: document.getElementById('tpl-name').value.trim(),
                 defaultLocation: document.getElementById('tpl-loc').value.trim(),
                 defaultTime: document.getElementById('tpl-time').value,
                 komisiId: document.getElementById('tpl-komisi-id')?.value || '',
                 frequency: frequency
             });
-            
+
+            const wasEdit = !!editId;
             document.getElementById('template-form').reset();
+            cancelEditTemplate();
             toggleTplFrequencyFields(); updateUI(); renderTemplateTable(); populateTplKomisiDropdown();
-            Swal.fire({ title: 'Tersimpan', text: 'Master ditambahkan.', icon: 'success', timer: 1000, showConfirmButton: false });
+            Swal.fire({ title: 'Tersimpan', text: wasEdit ? 'Master diperbarui.' : 'Master ditambahkan.', icon: 'success', timer: 1000, showConfirmButton: false });
+        }
+
+        function editTemplate(id) {
+            const tpl = regularTemplates.find(t => t.id === id);
+            if (!tpl) return;
+
+            document.getElementById('tpl-edit-id').value = tpl.id;
+            document.getElementById('tpl-name').value = tpl.name || '';
+            document.getElementById('tpl-loc').value = tpl.defaultLocation || '';
+            document.getElementById('tpl-time').value = tpl.defaultTime || '';
+            populateTplKomisiDropdown();
+            document.getElementById('tpl-komisi-id').value = tpl.komisiId || '';
+
+            const f = tpl.frequency || { type: 'weekly', weekday: 0 };
+            document.getElementById('tpl-freq-type').value = f.type || 'weekly';
+            toggleTplFrequencyFields();
+            if (f.type === 'weekly') {
+                document.getElementById('tpl-freq-weekday').value = f.weekday ?? 0;
+            } else if (f.type === 'interval') {
+                document.getElementById('tpl-freq-interval-weekday').value = f.weekday ?? 0;
+                document.getElementById('tpl-freq-interval-n').value = f.interval || 2;
+                document.getElementById('tpl-freq-interval-anchor').value = f.anchor || '';
+            } else if (f.type === 'monthly') {
+                document.getElementById('tpl-freq-monthly-weekday').value = f.weekday ?? 0;
+                document.querySelectorAll('.tpl-week-occ').forEach(c => { c.checked = (f.occurrences || []).includes(c.value === 'last' ? 'last' : parseInt(c.value)); });
+            }
+
+            document.getElementById('tpl-form-title').innerText = 'Edit Master Ibadah';
+            document.getElementById('tpl-submit-btn').innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Update Master';
+            document.getElementById('tpl-cancel-edit-btn').classList.remove('hidden');
+            document.getElementById('template-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function cancelEditTemplate() {
+            document.getElementById('tpl-edit-id').value = '';
+            document.getElementById('tpl-form-title').innerText = 'Tambah Master Baru';
+            document.getElementById('tpl-submit-btn').innerHTML = '<i class="fa-solid fa-plus mr-1"></i> Tambah Master';
+            document.getElementById('tpl-cancel-edit-btn').classList.add('hidden');
         }
 
         function deleteTemplate(id) {
@@ -2286,12 +2341,24 @@
             if (id) {
                 const existing = eventsData.find(item => item.id === id);
                 if (existing) { newData.income = existing.income || 0; newData.expense = existing.expense || 0; }
-                Swal.fire({ title: 'Berhasil', text: 'Ibadah diupdate.', icon: 'success', timer: 1200, showConfirmButton: false });
-            } else {
-                Swal.fire({ title: 'Berhasil', text: 'Ibadah ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
             }
             upsertRawEvent(newData);
             closeModal(); updateUI();
+
+            // Jika laporan sudah lengkap (bukan Terjadwal), tawarkan cetak laporan langsung
+            if (newData.eventStatus !== 'Terjadwal') {
+                Swal.fire({
+                    title: 'Laporan Tersimpan',
+                    text: `Data kehadiran ibadah "${newData.eventName}" berhasil disimpan. Cetak laporan ibadah sekarang?`,
+                    icon: 'success',
+                    showCancelButton: true,
+                    confirmButtonColor: '#059669',
+                    confirmButtonText: '<i class="fa-solid fa-file-pdf"></i> Cetak Laporan',
+                    cancelButtonText: 'Nanti Saja'
+                }).then(result => { if (result.isConfirmed) generateSingleEventReport(newData.id); });
+            } else {
+                Swal.fire({ title: 'Berhasil', text: id ? 'Jadwal ibadah diupdate.' : 'Jadwal ibadah ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+            }
         }
 
         function renderTable() {
@@ -2370,7 +2437,12 @@
                     </td>
                     <td class="p-4 align-top text-center">
                         <div class="flex flex-col items-center justify-center gap-2 lg:opacity-0 lg:group-hover:opacity-100 transition">
-                            ${isScheduled ? `<button type="button" onclick="editData('${item.id}')" class="text-amber-600 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer shadow-sm w-full"><i class="fa-solid fa-clipboard-check mr-1"></i> Lengkapi</button>` : `<button type="button" onclick="editData('${item.id}')" class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded transition cursor-pointer" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>`}
+                            ${isScheduled ? `<button type="button" onclick="editData('${item.id}')" class="text-amber-600 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer shadow-sm w-full"><i class="fa-solid fa-clipboard-check mr-1"></i> Lengkapi</button>` : `
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick="editData('${item.id}')" class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded transition cursor-pointer" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button type="button" onclick="generateSingleEventReport('${item.id}')" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-2 rounded transition cursor-pointer" title="Cetak Laporan Ibadah (PDF)"><i class="fa-solid fa-file-pdf"></i></button>
+                            </div>
+                            `}
                             <button type="button" onclick="confirmDelete('${item.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition cursor-pointer" title="Hapus"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </td>
@@ -2890,6 +2962,137 @@
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
 
+        // ---- Cetak Laporan Ibadah per-Acara (setelah checklist/isi kehadiran) ----
+        function generateSingleEventReport(id) {
+            const item = eventsData.find(e => e.id === id);
+            if (!item) return Swal.fire('Info', 'Data ibadah tidak ditemukan.', 'info');
+            if (item.eventStatus === 'Terjadwal') return Swal.fire('Info', 'Lengkapi dulu data kehadiran ibadah ini sebelum mencetak laporan.', 'info');
+
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            const pageWidth = doc.internal.pageSize.getWidth();
+
+            // Header
+            doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(30, 58, 138);
+            doc.text(`LAPORAN PERIBADATAN`, 14, 18);
+            doc.setFontSize(11); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "normal");
+            doc.text(`${churchName}`, 14, 25);
+            doc.setDrawColor(200, 200, 200); doc.line(14, 30, pageWidth - 14, 30);
+
+            // Info Acara
+            let y = 39;
+            doc.setFontSize(13); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+            doc.text(item.eventName || '-', 14, y); y += 7;
+
+            doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+            const infoLeft = [
+                `Kategori   : ${item.ibadahType === 'reguler' ? 'Reguler' : 'Adhoc / Spesial'}`,
+                `Tanggal    : ${formatDate(item.date)}${item.isMultiDay && item.endDate ? ' s/d ' + formatDate(item.endDate) : ''}`,
+                `Waktu      : ${item.time || '-'}`,
+                `Lokasi     : ${item.location || '-'}`,
+                `Komisi     : ${item.komisiId || '-'}`,
+            ];
+            const infoRight = [
+                `Pengkhotbah : ${item.preacher || '-'}`,
+                `Tema Khotbah: ${item.sermonTheme || '-'}`,
+                `Worship Leader: ${item.wl || '-'}`,
+                `Pemusik     : ${item.musicians || '-'}`,
+                `Pelayan Lain: ${item.otherServers || '-'}`,
+            ];
+            infoLeft.forEach((line, i) => doc.text(line, 14, y + i * 5.2));
+            infoRight.forEach((line, i) => {
+                const wrapped = doc.splitTextToSize(line, 95);
+                doc.text(wrapped, pageWidth / 2 + 4, y + i * 5.2);
+            });
+            y += Math.max(infoLeft.length, infoRight.length) * 5.2 + 6;
+
+            // Ringkasan Kehadiran
+            const totalHadir = parseInt(item.attendance) || 0;
+            const jemaatChecked = Array.isArray(item.attendeeIds) ? item.attendeeIds.length : 0;
+            const tamuCount = parseInt(item.attendanceGuests) || 0;
+            const newVCount = parseInt(item.newVisitors) || 0;
+
+            doc.setFillColor(239, 246, 255);
+            doc.roundedRect(14, y, pageWidth - 28, 22, 2, 2, 'F');
+            doc.setFontSize(10.5); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 58, 138);
+            doc.text(`Total Kehadiran: ${totalHadir.toLocaleString('id-ID')} jiwa`, 18, y + 9);
+            doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(50, 50, 50);
+            if (item.attendanceMode === 'checklist') {
+                doc.text(`Jemaat (checklist): ${jemaatChecked}    |    Tamu: ${tamuCount}    |    Jemaat Baru: ${newVCount}`, 18, y + 17);
+            } else if (newVCount > 0) {
+                doc.text(`Jemaat Baru: ${newVCount}`, 18, y + 17);
+            }
+            y += 30;
+
+            // Daftar Nama Jemaat Hadir (mode checklist)
+            if (item.attendanceMode === 'checklist' && jemaatChecked > 0) {
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Daftar Jemaat Hadir (Checklist)", 14, y); y += 5;
+
+                const idSet = new Set(item.attendeeIds);
+                const hadirList = (jemaatMasterData || [])
+                    .filter(j => idSet.has(j.id))
+                    .map(j => j.nama_lengkap || '(Tanpa Nama)')
+                    .sort((a, b) => a.localeCompare(b, 'id'));
+
+                // Jika ada id yang tidak ketemu di master data (mis. sudah dihapus), tetap tampilkan jumlahnya
+                const foundCount = hadirList.length;
+                const rows = hadirList.map((nama, idx) => [idx + 1, nama]);
+                if (foundCount < jemaatChecked) {
+                    rows.push(['-', `(${jemaatChecked - foundCount} data jemaat lain tidak ditemukan di Database Jemaat)`]);
+                }
+
+                doc.autoTable({
+                    startY: y,
+                    head: [['No', 'Nama Jemaat']],
+                    body: rows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138], fontSize: 9 },
+                    styles: { fontSize: 9 },
+                    columnStyles: { 0: { cellWidth: 12, halign: 'center' } },
+                    margin: { left: 14, right: 14 }
+                });
+                y = doc.lastAutoTable.finalY + 8;
+            } else if (item.isMultiDay && item.sessions && item.sessions.length > 0) {
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Rincian Sesi", 14, y); y += 5;
+                const rows = item.sessions.map(s => [formatDate(s.date), `${s.startTime||'-'} - ${s.endTime||'-'}`, s.theme||'-', s.speaker||'-', `${s.attendance||0}`]);
+                doc.autoTable({
+                    startY: y,
+                    head: [['Tanggal', 'Waktu', 'Tema', 'Pembicara', 'Hadir']],
+                    body: rows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138], fontSize: 9 },
+                    styles: { fontSize: 8.5 },
+                    margin: { left: 14, right: 14 }
+                });
+                y = doc.lastAutoTable.finalY + 8;
+            }
+
+            // Catatan Tambahan
+            if (item.notes) {
+                if (y > 260) { doc.addPage(); y = 20; }
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Catatan Tambahan", 14, y); y += 6;
+                doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+                const noteLines = doc.splitTextToSize(item.notes, pageWidth - 28);
+                doc.text(noteLines, 14, y);
+                y += noteLines.length * 5 + 4;
+            }
+
+            // Footer
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let p = 1; p <= pageCount; p++) {
+                doc.setPage(p);
+                doc.setFontSize(8); doc.setTextColor(150, 150, 150); doc.setFont("helvetica", "normal");
+                doc.text(`Dicetak: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}`, 14, 290);
+                doc.text(`Halaman ${p}/${pageCount}`, pageWidth - 14, 290, { align: 'right' });
+            }
+
+            const safeDate = (item.date || 'tanpa-tanggal').replace(/[^0-9\-]/g, '');
+            const safeName = (item.eventName || 'Laporan').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40);
+            doc.save(`Laporan_Ibadah_${safeDate}_${safeName}.pdf`);
+        }
+
         async function mirrorAllToFirebase() {
             try {
                 if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
@@ -3363,6 +3566,18 @@
         function deleteLocation(id) {
             deleteFromRawList(masterLocationsRaw, id);
             updateUI();
+        }
+
+        function clearAllLocations() {
+            if (masterLocations.length === 0) return Swal.fire('Info', 'Belum ada lokasi tersimpan.', 'info');
+            Swal.fire({ title: 'Kosongkan Master Lokasi?', text: 'Semua lokasi tersimpan akan dihapus. Ibadah yang sudah dibuat tidak akan terpengaruh.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
+            .then(result => {
+                if (result.isConfirmed) {
+                    masterLocations.forEach(l => deleteFromRawList(masterLocationsRaw, l.id));
+                    updateUI();
+                    Swal.fire({ title: 'Terhapus', text: 'Semua lokasi berhasil dikosongkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+                }
+            });
         }
 
         function renderLocationList() {
