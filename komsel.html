@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modul Komsel - Sistem Database Jemaat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .tab-active { border-bottom: 2px solid #4f46e5; color: #4f46e5; }
+        .tab-inactive { border-bottom: 2px solid transparent; color: #64748b; }
+        .tab-inactive:hover { color: #334155; }
+        
+        #loadingOverlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5;
+            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .badge-scheduled { background: #f0f9ff; color: #0369a1; border: 1px solid #b8e2f8; }
+        .badge-terlaksana { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-batal { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+        .badge-dipindahkan { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Loading Screen -->
+    <div id="loadingOverlay">
+        <div class="spinner"></div>
+        <p class="mt-4 font-semibold text-slate-700 text-sm">Menghubungkan ke Database Jemaat & Komsel...</p>
+        <p id="loadingStatus" class="mt-1 text-xs text-slate-400">Harap tunggu sebentar</p>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-indigo-700 text-white shadow-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white/10 p-2 rounded-lg flex items-center justify-center w-10 h-10">
+                    <i class="fa-solid fa-people-roof text-xl text-indigo-100"></i>
+                </div>
+                <div>
+                    <h1 class="text-sm md:text-lg font-bold tracking-wide truncate">Modul Komsel (Sel Grup)</h1>
+                    <p class="text-[10px] md:text-xs text-indigo-200">Integrasi Data Jemaat</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full space-y-6">
+        <!-- Tabs Navigation -->
+        <div class="flex border-b border-slate-200 space-x-6 overflow-x-auto whitespace-nowrap">
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="pb-3 text-sm font-semibold tab-active transition flex items-center space-x-2">
+                <i class="fa-solid fa-chart-pie"></i><span>Dashboard & Kesehatan</span>
+            </button>
+            <button onclick="switchTab('grup')" id="tab-grup" class="pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2">
+                <i class="fa-solid fa-layer-group"></i><span>Daftar Grup</span>
+            </button>
+            <button onclick="switchTab('anggota')" id="tab-anggota" class="pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2">
+                <i class="fa-solid fa-users"></i><span>Manajemen Anggota</span>
+            </button>
+            <button onclick="switchTab('absensi')" id="tab-absensi" class="pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2">
+                <i class="fa-solid fa-calendar-check"></i><span>Catat Pertemuan & Absensi</span>
+            </button>
+        </div>
+
+        <!-- SECTION: DASHBOARD -->
+        <div id="section-dashboard" class="space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm gap-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-heart-pulse text-indigo-500 text-lg"></i>
+                    <h2 class="text-sm font-bold text-slate-800">Analisis Kesehatan Komsel & Kapasitas</h2>
+                </div>
+                <button onclick="exportLaporanPDF()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs px-4 py-2 rounded-lg transition flex items-center space-x-1 shadow-sm w-full sm:w-auto justify-center">
+                    <i class="fa-solid fa-file-pdf"></i><span>Ekspor PDF</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Total Grup</p>
+                    <div class="mt-2 text-2xl font-bold text-slate-900" id="statTotalGrup">0</div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Anggota Terdaftar</p>
+                    <div class="mt-2 text-2xl font-bold text-indigo-600" id="statTotalAnggota">0</div>
+                    <div class="text-[10px] text-slate-500 mt-1" id="statRasioJemaat">0% dari Jemaat Aktif</div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Grup Sehat</p>
+                    <div class="mt-2 flex items-baseline space-x-1">
+                        <span class="text-2xl font-bold text-emerald-600" id="statGrupSehat">0</span>
+                        <span class="text-xs text-slate-500">Grup</span>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Rata Hadir Bulan Ini</p>
+                    <div class="mt-2 flex items-baseline space-x-1">
+                        <span class="text-2xl font-bold text-amber-600" id="statKehadiran">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <h3 class="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Status Evaluasi per Grup</h3>
+                    <div class="overflow-x-auto max-h-[300px] overflow-y-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-50 text-slate-500 uppercase sticky top-0">
+                                <tr>
+                                    <th class="py-2 px-4">Nama Grup</th>
+                                    <th class="py-2 px-4 text-center">Kapasitas</th>
+                                    <th class="py-2 px-4">Evaluasi / Kondisi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashTableKesehatan" class="divide-y divide-slate-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                    <h3 class="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Demografi Gender Anggota Komsel</h3>
+                    <div class="space-y-6 mb-4 mt-2" id="dashDemografiGender"></div>
+                    <div class="text-[10px] text-slate-500 p-3 bg-indigo-50 rounded-lg border border-indigo-100 mt-auto">
+                        <i class="fa-solid fa-circle-info mr-1 text-indigo-500"></i> Analisis di atas mengkalkulasi keaktifan setiap pertemuan yang bersatus 'Terlaksana'.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: DAFTAR GRUP -->
+        <div id="section-grup" class="hidden space-y-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm gap-4">
+                <div class="relative w-full sm:w-64">
+                    <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
+                    <input type="text" id="searchGrup" oninput="renderTableGrup()" placeholder="Cari nama grup / leader..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button onclick="openModalGrup()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto">
+                    <i class="fa-solid fa-plus"></i><span>Buat Grup Baru</span>
+                </button>
+            </div>
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs whitespace-nowrap">
+                        <thead class="bg-slate-50 text-slate-500 uppercase border-b border-slate-200">
+                            <tr>
+                                <th class="py-3 px-4">Nama Grup</th>
+                                <th class="py-3 px-4">Kategori & Wilayah</th>
+                                <th class="py-3 px-4">Ketua / Leader</th>
+                                <th class="py-3 px-4 text-center">Jadwal Rutin</th>
+                                <th class="py-3 px-4 text-center">Anggota</th>
+                                <th class="py-3 px-4 text-center">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableGrupBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: MANAJEMEN ANGGOTA -->
+        <div id="section-anggota" class="hidden space-y-4">
+            <div class="flex flex-col md:flex-row gap-4">
+                <div class="w-full md:w-1/3 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col h-[70vh]">
+                    <h3 class="font-bold text-sm text-slate-800 mb-3"><i class="fa-solid fa-list mr-2 text-indigo-500"></i>Pilih Grup Komsel</h3>
+                    <div class="relative mb-3">
+                        <input type="text" id="searchPilihGrup" oninput="renderListPilihGrup()" placeholder="Cari grup..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div id="listPilihGrup" class="overflow-y-auto flex-grow space-y-1 pr-1"></div>
+                </div>
+                <div class="w-full md:w-2/3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-[70vh]">
+                    <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 rounded-t-xl gap-4">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-800" id="panelAnggotaTitle">Pilih grup untuk melihat anggota</h3>
+                            <p class="text-[10px] text-slate-500 mt-0.5" id="panelAnggotaSubtitle">Aturan: 1 jemaat hanya terdaftar di 1 komsel.</p>
+                        </div>
+                        <button id="btnTambahAnggota" onclick="openModalTambahAnggotaKomsel()" disabled class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition flex items-center justify-center space-x-1 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto">
+                            <i class="fa-solid fa-user-plus"></i><span>Tambah Anggota</span>
+                        </button>
+                    </div>
+                    <div class="overflow-y-auto flex-grow p-0">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-white text-slate-500 uppercase sticky top-0 border-b border-slate-200 z-10 shadow-sm">
+                                <tr>
+                                    <th class="py-2 px-4">Nama Lengkap & NIJ</th>
+                                    <th class="py-2 px-4 text-center">Peran</th>
+                                    <th class="py-2 px-4 text-center">Hapus</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableAnggotaGrupBody" class="divide-y divide-slate-100">
+                                <tr><td colspan="3" class="py-10 text-center text-slate-400">Belum ada grup yang dipilih.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION: ABSENSI & PERTEMUAN -->
+        <div id="section-absensi" class="hidden space-y-4">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div class="w-full md:w-1/3">
+                        <label class="block font-medium text-slate-700 text-xs mb-1">Pilih Grup untuk Melihat Jadwal</label>
+                        <select id="absensiGrup" onchange="loadPertemuanList(true)" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-indigo-700">
+                            <option value="" disabled selected>-- Pilih Grup --</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2 w-full md:w-auto">
+                        <button onclick="openModalGenerateJadwal()" id="btnGenJadwal" disabled class="flex-1 md:flex-none bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs px-4 py-2 rounded-lg font-medium transition flex items-center justify-center space-x-1 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-calendar-plus"></i><span>Generate Jadwal Otomatis</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex flex-col md:flex-row gap-4 min-h-[60vh]">
+                <!-- List Tanggal Pertemuan -->
+                <div class="w-full md:w-1/3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col max-h-[60vh]">
+                    <div class="p-3 border-b border-slate-100 bg-slate-50 rounded-t-xl flex justify-between items-center">
+                        <span class="font-bold text-xs text-slate-700">Jadwal & Riwayat</span>
+                        <button id="btnBuatPertemuan" onclick="openModalPertemuan()" disabled class="bg-indigo-100 text-indigo-600 hover:bg-indigo-200 p-1.5 rounded transition disabled:opacity-50" title="Catat Manual"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div id="listPertemuan" class="overflow-y-auto flex-grow divide-y divide-slate-100 text-xs pr-1">
+                        <div class="p-4 text-center text-slate-400">Pilih grup terlebih dahulu.</div>
+                    </div>
+                </div>
+                <!-- Detail Absensi & Status -->
+                <div id="panelAbsensiDetail" class="w-full md:w-2/3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col hidden max-h-[60vh]">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center rounded-t-xl gap-2">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-800" id="absDetailTitle">Detail Pertemuan</h3>
+                            <p class="text-[10px] text-slate-500 mt-0.5" id="absDetailSub">Topik & Lokasi</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="openModalEditPertemuan()" class="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs px-2.5 font-medium transition" title="Ubah Status / Batal / Reschedule"><i class="fa-solid fa-pen-to-square mr-1"></i> Ubah Status</button>
+                            <div id="absDetailRate" class="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold border border-emerald-200 whitespace-nowrap">
+                                Terlaksana
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-y-auto flex-grow" id="panelAbsensiBody">
+                        <!-- Konten tabel dinamis -->
+                    </div>
+                    <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-end shrink-0" id="wrapperBtnSimpanAbsensi">
+                        <button onclick="simpanAbsensi()" id="btnSimpanAbsensi" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs px-6 py-2 rounded-lg font-medium transition flex items-center space-x-1 shadow-sm w-full sm:w-auto justify-center">
+                            <i class="fa-solid fa-floppy-disk mr-1"></i><span>Simpan Kehadiran</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODAL GRUP -->
+    <div id="modalGrup" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-xl border border-slate-200 flex flex-col max-h-full">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <h3 id="modalGrupTitle" class="text-sm font-bold text-slate-800">Buat Grup Komsel</h3>
+                <button type="button" onclick="closeModalGrup()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="overflow-y-auto flex-grow p-6">
+                <form id="formGrup" onsubmit="saveGrup(event)" class="text-xs space-y-4">
+                    <input type="hidden" id="grupId">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Nama Grup *</label>
+                            <input type="text" id="grupName" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Contoh: Komsel J1">
+                        </div>
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Kategori</label>
+                            <select id="grupKategori" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                <option value="Umum">Umum / Dewasa</option>
+                                <option value="Pemuda">Pemuda / Youth</option>
+                                <option value="Wanita">Wanita / WBI</option>
+                                <option value="Pria">Pria / PBI</option>
+                                <option value="Keluarga Muda">Keluarga Muda</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Wilayah / Area</label>
+                        <input type="text" id="grupWilayah" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Contoh: Tangerang Kota">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Pilih Ketua / Leader *</label>
+                        <select id="grupLeader" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"></select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Hari Rutin</label>
+                            <select id="grupHari" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                <option value="Senin">Senin</option><option value="Selasa">Selasa</option>
+                                <option value="Rabu">Rabu</option><option value="Kamis">Kamis</option>
+                                <option value="Jumat" selected>Jumat</option><option value="Sabtu">Sabtu</option>
+                                <option value="Minggu">Minggu</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Waktu</label>
+                            <input type="time" id="grupWaktu" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1">Frekuensi</label>
+                            <select id="grupFrekuensi" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+                                <option value="1 Minggu Sekali">1 Minggu Sekali</option>
+                                <option value="2 Minggu Sekali">2 Minggu Sekali</option>
+                                <option value="3 Minggu Sekali">3 Minggu Sekali</option>
+                                <option value="1 Bulan Sekali">1 Bulan Sekali</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-medium text-slate-700 mb-1" title="Kapasitas optimal grup">Maks. Anggota</label>
+                            <input type="number" id="grupMaxAnggota" value="15" min="3" max="100" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-4 border-t border-slate-100 mt-4">
+                        <button type="button" onclick="closeModalGrup()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium transition">Batal</button>
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition">Simpan Grup</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL TAMBAH ANGGOTA -->
+    <div id="modalTambahAnggota" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl border border-slate-200 flex flex-col max-h-[85vh]">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <h3 class="text-sm font-bold text-slate-800">Tambahkan Anggota ke Grup</h3>
+                <button type="button" onclick="closeModalTambahAnggota()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 border-b border-slate-100 shrink-0">
+                <input type="text" id="searchJemaatBaru" oninput="renderListJemaatBaru()" placeholder="Cari nama jemaat..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="overflow-y-auto flex-grow p-4 space-y-2 text-xs" id="listJemaatBaru"></div>
+        </div>
+    </div>
+
+    <!-- MODAL GENERATE JADWAL OTOMATIS -->
+    <div id="modalGenerateJadwal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-slate-200">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                <h3 class="text-sm font-bold text-slate-800">Generate Jadwal Otomatis</h3>
+                <button type="button" onclick="closeModalGenerateJadwal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="execGenerateJadwal(event)" class="p-6 text-xs space-y-4">
+                <div class="p-3 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 mb-2">
+                    <i class="fa-solid fa-magic mr-1"></i> Sistem akan membuat daftar jadwal secara otomatis sesuai hari rutin grup.
+                </div>
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Mulai Dari Tanggal *</label>
+                    <input type="date" id="genStartDate" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block font-medium text-slate-700 mb-1">Sampai Dengan Tanggal *</label>
+                    <input type="date" id="genEndDate" required class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="flex justify-end space-x-2 pt-4 border-t border-slate-100 mt-2">
+                    <button type="button" onclick="closeModalGenerateJadwal()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-medium">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition shadow-sm">Buat Jadwal</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL PERTEMUAN / UBAH STATUS -->
+    <div id="modalPertemuan" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl border border-slate-200 flex flex-col max-h-full">
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
+                <h3 id="modalPertemuanTitle" class="text-sm font-bold text-slate-800">Catat Pertemuan Baru</h3>
+                <button type="button" onclick="closeModalPertemuan()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="overflow-y-auto p-6 flex-grow">
+                <form id="formPertemuan" onsubmit="savePertemuan(event)" class="text-xs space-y-4">
+                    <input type="hidden" id="pertId">
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Tanggal Pertemuan *</label>
+                        <input type="date" id="pertTanggal" required onchange="updateStatusDropdown()" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Topik / Materi (Opsional)</label>
+                        <input type="text" id="pertTopik" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Contoh: Mengasihi Sesama">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Lokasi (Opsional)</label>
+                        <input type="text" id="pertLokasi" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Rumah Bpk. X / Zoom">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-slate-700 mb-1">Status Pelaksanaan *</label>
+                        <select id="pertStatus" required onchange="handleStatusPertemuanChange()" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-semibold">
+                            <option value="Scheduled">📅 Terjadwal (Belum Dilaksanakan)</option>
+                            <option value="Terlaksana">✅ Terlaksana (Siap Absen)</option>
+                            <option value="Batal">❌ Batal / Cancel</option>
+                            <option value="Dipindahkan">🔄 Dipindahkan (Reschedule)</option>
+                        </select>
+                        <p id="pertStatusWarning" class="text-[10px] text-amber-600 mt-1 hidden"><i class="fa-solid fa-triangle-exclamation"></i> Tanggal di masa depan tidak bisa ditandai 'Terlaksana'.</p>
+                    </div>
+                    <div id="wrapperPertAlasan" class="hidden">
+                        <label class="block font-medium text-slate-700 mb-1 text-rose-600">Alasan Pembatalan / Reschedule *</label>
+                        <textarea id="pertAlasan" rows="2" class="w-full px-3 py-2 border border-rose-200 bg-rose-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500" placeholder="Jelaskan alasannya..."></textarea>
+                    </div>
+                    <div class="flex justify-end space-x-2 pt-4 border-t border-slate-100 mt-4">
+                        <button type="button" onclick="closeModalPertemuan()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg font-medium transition">Batal</button>
+                        <button type="submit" id="btnSubmitPertemuan" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition">Simpan Jadwal</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM ALERT MODAL -->
+    <div id="modalMessage" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-slate-200">
+            <div class="p-6 text-center">
+                <div id="modalMessageIcon" class="text-4xl text-indigo-500 mb-3"><i class="fa-solid fa-circle-info"></i></div>
+                <h3 id="modalMessageTitle" class="text-base font-bold text-slate-800 mb-2">Informasi</h3>
+                <p id="modalMessageText" class="text-xs text-slate-600 mb-5"></p>
+                <button type="button" onclick="closeModalMessage()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 transition text-white rounded-lg font-medium w-full text-xs">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRM MODAL -->
+    <div id="modalConfirm" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-xl border border-slate-200">
+            <div class="p-6 text-center">
+                <div class="text-4xl text-rose-500 mb-3"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <h3 id="modalConfirmTitle" class="text-base font-bold text-slate-800 mb-2">Konfirmasi</h3>
+                <p id="modalConfirmText" class="text-xs text-slate-600 mb-5"></p>
+                <div class="flex space-x-3">
+                    <button type="button" onclick="closeModalConfirm(false)" class="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 transition text-slate-700 rounded-lg font-medium text-xs">Batal</button>
+                    <button type="button" id="btnConfirmYes" class="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 transition text-white rounded-lg font-medium text-xs">Ya, Lanjutkan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Konfigurasi Database - Menggunakan platform config jika ada
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'modul-komsel';
+        let firebaseConfig = {
+            // Default config fallback jika dijalankan lokal di luar platform
+            apiKey: "AIzaSyAdbZCOIjDzjo4xIKoeuPYNf8CdW59Eelw",
+            authDomain: "dbjemaatloc.firebaseapp.com",
+            projectId: "dbjemaatloc",
+            storageBucket: "dbjemaatloc.firebasestorage.app",
+            messagingSenderId: "927587348267",
+            appId: "1:927587348267:web:e1da154628ad77bdbfdf6e"
+        };
+        try { if(typeof __firebase_config !== 'undefined') firebaseConfig = JSON.parse(__firebase_config); } catch(e){}
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        
+        // Mengekspos fungsi ke window agar dapat dipanggil oleh onclick HTML
+        window.db = db; window.auth = auth;
+        window.signInAnonymously = signInAnonymously;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.firestoreGetDocs = getDocs;
+        window.firestoreGetDoc = getDoc;
+        window.firestoreSetDoc = setDoc;
+        window.firestoreCollection = collection;
+        window.firestoreDoc = doc;
+        window.initialAuthToken = initialAuthToken;
+        window.appId = appId;
+        
+        window.firebaseReady = true;
+    </script>
+
+    <script>
+        let dbJemaatMaster = [];
+        let komselData = { grups: [], anggotas: [], pertemuans: [] };
+        let currentTab = 'dashboard';
+        let currentSelectedGrupId = null;
+        let currentPertemuanId = null;
+
+        // Custom Modals Logic
+        let confirmCallback = null;
+        window.showMessage = function(text, title="Informasi", icon="fa-circle-info", color="text-indigo-500") {
+            document.getElementById('modalMessageTitle').innerText = title;
+            document.getElementById('modalMessageText').innerText = text;
+            let iEl = document.getElementById('modalMessageIcon');
+            iEl.className = `text-4xl mb-3 ${color}`;
+            iEl.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+            document.getElementById('modalMessage').classList.remove('hidden');
+        };
+        window.closeModalMessage = function() { document.getElementById('modalMessage').classList.add('hidden'); };
+        
+        window.showConfirm = function(text, callback, title="Perhatian") {
+            document.getElementById('modalConfirmTitle').innerText = title;
+            document.getElementById('modalConfirmText').innerText = text;
+            confirmCallback = callback;
+            document.getElementById('modalConfirm').classList.remove('hidden');
+        };
+        window.closeModalConfirm = function(result) {
+            document.getElementById('modalConfirm').classList.add('hidden');
+            if(result && confirmCallback) confirmCallback();
+        };
+        document.getElementById('btnConfirmYes').onclick = () => window.closeModalConfirm(true);
+
+        function generateMockJemaat() {
+            return [
+                { id: "J001", nij: "001", nama_lengkap: "Budi Santoso", jenis_kelamin: "L", status_jemaat: "Aktif", alamat: "Jakarta" },
+                { id: "J002", nij: "002", nama_lengkap: "Siti Aminah", jenis_kelamin: "P", status_jemaat: "Aktif", alamat: "Bandung" },
+                { id: "J003", nij: "003", nama_lengkap: "Agus Wijaya", jenis_kelamin: "L", status_jemaat: "Aktif", alamat: "Surabaya" },
+                { id: "J004", nij: "004", nama_lengkap: "Dewi Lestari", jenis_kelamin: "P", status_jemaat: "Aktif", alamat: "Semarang" },
+                { id: "J005", nij: "005", nama_lengkap: "Hendra Gunawan", jenis_kelamin: "L", status_jemaat: "Aktif", alamat: "Bali" },
+                { id: "J006", nij: "006", nama_lengkap: "Rina Nose", jenis_kelamin: "P", status_jemaat: "Aktif", alamat: "Bogor" }
+            ];
+        }
+
+        async function loadDataAndInit() {
+            try {
+                // Tambahkan timeout agar tidak loading selamanya jika Firebase bermasalah
+                await new Promise((resolve, reject) => {
+                    let timeout = setTimeout(() => reject(new Error("Timeout inisialisasi Firebase")), 5000);
+                    let check = setInterval(() => { 
+                        if(window.firebaseReady) { clearInterval(check); clearTimeout(timeout); resolve(); } 
+                    }, 50); 
+                });
+
+                if (window.initialAuthToken) {
+                    await window.signInWithCustomToken(window.auth, window.initialAuthToken);
+                } else {
+                    await window.signInAnonymously(window.auth);
+                }
+                
+                if (!window.auth.currentUser) throw new Error("Gagal otentikasi Firebase");
+
+                // Menggunakan path /artifacts/ public data sesuai standar platform
+                const jemaatCol = window.firestoreCollection(window.db, 'artifacts', window.appId, 'public', 'data', 'jemaatMaster');
+                const snapJemaat = await window.firestoreGetDocs(jemaatCol);
+                if (snapJemaat.empty) {
+                    dbJemaatMaster = generateMockJemaat(); // Dummy data untuk testing jika kosong
+                } else {
+                    dbJemaatMaster = snapJemaat.docs.map(d => d.data());
+                }
+
+                const komselRef = window.firestoreDoc(window.db, 'artifacts', window.appId, 'public', 'data', 'komselData', 'master');
+                const snapKomsel = await window.firestoreGetDoc(komselRef);
+                if (snapKomsel.exists()) {
+                    let d = snapKomsel.data();
+                    komselData.grups = Array.isArray(d.grups) ? d.grups : [];
+                    komselData.anggotas = Array.isArray(d.anggotas) ? d.anggotas : [];
+                    komselData.pertemuans = Array.isArray(d.pertemuans) ? d.pertemuans : [];
+                }
+            } catch (error) {
+                console.warn("Sinkronisasi database Cloud gagal:", error);
+                // Gunakan mode offline agar aplikasi tetap bisa dibuka dan diuji
+                dbJemaatMaster = generateMockJemaat();
+                window.showMessage("Koneksi ke database cloud terkendala. Aplikasi beralih ke Mode Offline (Data Simulasi).", "Mode Offline Aktif", "fa-wifi", "text-amber-500");
+            } finally {
+                // Blok ini akan selalu dieksekusi terlepas berhasil atau gagal
+                populateLeaderOptions();
+                populateDropdownGrupAbsensi();
+                switchTab('dashboard');
+                document.getElementById('loadingOverlay').style.display = 'none';
+            }
+        }
+        window.onload = loadDataAndInit;
+
+        async function saveData() {
+            if(!window.auth || !window.auth.currentUser) {
+                // Di mode offline, kita hanya update UI saja
+                if(currentTab === 'dashboard') renderDashboard();
+                return;
+            }
+            try {
+                const komselRef = window.firestoreDoc(window.db, 'artifacts', window.appId, 'public', 'data', 'komselData', 'master');
+                await window.firestoreSetDoc(komselRef, {
+                    grups: komselData.grups,
+                    anggotas: komselData.anggotas,
+                    pertemuans: komselData.pertemuans,
+                    lastUpdated: new Date().toISOString()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Gagal simpan cloud:", e);
+                window.showMessage("Penyimpanan ke cloud gagal. Perubahan sementara disimpan di browser.", "Peringatan", "fa-triangle-exclamation", "text-amber-500");
+            } finally {
+                if(currentTab === 'dashboard') renderDashboard();
+            }
+        }
+
+        // Utils
+        function generateId() { return Date.now().toString() + Math.random().toString(36).slice(2, 6); }
+        function getJemaatName(id) {
+            let j = dbJemaatMaster.find(x => x.id === id); return j ? j.nama_lengkap : 'Data Terhapus';
+        }
+        function getGrupMemberCount(grupId) { return komselData.anggotas.filter(a => a.grupId === grupId).length; }
+        function parseRobustDate(tglStr) {
+            if (!tglStr) return null; let matchYMD = tglStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if (matchYMD) return { y: parseInt(matchYMD[1]), m: parseInt(matchYMD[2]), d: parseInt(matchYMD[3]) };
+            return null;
+        }
+        function isDateInFuture(dateStr) {
+            if(!dateStr) return true;
+            let matchYMD = dateStr.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+            if (!matchYMD) return true;
+            // Evaluasi berdasarkan zona waktu perangkat yang digunakan
+            let inputDate = new Date(parseInt(matchYMD[1]), parseInt(matchYMD[2])-1, parseInt(matchYMD[3]));
+            let today = new Date(); today.setHours(0,0,0,0);
+            return inputDate.getTime() > today.getTime();
+        }
+
+        window.switchTab = function(tabId) {
+            currentTab = tabId;
+            ['dashboard', 'grup', 'anggota', 'absensi'].forEach(t => {
+                document.getElementById('section-' + t).classList.toggle('hidden', t !== tabId);
+                let btn = document.getElementById('tab-' + t);
+                btn.className = t === tabId ? "pb-3 text-sm font-semibold tab-active transition flex items-center space-x-2" 
+                                            : "pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2";
+            });
+            if(tabId === 'dashboard') renderDashboard();
+            if(tabId === 'grup') renderTableGrup();
+            if(tabId === 'anggota') renderListPilihGrup();
+            if(tabId === 'absensi') loadPertemuanList(true);
+        };
+
+        function populateLeaderOptions() {
+            let select = document.getElementById('grupLeader');
+            let jemaatAktif = dbJemaatMaster.filter(j => j.status_jemaat === 'Aktif').sort((a,b) => a.nama_lengkap.localeCompare(b.nama_lengkap));
+            select.innerHTML = `<option value="" disabled selected>Pilih Jemaat...</option>` + 
+                jemaatAktif.map(j => `<option value="${j.id}">${j.nama_lengkap} (${j.nij})</option>`).join('');
+        }
+
+        window.renderTableGrup = function() {
+            const tbody = document.getElementById('tableGrupBody');
+            const keyword = document.getElementById('searchGrup').value.toLowerCase();
+            let filtered = komselData.grups.filter(g => {
+                let ln = getJemaatName(g.leaderId).toLowerCase();
+                return g.name.toLowerCase().includes(keyword) || ln.includes(keyword) || (g.wilayah||'').toLowerCase().includes(keyword);
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-400">Tidak ada data grup.</td></tr>`; return;
+            }
+
+            tbody.innerHTML = filtered.map(g => {
+                let cnt = getGrupMemberCount(g.id);
+                let frek = g.frekuensi ? `<br><span class="text-[9px] text-slate-400">${g.frekuensi}</span>` : '';
+                let max = g.maxAnggota || 15;
+                let bc = cnt > max ? 'bg-rose-100 text-rose-700 font-bold' : 'bg-slate-100 text-slate-700';
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-50">
+                        <td class="py-3 px-4 font-bold text-indigo-700">${g.name}</td>
+                        <td class="py-3 px-4"><span class="px-2 py-0.5 bg-slate-100 rounded text-[10px]">${g.kategori||'Umum'}</span><br><span class="text-[10px] text-slate-500">${g.wilayah||'-'}</span></td>
+                        <td class="py-3 px-4 text-slate-700 font-medium">${getJemaatName(g.leaderId)}</td>
+                        <td class="py-3 px-4 text-center text-slate-600">${g.hari||'-'}, ${g.waktu||'-'}${frek}</td>
+                        <td class="py-3 px-4 text-center"><span class="px-2.5 py-1 rounded-lg text-[10px] ${bc}">${cnt} / ${max}</span></td>
+                        <td class="py-3 px-4 text-center space-x-1">
+                            <button onclick="editGrup('${g.id}')" class="p-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded transition"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="hapusGrup('${g.id}')" class="p-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded transition"><i class="fa-solid fa-trash-can"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        window.openModalGrup = function() {
+            document.getElementById('modalGrupTitle').innerText = "Buat Grup Komsel Baru";
+            document.getElementById('formGrup').reset();
+            document.getElementById('grupId').value = "";
+            document.getElementById('grupMaxAnggota').value = "15";
+            document.getElementById('grupFrekuensi').value = "1 Minggu Sekali";
+            document.getElementById('modalGrup').classList.remove('hidden');
+        };
+        window.closeModalGrup = function() { document.getElementById('modalGrup').classList.add('hidden'); };
+
+        window.editGrup = function(id) {
+            let g = komselData.grups.find(x => x.id === id); if(!g) return;
+            document.getElementById('modalGrupTitle').innerText = "Edit Grup Komsel";
+            document.getElementById('grupId').value = g.id;
+            document.getElementById('grupName').value = g.name;
+            document.getElementById('grupKategori').value = g.kategori || "Umum";
+            document.getElementById('grupWilayah').value = g.wilayah || "";
+            document.getElementById('grupLeader').value = g.leaderId;
+            document.getElementById('grupHari').value = g.hari || "Jumat";
+            document.getElementById('grupWaktu').value = g.waktu || "";
+            document.getElementById('grupFrekuensi').value = g.frekuensi || "1 Minggu Sekali";
+            document.getElementById('grupMaxAnggota').value = g.maxAnggota || 15;
+            document.getElementById('modalGrup').classList.remove('hidden');
+        };
+
+        window.saveGrup = function(e) {
+            e.preventDefault();
+            let id = document.getElementById('grupId').value;
+            let data = {
+                name: document.getElementById('grupName').value.trim(), kategori: document.getElementById('grupKategori').value,
+                wilayah: document.getElementById('grupWilayah').value.trim(), leaderId: document.getElementById('grupLeader').value,
+                hari: document.getElementById('grupHari').value, waktu: document.getElementById('grupWaktu').value,
+                frekuensi: document.getElementById('grupFrekuensi').value, maxAnggota: parseInt(document.getElementById('grupMaxAnggota').value) || 15
+            };
+            if(id) {
+                let idx = komselData.grups.findIndex(x => x.id === id);
+                if(idx >= 0) komselData.grups[idx] = { ...komselData.grups[idx], ...data };
+            } else { komselData.grups.push({ id: generateId(), ...data }); }
+            saveData(); window.closeModalGrup(); renderTableGrup(); populateDropdownGrupAbsensi();
+            window.showMessage("Data grup komsel berhasil disimpan.", "Berhasil", "fa-check", "text-emerald-500");
+        };
+
+        window.hapusGrup = function(id) {
+            window.showConfirm("Yakin ingin menghapus grup komsel ini? Anggota dan riwayat absensi terkait akan ikut terhapus.", () => {
+                komselData.grups = komselData.grups.filter(x => x.id !== id);
+                komselData.anggotas = komselData.anggotas.filter(x => x.grupId !== id);
+                komselData.pertemuans = komselData.pertemuans.filter(x => x.grupId !== id);
+                saveData(); renderTableGrup(); populateDropdownGrupAbsensi();
+            });
+        };
+
+        window.renderListPilihGrup = function() {
+            let container = document.getElementById('listPilihGrup');
+            let kw = document.getElementById('searchPilihGrup').value.toLowerCase();
+            let filtered = komselData.grups.filter(g => g.name.toLowerCase().includes(kw));
+
+            if(filtered.length === 0) { container.innerHTML = `<div class="p-4 text-center text-slate-400 text-xs">Belum ada grup komsel.</div>`; return; }
+
+            container.innerHTML = filtered.map(g => {
+                let cnt = getGrupMemberCount(g.id); let isActive = g.id === currentSelectedGrupId;
+                return `
+                    <div onclick="pilihGrupAnggota('${g.id}')" class="p-3 rounded-xl cursor-pointer transition border ${isActive ? 'bg-indigo-50 border-indigo-200 text-indigo-900 font-bold' : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-700'}">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs truncate mr-2">${g.name}</span>
+                            <span class="text-[9px] px-2 py-0.5 rounded-full whitespace-nowrap ${cnt > (g.maxAnggota||15) ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}">${cnt} Org</span>
+                        </div>
+                    </div>`;
+            }).join('');
+        };
+
+        window.pilihGrupAnggota = function(grupId) {
+            currentSelectedGrupId = grupId; renderListPilihGrup();
+            let g = komselData.grups.find(x => x.id === grupId); if(!g) return;
+            document.getElementById('panelAnggotaTitle').innerText = `Anggota Grup: ${g.name}`;
+            document.getElementById('panelAnggotaSubtitle').innerText = `Ketua: ${getJemaatName(g.leaderId)}`;
+            document.getElementById('btnTambahAnggota').disabled = false;
+            renderTabelAnggotaGrup();
+        };
+
+        function renderTabelAnggotaGrup() {
+            let tbody = document.getElementById('tableAnggotaGrupBody');
+            let list = komselData.anggotas.filter(a => a.grupId === currentSelectedGrupId);
+            if(list.length === 0) { tbody.innerHTML = `<tr><td colspan="3" class="py-10 text-center text-slate-400">Belum ada anggota.</td></tr>`; return; }
+
+            tbody.innerHTML = list.map(a => {
+                let j = dbJemaatMaster.find(x => x.id === a.jemaatId);
+                let nama = j ? j.nama_lengkap : 'Data Jemaat Dihapus'; let nij = j ? j.nij : '-';
+                let isLeader = komselData.grups.find(g => g.id === currentSelectedGrupId && g.leaderId === a.jemaatId);
+                let peran = isLeader ? `<span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 font-bold rounded text-[9px]">Leader</span>` : `<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px]">Anggota</span>`;
+                return `
+                    <tr class="hover:bg-slate-50 transition border-b border-slate-50">
+                        <td class="py-3 px-4"><div class="font-bold text-slate-800 text-[11px]">${nama}</div><div class="text-[9px] text-slate-400 font-mono">${nij}</div></td>
+                        <td class="py-3 px-4 text-center">${peran}</td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="hapusAnggotaKomsel('${a.id}')" class="p-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded transition" title="Keluarkan dari grup"><i class="fa-solid fa-user-minus"></i></button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        }
+
+        window.openModalTambahAnggotaKomsel = function() {
+            if(!currentSelectedGrupId) return;
+            document.getElementById('searchJemaatBaru').value = ""; renderListJemaatBaru();
+            document.getElementById('modalTambahAnggota').classList.remove('hidden');
+        };
+        window.closeModalTambahAnggota = function() { document.getElementById('modalTambahAnggota').classList.add('hidden'); };
+
+        window.renderListJemaatBaru = function() {
+            let cont = document.getElementById('listJemaatBaru'); let kw = document.getElementById('searchJemaatBaru').value.toLowerCase();
+            let asgIds = new Set(komselData.anggotas.map(a => a.jemaatId));
+            let ters = dbJemaatMaster.filter(j => j.status_jemaat === 'Aktif' && !asgIds.has(j.id) && j.nama_lengkap.toLowerCase().includes(kw));
+
+            if(ters.length === 0) { cont.innerHTML = `<div class="p-4 text-center text-slate-400">Semua jemaat aktif sudah masuk komsel atau tidak ditemukan.</div>`; return; }
+
+            cont.innerHTML = ters.sort((a,b) => a.nama_lengkap.localeCompare(b.nama_lengkap)).map(j => `
+                <div class="flex justify-between items-center p-3 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-100 transition">
+                    <div>
+                        <div class="font-bold text-slate-800">${j.nama_lengkap}</div>
+                        <div class="text-[9px] text-slate-400 font-mono">${j.nij}</div>
+                    </div>
+                    <button onclick="tambahkanJemaatKeGrup('${j.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-medium transition shadow-sm">Pilih</button>
+                </div>`).join('');
+        };
+
+        window.tambahkanJemaatKeGrup = function(jId) {
+            komselData.anggotas.push({ id: generateId(), grupId: currentSelectedGrupId, jemaatId: jId, tanggalBergabung: new Date().toISOString().split('T')[0] });
+            saveData(); renderTabelAnggotaGrup(); renderListJemaatBaru(); renderTableGrup();
+        };
+
+        window.hapusAnggotaKomsel = function(id) {
+            window.showConfirm("Yakin ingin mengeluarkan jemaat dari grup ini?", () => {
+                komselData.anggotas = komselData.anggotas.filter(x => x.id !== id);
+                saveData(); renderTabelAnggotaGrup(); renderTableGrup();
+            });
+        };
+
+        function populateDropdownGrupAbsensi() {
+            let select = document.getElementById('absensiGrup'); let currVal = select.value;
+            select.innerHTML = `<option value="" disabled selected>-- Pilih Grup --</option>` + 
+                komselData.grups.sort((a,b) => a.name.localeCompare(b.name)).map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+            if(currVal) select.value = currVal;
+        }
+
+        function getDayIndex(hariStr) {
+            const m = { 'Minggu': 0, 'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'Sabtu': 6 };
+            return m[hariStr] !== undefined ? m[hariStr] : 5;
+        }
+
+        window.openModalGenerateJadwal = function() {
+            let grupId = document.getElementById('absensiGrup').value;
+            if(!grupId) { window.showMessage("Pilih grup dari dropdown terlebih dahulu."); return; }
+            let now = new Date(); document.getElementById('genStartDate').valueAsDate = now;
+            let nextMonth = new Date(); nextMonth.setMonth(now.getMonth() + 2); // default 2 bulan
+            document.getElementById('genEndDate').valueAsDate = nextMonth;
+            document.getElementById('modalGenerateJadwal').classList.remove('hidden');
+        };
+        window.closeModalGenerateJadwal = function() { document.getElementById('modalGenerateJadwal').classList.add('hidden'); };
+
+        window.execGenerateJadwal = function(e) {
+            e.preventDefault();
+            let grupId = document.getElementById('absensiGrup').value;
+            let g = komselData.grups.find(x => x.id === grupId); if(!g) return;
+
+            let sDate = new Date(document.getElementById('genStartDate').value);
+            let eDate = new Date(document.getElementById('genEndDate').value);
+            
+            if(sDate > eDate) { window.showMessage("Tanggal mulai tidak boleh melebihi tanggal akhir.", "Kesalahan", "fa-circle-xmark", "text-rose-500"); return; }
+
+            let targetHari = getDayIndex(g.hari || 'Jumat');
+            let frekuensi = g.frekuensi || '1 Minggu Sekali';
+            
+            let curr = new Date(sDate);
+            while(curr.getDay() !== targetHari) { curr.setDate(curr.getDate() + 1); }
+
+            let datesToCreate = []; let wc = 0; let lastM = -1;
+
+            while(curr <= eDate) {
+                let m = curr.getMonth(); if(m !== lastM) { lastM = m; wc = 0; } wc++;
+                let dStr = `${curr.getFullYear()}-${String(curr.getMonth()+1).padStart(2,'0')}-${String(curr.getDate()).padStart(2,'0')}`;
+                
+                let match = false;
+                if(frekuensi === '1 Minggu Sekali') match = true;
+                else if(frekuensi === '2 Minggu Sekali' && Math.floor(curr.getTime()/(7*86400000))%2 === 0) match = true;
+                else if(frekuensi === '3 Minggu Sekali' && Math.floor(curr.getTime()/(7*86400000))%3 === 0) match = true;
+                else if(frekuensi === '1 Bulan Sekali' && wc === 1) match = true;
+
+                if(match && !komselData.pertemuans.some(p => p.grupId === grupId && p.tanggal === dStr)) datesToCreate.push(dStr);
+                curr.setDate(curr.getDate() + 7);
+            }
+
+            if(datesToCreate.length === 0) {
+                window.showMessage("Jadwal di rentang tanggal tersebut sudah lengkap atau tidak ada jadwal baru yang sesuai rutinitas grup.", "Info", "fa-calendar-check", "text-sky-500");
+                window.closeModalGenerateJadwal(); return;
+            }
+
+            datesToCreate.forEach(dStr => {
+                komselData.pertemuans.push({
+                    id: generateId() + Math.random().toString(36).slice(2,4), grupId: grupId, tanggal: dStr,
+                    topik: `Pertemuan Rutin ${g.name}`, lokasi: g.wilayah ? `Area ${g.wilayah}` : '',
+                    status: 'Scheduled', alasan: '', absensi: {}
+                });
+            });
+
+            saveData(); loadPertemuanList(true); window.closeModalGenerateJadwal();
+            window.showMessage(`Berhasil membuat ${datesToCreate.length} jadwal pertemuan baru. Status tersimpan sebagai 'Terjadwal'.`, "Sukses", "fa-check", "text-emerald-500");
+        };
+
+        window.loadPertemuanList = function(autoOpen = true) {
+            let gId = document.getElementById('absensiGrup').value;
+            let btn = document.getElementById('btnBuatPertemuan'); let btnGen = document.getElementById('btnGenJadwal');
+            let lEl = document.getElementById('listPertemuan'); let pDet = document.getElementById('panelAbsensiDetail');
+            
+            if (!gId) { btn.disabled = true; btnGen.disabled = true; lEl.innerHTML = `<div class="p-4 text-center text-slate-400">Pilih grup terlebih dahulu.</div>`; pDet.style.display = 'none'; return; }
+            btn.disabled = false; btnGen.disabled = false;
+            
+            let list = komselData.pertemuans.filter(p => p.grupId === gId).sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal));
+            if(list.length === 0) { lEl.innerHTML = `<div class="p-4 text-center text-slate-400">Belum ada jadwal pertemuan.</div>`; pDet.style.display = 'none'; currentPertemuanId = null; return; }
+
+            lEl.innerHTML = list.map(p => {
+                let d = parseRobustDate(p.tanggal); let fmt = d ? `${d.d}/${d.m}/${d.y}` : p.tanggal;
+                let st = p.status || 'Scheduled'; let bHtml = '', rDisp = '', cRate = '';
+                
+                if (st === 'Scheduled') { bHtml = `<span class="badge-scheduled px-1.5 py-0.5 rounded text-[9px] font-medium">📅 Terjadwal</span>`; rDisp = 'Menunggu'; cRate = 'text-sky-600'; }
+                else if (st === 'Terlaksana') {
+                    let h = 0, t = 0; if(p.absensi) { for(let k in p.absensi) { t++; if(p.absensi[k].present) h++; } }
+                    let rate = t > 0 ? Math.round((h/t)*100) : 0;
+                    cRate = rate >= 70 ? 'text-emerald-600' : (rate >= 40 ? 'text-amber-500' : 'text-rose-500'); rDisp = `${rate}% Hadir`;
+                    bHtml = `<span class="badge-terlaksana px-1.5 py-0.5 rounded text-[9px] font-medium">✅ Selesai</span>`;
+                } else if (st === 'Batal') { bHtml = `<span class="badge-batal px-1.5 py-0.5 rounded text-[9px] font-medium">❌ Batal</span>`; rDisp = 'Batal'; cRate = 'text-rose-600'; }
+                else if (st === 'Dipindahkan') { bHtml = `<span class="badge-dipindahkan px-1.5 py-0.5 rounded text-[9px] font-medium">🔄 Reschedule</span>`; rDisp = 'Dipindah'; cRate = 'text-amber-600'; }
+
+                let isActive = p.id === currentPertemuanId;
+                return `
+                    <div id="card_pert_${p.id}" onclick="bukaAbsensi('${p.id}')" class="pert-card p-3 border-b border-slate-100 cursor-pointer transition ${isActive ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : 'hover:bg-slate-50 border-l-4 border-l-transparent'}">
+                        <div class="flex justify-between items-center mb-1"><span class="font-bold text-slate-700 text-[11px]">${fmt}</span><span class="text-[9px] font-bold ${cRate}">${rDisp}</span></div>
+                        <div class="flex justify-between items-center mt-1"><span class="text-[9px] text-slate-500 truncate max-w-[65%]">${p.topik || (st === 'Scheduled' ? 'Menunggu pelaksanaan' : p.alasan || '-')}</span>${bHtml}</div>
+                    </div>`;
+            }).join('');
+
+            // Mencegah infinite loop rendering
+            if (autoOpen) {
+                if (list.length > 0 && !komselData.pertemuans.find(p => p.id === currentPertemuanId)) bukaAbsensi(list[0].id);
+                else if (currentPertemuanId && komselData.pertemuans.some(p => p.id === currentPertemuanId)) bukaAbsensi(currentPertemuanId);
+                else if (list.length > 0) bukaAbsensi(list[0].id);
+            }
+        };
+
+        window.updateStatusDropdown = function() {
+            let tglVal = document.getElementById('pertTanggal').value;
+            let sel = document.getElementById('pertStatus');
+            let w = document.getElementById('pertStatusWarning');
+            if(!tglVal) return;
+            
+            let isFut = isDateInFuture(tglVal);
+            let currentStatus = sel.value;
+            
+            for(let o of sel.options) {
+                if(o.value === 'Terlaksana') {
+                    o.disabled = isFut;
+                }
+            }
+            if(isFut && currentStatus === 'Terlaksana') {
+                sel.value = 'Scheduled';
+            }
+            if(isFut) w.classList.remove('hidden'); else w.classList.add('hidden');
+            window.handleStatusPertemuanChange();
+        };
+
+        window.handleStatusPertemuanChange = function() {
+            let st = document.getElementById('pertStatus').value;
+            let wrp = document.getElementById('wrapperPertAlasan');
+            let al = document.getElementById('pertAlasan');
+            if(st === 'Batal' || st === 'Dipindahkan') { wrp.classList.remove('hidden'); al.required = true; }
+            else { wrp.classList.add('hidden'); al.required = false; }
+        };
+
+        window.openModalPertemuan = function() {
+            document.getElementById('modalPertemuanTitle').innerText = "📝 Catat Pertemuan Baru";
+            document.getElementById('formPertemuan').reset();
+            document.getElementById('pertId').value = "";
+            
+            let now = new Date();
+            let dStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+            document.getElementById('pertTanggal').value = dStr;
+            
+            document.getElementById('pertStatus').value = 'Scheduled';
+            window.updateStatusDropdown();
+            document.getElementById('modalPertemuan').classList.remove('hidden');
+        };
+
+        window.openModalEditPertemuan = function() {
+            let p = komselData.pertemuans.find(x => x.id === currentPertemuanId); if(!p) return;
+            document.getElementById('modalPertemuanTitle').innerText = "✏️ Ubah Status & Detail";
+            document.getElementById('pertId').value = p.id; document.getElementById('pertTanggal').value = p.tanggal;
+            document.getElementById('pertTopik').value = p.topik || ""; document.getElementById('pertLokasi').value = p.lokasi || "";
+            document.getElementById('pertStatus').value = p.status || "Scheduled"; document.getElementById('pertAlasan').value = p.alasan || "";
+            window.updateStatusDropdown(); 
+            document.getElementById('modalPertemuan').classList.remove('hidden');
+        };
+        window.closeModalPertemuan = function() { document.getElementById('modalPertemuan').classList.add('hidden'); };
+
+        window.savePertemuan = function(e) {
+            e.preventDefault();
+            let id = document.getElementById('pertId').value; let gId = document.getElementById('absensiGrup').value;
+            let st = document.getElementById('pertStatus').value; let tgl = document.getElementById('pertTanggal').value;
+            
+            if(st === 'Terlaksana' && isDateInFuture(tgl)) {
+                window.showMessage("Jadwal di masa depan tidak bisa ditandai sebagai 'Terlaksana'.", "Perhatian", "fa-triangle-exclamation", "text-amber-500"); return;
+            }
+
+            let data = { grupId: gId, tanggal: tgl, topik: document.getElementById('pertTopik').value.trim(), lokasi: document.getElementById('pertLokasi').value.trim(), status: st, alasan: document.getElementById('pertAlasan').value.trim() };
+
+            if(id) {
+                let idx = komselData.pertemuans.findIndex(x => x.id === id);
+                if(idx >= 0) {
+                    let ex = komselData.pertemuans[idx];
+                    if(st === 'Terlaksana' && (!ex.absensi || Object.keys(ex.absensi).length === 0)) {
+                        let ba = {}; komselData.anggotas.filter(a => a.grupId === gId).forEach(a => { ba[a.jemaatId] = { present: true, note: '' }; }); ex.absensi = ba;
+                    }
+                    if(st !== 'Terlaksana') ex.absensi = {}; // Reset jika status berubah
+                    komselData.pertemuans[idx] = { ...ex, ...data };
+                }
+            } else {
+                let ad = {}; if(st === 'Terlaksana') { komselData.anggotas.filter(a => a.grupId === gId).forEach(a => { ad[a.jemaatId] = { present: true, note: '' }; }); }
+                let newId = generateId(); komselData.pertemuans.push({ id: newId, ...data, absensi: ad }); id = newId;
+            }
+
+            saveData(); window.closeModalPertemuan(); loadPertemuanList(true); 
+            if (id) bukaAbsensi(id);
+        };
+
+        window.bukaAbsensi = function(id) {
+            currentPertemuanId = id;
+            
+            // Pembaruan UI Sidebar Kiri yang efisien tanpa kedip/loop
+            document.querySelectorAll('.pert-card').forEach(el => {
+                el.classList.remove('bg-indigo-50', 'border-l-indigo-500');
+                el.classList.add('hover:bg-slate-50', 'border-l-transparent');
+            });
+            let activeCard = document.getElementById(`card_pert_${id}`);
+            if(activeCard) {
+                activeCard.classList.remove('hover:bg-slate-50', 'border-l-transparent');
+                activeCard.classList.add('bg-indigo-50', 'border-l-indigo-500');
+            }
+
+            let p = komselData.pertemuans.find(x => x.id === id);
+            if(!p) { document.getElementById('panelAbsensiDetail').style.display = 'none'; return; }
+            
+            document.getElementById('panelAbsensiDetail').style.display = 'flex';
+            let d = parseRobustDate(p.tanggal); document.getElementById('absDetailTitle').innerText = d ? `${d.d}/${d.m}/${d.y}` : p.tanggal;
+            document.getElementById('absDetailSub').innerText = `${p.topik||'-'} | ${p.lokasi||'-'}`;
+            
+            let st = p.status || 'Scheduled'; let bEl = document.getElementById('panelAbsensiBody'); let wS = document.getElementById('wrapperBtnSimpanAbsensi'); let rE = document.getElementById('absDetailRate');
+            const isPst = !isDateInFuture(p.tanggal);
+
+            if(st === 'Scheduled') {
+                let cBtn = isPst ? `<button onclick="konfirmasiTerlaksana('${p.id}')" class="mt-4 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded-lg font-medium transition shadow-sm"><i class="fa-solid fa-check-double mr-1"></i> Mulai Proses Absensi (Tandai Selesai)</button>` : '';
+                bEl.innerHTML = `
+                    <div class="p-8 text-center flex flex-col items-center justify-center h-full">
+                        <div class="text-5xl text-sky-400 mb-4"><i class="fa-solid fa-calendar-day"></i></div>
+                        <div class="font-bold text-slate-800 text-sm mb-1">Pertemuan Masih Terjadwal</div>
+                        <div class="text-xs text-slate-500 max-w-sm mx-auto mb-2">Absensi baru bisa diisi setelah status diubah menjadi Terlaksana.</div>
+                        ${isPst ? `<div class="mt-2 p-3 bg-amber-50 text-amber-700 text-xs border border-amber-200 rounded-lg w-full max-w-sm"><i class="fa-solid fa-bell mr-1"></i> Tanggal sudah terlewat. Silakan konfirmasi pelaksanaannya.</div>` : ''}
+                        ${cBtn}
+                    </div>`;
+                wS.classList.add('hidden'); rE.innerText = '📅 Terjadwal'; rE.className = 'text-[10px] px-2.5 py-1 rounded font-bold border border-sky-200 bg-sky-100 text-sky-700'; return;
+            }
+
+            if (st === 'Batal' || st === 'Dipindahkan') {
+                let clr = st === 'Batal' ? 'text-rose-500' : 'text-amber-500'; let bg = st === 'Batal' ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'; let lbl = st === 'Batal' ? '❌ Batal' : '🔄 Reschedule';
+                bEl.innerHTML = `
+                    <div class="p-8 text-center flex flex-col items-center justify-center h-full">
+                        <div class="text-5xl ${clr} mb-4"><i class="fa-solid ${st==='Batal'?'fa-calendar-xmark':'fa-calendar-plus'}"></i></div>
+                        <div class="font-bold text-slate-800 text-sm mb-3">${lbl}</div>
+                        <div class="text-xs text-slate-700 w-full max-w-sm ${bg} p-4 rounded-lg border text-left"><span class="font-bold block mb-1">Alasan / Keterangan:</span>${p.alasan || '-'}</div>
+                    </div>`;
+                wS.classList.add('hidden'); rE.innerText = lbl; rE.className = `text-[10px] px-2.5 py-1 rounded font-bold border ${st==='Batal'?'border-rose-200 bg-rose-100 text-rose-700':'border-amber-200 bg-amber-100 text-amber-700'}`; return;
+            }
+
+            if(!p.absensi) p.absensi = {};
+            let isModified = false;
+            komselData.anggotas.filter(a => a.grupId === p.grupId).forEach(a => {
+                if(!p.absensi[a.jemaatId]) { p.absensi[a.jemaatId] = { present: false, note: 'Anggota disinkronisasi' }; isModified = true; }
+            });
+            
+            if(isModified) {
+                saveData(); 
+                loadPertemuanList(false); // Reload secara halus background list
+            }
+
+            wS.classList.remove('hidden'); rE.className = `text-[10px] px-2.5 py-1 rounded font-bold border border-emerald-200 bg-emerald-100 text-emerald-700`;
+
+            let l = Object.keys(p.absensi).map(jId => {
+                let j = dbJemaatMaster.find(x => x.id === jId);
+                return { jId: jId, name: j ? j.nama_lengkap : 'Terhapus', nij: j ? j.nij : '-', p: p.absensi[jId].present, n: p.absensi[jId].note||'' };
+            }).sort((a,b) => a.name.localeCompare(b.name));
+
+            if(l.length === 0) { bEl.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs">Belum ada anggota terdaftar.</div>`; }
+            else {
+                bEl.innerHTML = `
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-white text-slate-500 uppercase sticky top-0 shadow-sm z-10 border-b border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3 text-center w-12" title="Tandai Kehadiran"><i class="fa-solid fa-check-double text-emerald-600"></i></th>
+                                <th class="py-3 px-2">Nama Anggota</th>
+                                <th class="py-3 px-3 w-5/12">Catatan Absen</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${l.map(i => `
+                                <tr class="hover:bg-slate-50 transition border-b border-slate-50 ${!i.p ? 'bg-rose-50/30' : ''}">
+                                    <td class="py-3 px-3 text-center">
+                                        <input type="checkbox" id="chk_abs_${i.jId}" ${i.p ? 'checked' : ''} onchange="hitungRateAbsensi()" class="w-4 h-4 text-emerald-600 rounded cursor-pointer accent-emerald-500 border-slate-300">
+                                    </td>
+                                    <td class="py-3 px-2">
+                                        <label for="chk_abs_${i.jId}" class="block cursor-pointer">
+                                            <div class="font-semibold text-slate-800 text-[11px]">${i.name}</div>
+                                            <div class="text-[9px] text-slate-400 font-mono">${i.nij}</div>
+                                        </label>
+                                    </td>
+                                    <td class="py-3 px-3">
+                                        <input type="text" id="note_abs_${i.jId}" value="${i.n}" class="w-full px-2 py-1.5 border border-slate-200 rounded text-[10px] focus:outline-none focus:border-indigo-500 ${!i.p ? 'bg-white border-rose-200 focus:border-rose-500' : ''}" placeholder="${!i.p ? 'Alasan absen...' : 'Keterangan...'}">
+                                    </td>
+                                </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            }
+            hitungRateAbsensi();
+        };
+
+        window.konfirmasiTerlaksana = function(id) {
+            let p = komselData.pertemuans.find(x => x.id === id); if(!p) return;
+            p.status = 'Terlaksana'; let a = {};
+            komselData.anggotas.filter(x => x.grupId === p.grupId).forEach(x => { a[x.jemaatId] = { present: true, note: '' }; });
+            p.absensi = a; 
+            saveData(); 
+            loadPertemuanList(true); // Memastikan label status langsung ikut update 
+        };
+
+        window.hitungRateAbsensi = function() {
+            let p = komselData.pertemuans.find(x => x.id === currentPertemuanId); if(!p || p.status !== 'Terlaksana') return;
+            let t = 0, h = 0;
+            for(let jId in p.absensi) { t++; let c = document.getElementById(`chk_abs_${jId}`); if(c && c.checked) h++; }
+            let r = t > 0 ? Math.round((h/t)*100) : 0;
+            document.getElementById('absDetailRate').innerText = `${r}% Hadir (${h}/${t})`;
+        };
+
+        window.simpanAbsensi = function() {
+            let p = komselData.pertemuans.find(x => x.id === currentPertemuanId); if(!p || p.status !== 'Terlaksana') return;
+            for(let jId in p.absensi) {
+                let c = document.getElementById(`chk_abs_${jId}`); let n = document.getElementById(`note_abs_${jId}`);
+                if(c) p.absensi[jId].present = c.checked; if(n) p.absensi[jId].note = n.value.trim();
+            }
+            saveData(); 
+            loadPertemuanList(true); 
+            window.showMessage("Data kehadiran berhasil disimpan.", "Tersimpan", "fa-floppy-disk", "text-emerald-500");
+        };
+
+        function renderDashboard() {
+            document.getElementById('statTotalGrup').innerText = komselData.grups.length;
+            let tAng = komselData.anggotas.length; document.getElementById('statTotalAnggota').innerText = tAng;
+            let pJmt = dbJemaatMaster.length > 0 ? Math.round((tAng / dbJemaatMaster.length) * 100) : 0;
+            document.getElementById('statRasioJemaat').innerText = `${pJmt}% dari Total Jemaat`;
+
+            const d = new Date(); const cY = d.getFullYear(); const cM = d.getMonth();
+            let cPerts = komselData.pertemuans.filter(p => {
+                if(p.status !== 'Terlaksana') return false; let dt = parseRobustDate(p.tanggal); return dt && dt.y === cY && dt.m - 1 === cM;
+            });
+            let gh = 0, gt = 0; cPerts.forEach(p => { if(p.absensi) { for(let k in p.absensi) { gt++; if(p.absensi[k].present) gh++; } } });
+            document.getElementById('statKehadiran').innerText = `${gt > 0 ? Math.round((gh/gt)*100) : 0}%`;
+
+            let sCnt = 0;
+            let kHtml = komselData.grups.map(g => {
+                let hist = komselData.pertemuans.filter(p => p.grupId === g.id && p.status === 'Terlaksana').sort((a,b) => new Date(b.tanggal) - new Date(a.tanggal)).slice(0, 4);
+                let rh = 0, rt = 0; hist.forEach(p => { if(p.absensi) { for(let k in p.absensi) { rt++; if(p.absensi[k].present) rh++; } } });
+                let rate = rt > 0 ? Math.round((rh/rt)*100) : 0; let cnt = getGrupMemberCount(g.id); let mx = g.maxAnggota || 15;
+                let st = "Sehat & Aktif"; let col = "bg-emerald-100 text-emerald-700";
+
+                if (cnt > mx) { st = "Overload"; col = "bg-rose-100 text-rose-700 font-bold"; }
+                else if (cnt > 0 && cnt <= 3 && rt > 0 && rate < 40) { st = "Kritis (Lebur)"; col = "bg-rose-100 text-rose-700 font-bold"; }
+                else if(rt > 0) { if(rate >= 70) { sCnt++; } else if(rate >= 40) { st = "Perhatian"; col = "bg-amber-100 text-amber-700"; } else { st = "Stagnan"; col = "bg-rose-100 text-rose-700"; } }
+                else if (cnt > 0 && rt === 0) { st = "Belum Berjalan"; col = "bg-slate-100 text-slate-600"; }
+
+                return `
+                    <tr class="border-b border-slate-50">
+                        <td class="py-2.5 px-4 font-medium text-slate-700 text-[11px]">${g.name}</td>
+                        <td class="py-2.5 px-4 text-center"><span class="px-2 py-0.5 rounded text-[9px] font-bold ${cnt>mx?'bg-rose-50 text-rose-600':'text-slate-600 bg-slate-100'}">${cnt}/${mx}</span></td>
+                        <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded text-[9px] font-medium ${col}">${st}</span></td>
+                    </tr>`;
+            }).join('');
+            
+            document.getElementById('statGrupSehat').innerText = sCnt;
+            document.getElementById('dashTableKesehatan').innerHTML = kHtml || `<tr><td colspan="3" class="py-4 text-center text-slate-400 text-xs">Belum ada grup.</td></tr>`;
+
+            let pria = 0, wan = 0;
+            komselData.anggotas.forEach(a => { let j = dbJemaatMaster.find(x => x.id === a.jemaatId); if(j) { j.jenis_kelamin === 'L' ? pria++ : wan++; } });
+            let tG = pria + wan; let pP = tG ? Math.round((pria/tG)*100) : 0; let pW = tG ? Math.round((wan/tG)*100) : 0;
+            
+            document.getElementById('dashDemografiGender').innerHTML = `
+                <div><div class="flex justify-between text-xs mb-1.5 font-medium"><span class="text-blue-600">Laki-Laki</span><span>${pria} Jiwa (${pP}%)</span></div><div class="w-full bg-slate-100 rounded-full h-2.5"><div class="bg-blue-500 h-2.5 rounded-full" style="width: ${pP}%"></div></div></div>
+                <div><div class="flex justify-between text-xs mb-1.5 font-medium"><span class="text-pink-600">Perempuan</span><span>${wan} Jiwa (${pW}%)</span></div><div class="w-full bg-slate-100 rounded-full h-2.5"><div class="bg-pink-500 h-2.5 rounded-full" style="width: ${pW}%"></div></div></div>
+            `;
+        }
+
+        window.exportLaporanPDF = function() {
+            if(komselData.grups.length === 0) { window.showMessage("Belum ada data untuk diekspor.", "Peringatan", "fa-file-pdf", "text-amber-500"); return; }
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            
+            doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Laporan Analitik Komunitas Sel", 14, 20);
+            doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(`Tercetak: ${new Date().toLocaleString('id-ID')}`, 14, 28);
+            
+            let arr = komselData.grups.map((g, i) => {
+                let cnt = getGrupMemberCount(g.id); let mx = g.maxAnggota || 15;
+                let hst = komselData.pertemuans.filter(p => p.grupId === g.id && p.status === 'Terlaksana').slice(0, 4);
+                let gh = 0, gt = 0; hst.forEach(p => { if(p.absensi) { for(let k in p.absensi) { gt++; if(p.absensi[k].present) gh++; } } });
+                let gRt = gt > 0 ? Math.round((gh/gt)*100)+'%' : 'N/A';
+                let st = "Sehat"; if (cnt > mx) st = "Overload"; else if (cnt > 0 && gt > 0 && Math.round((gh/gt)*100) < 40) st = "Stagnan";
+                return [i+1, g.name, g.kategori||'Umum', getJemaatName(g.leaderId), `${cnt}/${mx}`, gRt, st];
+            });
+
+            doc.autoTable({ startY: 35, head: [['No', 'Nama Grup', 'Kategori', 'Ketua', 'Kapasitas', 'Kehadiran', 'Kondisi']], body: arr, theme: 'grid', headStyles: { fillColor: [79, 70, 229] }, styles: { fontSize: 8, cellPadding: 3 } });
+            doc.save(`Laporan_Komsel_${new Date().toISOString().split('T')[0]}.pdf`);
+        };
+    </script>
+</body>
+</html>
