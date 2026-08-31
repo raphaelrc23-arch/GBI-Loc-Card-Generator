@@ -265,7 +265,9 @@ html[data-theme="light"] .icon-moon{display:none}
     collection,
     doc,
     getDoc,
-    getDocs
+    getDocs,
+    query,
+    where
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -309,9 +311,22 @@ html[data-theme="light"] .icon-moon{display:none}
     userNameDisplay.textContent = "Hi, " + loggedUser;
 
     try {
-      const userSnap = await getDoc(doc(usersCol, loggedUser));
-      if (!userSnap.exists()) { forceLogout(); return; }
-      const userData = userSnap.data();
+      // Coba cari langsung lewat ID dokumen (= username, sesuai alur register normal).
+      let userSnap = await getDoc(doc(usersCol, loggedUser));
+      let userData = null;
+
+      if (userSnap.exists()) {
+        userData = userSnap.data();
+      } else {
+        // Fallback: dokumen mungkin dibuat manual dengan ID lain, cari lewat field "username".
+        const q = query(usersCol, where("username", "==", loggedUser));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          userData = snap.docs[0].data();
+        }
+      }
+
+      if (!userData) { forceLogout(); return; }
 
       // Kalau admin baru saja memblokir akun ini, langsung tendang keluar.
       if (userData.blocked === true) {
