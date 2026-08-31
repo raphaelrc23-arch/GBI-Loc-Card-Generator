@@ -270,14 +270,23 @@
                     const querySnapshot = await getDocs(q);
 
                     if (!querySnapshot.empty) {
-                        msg.className = 'message success';
-                        msg.innerText = 'Login berhasil! Mengalihkan...';
-
                         // Ambil data user dari dokumen Firestore
                         let userData = {};
                         querySnapshot.forEach((doc) => {
                             userData = doc.data();
                         });
+
+                        // Cek apakah akun diblokir oleh admin
+                        if (userData.blocked === true) {
+                            msg.className = 'message error';
+                            msg.innerText = 'Akun Anda diblokir. Hubungi administrator.';
+                            btn.innerText = "Masuk";
+                            btn.disabled = false;
+                            return;
+                        }
+
+                        msg.className = 'message success';
+                        msg.innerText = 'Login berhasil! Mengalihkan...';
 
                         // Simpan username dan ROLE ke sessionStorage
                         sessionStorage.setItem('loggedUser', userData.username);
