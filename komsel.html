@@ -530,7 +530,57 @@
             ];
         }
 
+        // Nama-nama koleksi Firestore yang mungkin dipakai oleh modul Database Jemaat.
+        // Dicoba satu-satu sampai ketemu yang benar-benar berisi data.
+        // Kalau modul dbJemaat.html kamu pakai nama lain, tambahkan di sini.
+        const JEMAAT_COLLECTION_CANDIDATES = ['jemaat', 'dbJemaat', 'dataJemaat', 'jemaatMaster', 'anggotaJemaat', 'members', 'congregation'];
+
+        // Struktur asli database Jemaat (sesuai dbJemaat.html): data disimpan "chunked"
+        // di gerejaData/main/jemaatChunks/chunk_N, masing-masing chunk berisi { records: [...], index: N }
+        async function loadJemaatFromChunks() {
+            const colRef = window.firestoreCollection(window.db, 'gerejaData', 'main', 'jemaatChunks');
+            const snap = await window.firestoreGetDocs(colRef);
+            const chunkDocs = snap.docs.map((d) => {
+                const data = d.data() || {};
+                const idx = typeof data.index === 'number' ? data.index : parseInt(d.id.replace('chunk_', ''), 10) || 0;
+                return { index: idx, records: Array.isArray(data.records) ? data.records : [] };
+            }).sort((a, b) => a.index - b.index);
+            let result = [];
+            chunkDocs.forEach((c) => { result = result.concat(c.records); });
+            return result;
+        }
+
+        async function findJemaatCollection() {
+            // 1) Coba struktur asli (chunked) dulu — ini yang dipakai dbJemaat.html
+            try {
+                const records = await loadJemaatFromChunks();
+                if (records.length > 0) {
+                    console.info(`Database Jemaat ditemukan lewat gerejaData/main/jemaatChunks (${records.length} data).`);
+                    return records;
+                }
+            } catch (e) {
+                console.warn('Gagal baca gerejaData/main/jemaatChunks:', e.message);
+            }
+
+            // 2) Fallback: coba beberapa nama collection top-level umum
+            for (const name of JEMAAT_COLLECTION_CANDIDATES) {
+                try {
+                    const col = window.firestoreCollection(window.db, name);
+                    const snap = await window.firestoreGetDocs(col);
+                    if (!snap.empty) {
+                        console.info(`Database Jemaat ditemukan di collection "${name}" (${snap.size} dokumen).`);
+                        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    }
+                } catch (e) {
+                    // Lanjut coba nama collection berikutnya
+                    console.warn(`Gagal cek collection "${name}":`, e.message);
+                }
+            }
+            return null; // Tidak ada collection yang cocok / berisi data
+        }
+
         async function loadDataAndInit() {
+            let usingMockData = false;
             try {
                 // Tambahkan timeout agar tidak loading selamanya jika Firebase bermasalah
                 await new Promise((resolve, reject) => {
@@ -540,30 +590,41 @@
                     }, 50); 
                 });
 
-                if (window.initialAuthToken) {
-                    await window.signInWithCustomToken(window.auth, window.initialAuthToken);
-                } else {
-                    await window.signInAnonymously(window.auth);
-                }
-                
-                if (!window.auth.currentUser) throw new Error("Gagal otentikasi Firebase");
-
-                // Menggunakan path /artifacts/ public data sesuai standar platform
-                const jemaatCol = window.firestoreCollection(window.db, 'artifacts', window.appId, 'public', 'data', 'jemaatMaster');
-                const snapJemaat = await window.firestoreGetDocs(jemaatCol);
-                if (snapJemaat.empty) {
-                    dbJemaatMaster = generateMockJemaat(); // Dummy data untuk testing jika kosong
-                } else {
-                    dbJemaatMaster = snapJemaat.docs.map(d => d.data());
+                // Catatan: sistem ini (login, homepage, user matrix) tidak memakai Firebase
+                // Authentication sama sekali — akses Firestore langsung tanpa login.
+                // Jadi modul Komsel juga tidak wajib signInAnonymously; kalau berhasil ya
+                // dipakai, kalau gagal/di-restrict, tetap lanjut baca Firestore seperti biasa.
+                try {
+                    if (window.initialAuthToken) {
+                        await window.signInWithCustomToken(window.auth, window.initialAuthToken);
+                    } else {
+                        await window.signInAnonymously(window.auth);
+                    }
+                } catch (authErr) {
+                    console.warn("Anonymous auth tidak tersedia, lanjut tanpa login (sesuai pola modul lain):", authErr.message);
                 }
 
-                const komselRef = window.firestoreDoc(window.db, 'artifacts', window.appId, 'public', 'data', 'komselData', 'master');
+                // Cari data jemaat dari collection Firestore yang benar-benar ada isinya
+                const jemaatData = await findJemaatCollection();
+                if (jemaatData && jemaatData.length > 0) {
+                    dbJemaatMaster = jemaatData;
+                } else {
+                    dbJemaatMaster = generateMockJemaat(); // Dummy data kalau memang belum ada data jemaat
+                    usingMockData = true;
+                }
+
+                // Data komsel disimpan di collection top-level "komsel", dokumen "master"
+                const komselRef = window.firestoreDoc(window.db, 'komsel', 'master');
                 const snapKomsel = await window.firestoreGetDoc(komselRef);
                 if (snapKomsel.exists()) {
                     let d = snapKomsel.data();
                     komselData.grups = Array.isArray(d.grups) ? d.grups : [];
                     komselData.anggotas = Array.isArray(d.anggotas) ? d.anggotas : [];
                     komselData.pertemuans = Array.isArray(d.pertemuans) ? d.pertemuans : [];
+                }
+
+                if (usingMockData) {
+                    window.showMessage("Belum ditemukan data di Database Jemaat (collection kosong/nama berbeda). Menampilkan data contoh sementara.", "Data Jemaat Belum Ditemukan", "fa-circle-info", "text-amber-500");
                 }
             } catch (error) {
                 console.warn("Sinkronisasi database Cloud gagal:", error);
@@ -581,13 +642,8 @@
         window.onload = loadDataAndInit;
 
         async function saveData() {
-            if(!window.auth || !window.auth.currentUser) {
-                // Di mode offline, kita hanya update UI saja
-                if(currentTab === 'dashboard') renderDashboard();
-                return;
-            }
             try {
-                const komselRef = window.firestoreDoc(window.db, 'artifacts', window.appId, 'public', 'data', 'komselData', 'master');
+                const komselRef = window.firestoreDoc(window.db, 'komsel', 'master');
                 await window.firestoreSetDoc(komselRef, {
                     grups: komselData.grups,
                     anggotas: komselData.anggotas,
