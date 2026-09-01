@@ -180,6 +180,24 @@ html[data-theme="light"] .icon-moon{display:none}
       <a href="dbJemaat.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
     </article>
 
+    <!-- MODUL 1B: KOMSEL / CELL GROUP MANAGEMENT (disembunyikan default sampai role terverifikasi) -->
+    <article class="card" id="cardKomsel" style="--d:.22s;display:none">
+      <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
+      <div class="icon-frame">
+        <svg viewBox="0 0 72 72" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path class="cross" d="M36 6v8M32 10h8"/>
+          <circle cx="26" cy="28" r="8"/>
+          <circle cx="46" cy="28" r="8"/>
+          <path d="M14 54c0-8 6-13 12-13s12 5 12 13"/>
+          <path d="M34 54c0-8 6-13 12-13s12 5 12 13"/>
+          <ellipse class="orbit" cx="36" cy="40" rx="30" ry="16"/>
+        </svg>
+      </div>
+      <h2 class="card-title" data-i18n="mod1b">Cell Group Management</h2>
+      <p class="card-desc" data-i18n="mod1bDesc">Modul pengelolaan komsel (sel grup): daftar grup, keanggotaan, absensi pertemuan, dan analisis kesehatan komsel terintegrasi dengan Database Jemaat.</p>
+      <a href="komsel.html" class="btn"><span data-i18n="access">Akses Modul</span> <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </article>
+
     <!-- MODUL 2: ID CARD (disembunyikan default sampai role terverifikasi) -->
     <article class="card" id="cardIdCard" style="--d:.3s;display:none">
       <i class="c c1"></i><i class="c c2"></i><i class="c c3"></i><i class="c c4"></i>
@@ -291,6 +309,7 @@ html[data-theme="light"] .icon-moon{display:none}
   // id menu di sini HARUS sama persis dengan id menu di UserMatrix (usermatrix.html)
   const MENU_CARDS = {
     jemaat: document.getElementById('cardJemaat'),
+    komsel: document.getElementById('cardKomsel'),
     idcard: document.getElementById('cardIdCard'),
     keuangan: document.getElementById('cardFinance'),
     acara: document.getElementById('cardAcaraGereja'),
@@ -381,6 +400,7 @@ const I18N = {
     welcome:"Selamat datang di Portal Sistem Informasi GBI LOC. Silakan pilih modul akses yang Anda butuhkan untuk mengelola data jemaat.",
     adminTitle:"KHUSUS ADMINISTRASI",adminNote:"Portal ini hanya untuk keperluan administrasi GBI Light of the City.",
     mod1:"Database Jemaat",mod1Desc:"Modul pengelolaan data lengkap jemaat GBI LOC. Tambah, edit, cari, dan kelola informasi demografis dengan sistem yang terintegrasi.",
+    mod1b:"Cell Group Management",mod1bDesc:"Modul pengelolaan komsel (sel grup): daftar grup, keanggotaan, absensi pertemuan, dan analisis kesehatan komsel terintegrasi dengan Database Jemaat.",
     mod2:"ID Card Generator",mod2Desc:"Modul pembuatan kartu identitas digital dan fisik untuk jemaat dan pelayan. Dilengkapi fitur generate QR code dan template khusus.",
     mod4:"Laporan Keuangan",mod4Desc:"Modul pengelolaan laporan keuangan gereja. Kelola transparansi dan rekapitulasi dana dengan aman.",
     mod5:"Acara Gereja",mod5Desc:"Modul pemantauan acara gereja dan rekapitulasi jumlah kehadiran ibadah.",
@@ -390,6 +410,7 @@ const I18N = {
     welcome:"Welcome to the GBI LOC Information System Portal. Please choose the access module you need to manage congregation data.",
     adminTitle:"ADMINISTRATION ONLY",adminNote:"This portal is provided solely for the administrative purposes of GBI Light of the City.",
     mod1:"Congregation Database",mod1Desc:"A complete congregation data management module for GBI LOC. Add, edit, search, and manage demographic information within an integrated system.",
+    mod1b:"Cell Group Management",mod1bDesc:"Cell group (Komsel) management module: group listing, membership, meeting attendance, and cell group health analytics integrated with the Congregation Database.",
     mod2:"ID Card Generator",mod2Desc:"A module for creating digital and physical ID cards for congregation members and servants. Equipped with QR code generation and exclusive templates.",
     mod4:"Financial Reports",mod4Desc:"Church financial report management module. Securely manage transparency and fund recapitulation.",
     mod5:"Church Events",mod5Desc:"Church events monitoring and worship attendance recapitulation module.",
