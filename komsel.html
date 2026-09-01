@@ -75,6 +75,9 @@
             <button onclick="switchTab('absensi')" id="tab-absensi" class="pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2">
                 <i class="fa-solid fa-calendar-check"></i><span>Catat Pertemuan & Absensi</span>
             </button>
+            <button onclick="switchTab('parameter')" id="tab-parameter" class="pb-3 text-sm font-semibold tab-inactive transition flex items-center space-x-2">
+                <i class="fa-solid fa-sliders"></i><span>Parameter</span>
+            </button>
         </div>
 
         <!-- SECTION: DASHBOARD -->
@@ -262,7 +265,106 @@
                 </div>
             </div>
         </div>
+
+        <!-- SECTION: PARAMETER -->
+        <div id="section-parameter" class="hidden space-y-6">
+
+            <!-- AUDIT TRAIL -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm">
+                <div class="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div>
+                        <h3 class="font-bold text-sm text-slate-800"><i class="fa-solid fa-clock-rotate-left mr-2 text-indigo-500"></i>Riwayat Aktivitas Grup (Audit Trail)</h3>
+                        <p class="text-[10px] text-slate-500 mt-0.5">Mencatat setiap Buat / Ubah / Hapus grup komsel di tab Daftar Grup, lengkap dengan siapa dan kapan.</p>
+                    </div>
+                    <div class="relative w-full sm:w-56">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400"><i class="fa-solid fa-magnifying-glass text-xs"></i></span>
+                        <input type="text" id="searchAudit" oninput="renderAuditTable()" placeholder="Cari log..." class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+                <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
+                    <table class="w-full text-left text-xs whitespace-nowrap">
+                        <thead class="bg-slate-50 text-slate-500 uppercase border-b border-slate-200 sticky top-0">
+                            <tr>
+                                <th class="py-3 px-4">Waktu</th>
+                                <th class="py-3 px-4">Oleh</th>
+                                <th class="py-3 px-4">Aksi</th>
+                                <th class="py-3 px-4 whitespace-normal">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableAuditBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+                <div class="p-3 border-t border-slate-100 flex justify-end">
+                    <button onclick="konfirmasiKosongkanLog()" class="text-[10px] text-slate-400 hover:text-rose-600 transition"><i class="fa-solid fa-broom mr-1"></i>Kosongkan Log Aktivitas</button>
+                </div>
+            </div>
+
+            <!-- ATURAN & KEBIJAKAN -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-5">
+                <div>
+                    <h3 class="font-bold text-sm text-slate-800"><i class="fa-solid fa-gavel mr-2 text-indigo-500"></i>Aturan & Kebijakan Keanggotaan</h3>
+                    <p class="text-[10px] text-slate-500 mt-0.5">Atur kebijakan yang berlaku di seluruh modul Komsel.</p>
+                </div>
+
+                <div class="flex items-start justify-between gap-4 py-3 border-t border-slate-100">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-800">Ketua Komsel boleh merangkap jadi anggota di komsel lain</p>
+                        <p class="text-[10px] text-slate-500 mt-1">Default: 1 jemaat hanya boleh terdaftar sebagai anggota di 1 komsel. Kalau diaktifkan, jemaat yang menjabat Ketua di sebuah grup tetap boleh ditambahkan sebagai anggota biasa di grup lain.</p>
+                    </div>
+                    <button type="button" onclick="toggleRuleLeaderMulti()" id="toggleLeaderMulti" class="shrink-0 relative w-12 h-6 rounded-full transition bg-slate-300">
+                        <span id="toggleLeaderMultiDot" class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition"></span>
+                    </button>
+                </div>
+
+                <div class="flex items-start justify-between gap-4 py-3 border-t border-slate-100">
+                    <div>
+                        <p class="text-xs font-semibold text-slate-800">Kapasitas default anggota untuk grup baru</p>
+                        <p class="text-[10px] text-slate-500 mt-1">Nilai ini otomatis dipakai saat membuat grup komsel baru (masih bisa diubah manual per-grup).</p>
+                    </div>
+                    <div class="flex items-center space-x-2 shrink-0">
+                        <input type="number" min="1" id="paramDefaultMaxAnggota" class="w-20 px-2 py-1.5 border border-slate-200 rounded-lg text-xs text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button onclick="simpanDefaultMaxAnggota()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] px-3 py-1.5 rounded-lg font-medium transition">Simpan</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ZONA BERBAHAYA -->
+            <div class="bg-white rounded-xl border border-rose-200 shadow-sm p-5 space-y-4">
+                <div>
+                    <h3 class="font-bold text-sm text-rose-700"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Zona Berbahaya</h3>
+                    <p class="text-[10px] text-slate-500 mt-0.5">Aksi di bawah ini tidak bisa dibatalkan. Hati-hati.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-rose-50 border border-rose-100 rounded-lg p-4">
+                    <div>
+                        <p class="text-xs font-bold text-rose-800">Hapus Semua Data Komsel</p>
+                        <p class="text-[10px] text-rose-600 mt-1">Menghapus SELURUH data grup, anggota, dan riwayat pertemuan/absensi secara permanen. Data Database Jemaat (di luar modul ini) tidak terpengaruh. Log aktivitas ini tetap tersimpan sebagai bukti.</p>
+                    </div>
+                    <button onclick="bukaModalHapusSemua()" class="shrink-0 bg-rose-600 hover:bg-rose-500 text-white text-xs px-4 py-2 rounded-lg font-medium transition flex items-center justify-center space-x-1 shadow-sm w-full sm:w-auto">
+                        <i class="fa-solid fa-trash-can"></i><span>Hapus Semua Data</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </main>
+
+    <!-- MODAL HAPUS SEMUA DATA -->
+    <div id="modalHapusSemua" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-xl border border-slate-200">
+            <div class="px-6 py-4 bg-rose-50 border-b border-rose-100 flex justify-between items-center">
+                <h3 class="text-sm font-bold text-rose-700"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Konfirmasi Hapus Semua Data</h3>
+                <button type="button" onclick="tutupModalHapusSemua()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4 text-xs">
+                <p class="text-slate-600">Semua data <b>grup, anggota, dan pertemuan/absensi</b> di modul Komsel akan dihapus permanen dan tidak bisa dikembalikan.</p>
+                <p class="text-slate-600">Ketik <span class="font-mono font-bold text-rose-600">HAPUS</span> di bawah ini untuk melanjutkan:</p>
+                <input type="text" id="inputKonfirmasiHapus" oninput="cekInputKonfirmasiHapus()" placeholder="Ketik HAPUS" class="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono">
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="tutupModalHapusSemua()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition">Batal</button>
+                    <button type="button" id="btnKonfirmasiHapusSemua" onclick="eksekusiHapusSemuaData()" disabled class="px-4 py-2 bg-rose-600 text-white rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed hover:bg-rose-500">Hapus Permanen</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- MODAL GRUP -->
     <div id="modalGrup" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm hidden p-4">
@@ -490,7 +592,7 @@
 
     <script>
         let dbJemaatMaster = [];
-        let komselData = { grups: [], anggotas: [], pertemuans: [] };
+        let komselData = { grups: [], anggotas: [], pertemuans: [], auditLogs: [], settings: { allowLeaderMultiMembership: false, defaultMaxAnggota: 15 } };
         let currentTab = 'dashboard';
         let currentSelectedGrupId = null;
         let currentPertemuanId = null;
@@ -621,6 +723,12 @@
                     komselData.grups = Array.isArray(d.grups) ? d.grups : [];
                     komselData.anggotas = Array.isArray(d.anggotas) ? d.anggotas : [];
                     komselData.pertemuans = Array.isArray(d.pertemuans) ? d.pertemuans : [];
+                    komselData.auditLogs = Array.isArray(d.auditLogs) ? d.auditLogs : [];
+                    komselData.settings = {
+                        allowLeaderMultiMembership: false,
+                        defaultMaxAnggota: 15,
+                        ...(d.settings && typeof d.settings === 'object' ? d.settings : {})
+                    };
                 }
 
                 if (usingMockData) {
@@ -648,6 +756,8 @@
                     grups: komselData.grups,
                     anggotas: komselData.anggotas,
                     pertemuans: komselData.pertemuans,
+                    auditLogs: komselData.auditLogs,
+                    settings: komselData.settings,
                     lastUpdated: new Date().toISOString()
                 }, { merge: true });
             } catch (e) {
@@ -655,8 +765,112 @@
                 window.showMessage("Penyimpanan ke cloud gagal. Perubahan sementara disimpan di browser.", "Peringatan", "fa-triangle-exclamation", "text-amber-500");
             } finally {
                 if(currentTab === 'dashboard') renderDashboard();
+                if(currentTab === 'parameter') renderParameterTab();
             }
         }
+
+        // ============== AUDIT TRAIL ==============
+        const MAX_AUDIT_LOGS = 300; // Batasi jumlah log tersimpan agar dokumen Firestore tidak membengkak
+        function getCurrentActorName() {
+            try {
+                const u = sessionStorage.getItem('loggedUser');
+                return u ? u : 'Sistem';
+            } catch(e) { return 'Sistem'; }
+        }
+        function logAudit(aksi, detail) {
+            komselData.auditLogs.unshift({
+                id: generateId(),
+                waktu: new Date().toISOString(),
+                actor: getCurrentActorName(),
+                aksi: aksi,
+                detail: detail
+            });
+            if (komselData.auditLogs.length > MAX_AUDIT_LOGS) {
+                komselData.auditLogs = komselData.auditLogs.slice(0, MAX_AUDIT_LOGS);
+            }
+        }
+        function formatWaktuAudit(iso) {
+            try {
+                const d = new Date(iso);
+                return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch(e) { return iso; }
+        }
+
+        // ============== TAB PARAMETER ==============
+        function renderParameterTab() {
+            renderAuditTable();
+            let dot = document.getElementById('toggleLeaderMultiDot');
+            let track = document.getElementById('toggleLeaderMulti');
+            let on = !!(komselData.settings && komselData.settings.allowLeaderMultiMembership);
+            track.className = `shrink-0 relative w-12 h-6 rounded-full transition ${on ? 'bg-indigo-600' : 'bg-slate-300'}`;
+            dot.className = `absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition ${on ? 'left-6' : 'left-0.5'}`;
+            document.getElementById('paramDefaultMaxAnggota').value = komselData.settings.defaultMaxAnggota || 15;
+        }
+
+        window.renderAuditTable = function() {
+            let tbody = document.getElementById('tableAuditBody');
+            let kw = document.getElementById('searchAudit').value.toLowerCase();
+            let list = (komselData.auditLogs || []).filter(l =>
+                l.aksi.toLowerCase().includes(kw) || l.detail.toLowerCase().includes(kw) || l.actor.toLowerCase().includes(kw));
+
+            if (list.length === 0) { tbody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-400">Belum ada aktivitas tercatat.</td></tr>`; return; }
+
+            const aksiColor = { 'Membuat Grup Baru': 'bg-emerald-100 text-emerald-700', 'Mengubah Grup': 'bg-amber-100 text-amber-700', 'Menghapus Grup': 'bg-rose-100 text-rose-700' };
+
+            tbody.innerHTML = list.map(l => `
+                <tr class="hover:bg-slate-50 transition">
+                    <td class="py-2.5 px-4 text-slate-500 text-[10px]">${formatWaktuAudit(l.waktu)}</td>
+                    <td class="py-2.5 px-4 font-medium text-slate-700">${l.actor}</td>
+                    <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded text-[9px] font-bold ${aksiColor[l.aksi] || 'bg-slate-100 text-slate-600'}">${l.aksi}</span></td>
+                    <td class="py-2.5 px-4 text-slate-600 whitespace-normal">${l.detail}</td>
+                </tr>`).join('');
+        };
+
+        window.konfirmasiKosongkanLog = function() {
+            window.showConfirm("Yakin ingin mengosongkan seluruh log aktivitas? Riwayat yang sudah dihapus tidak bisa dikembalikan.", () => {
+                komselData.auditLogs = [];
+                saveData(); renderAuditTable();
+                window.showMessage("Log aktivitas berhasil dikosongkan.", "Berhasil", "fa-check", "text-emerald-500");
+            });
+        };
+
+        window.toggleRuleLeaderMulti = function() {
+            let newVal = !komselData.settings.allowLeaderMultiMembership;
+            komselData.settings.allowLeaderMultiMembership = newVal;
+            logAudit('Ubah Pengaturan', `Aturan "Ketua Komsel boleh merangkap jadi anggota di komsel lain" diubah menjadi ${newVal ? 'AKTIF' : 'NONAKTIF'}.`);
+            saveData(); renderParameterTab(); updateAturanKeanggotaanText();
+        };
+
+        window.simpanDefaultMaxAnggota = function() {
+            let val = parseInt(document.getElementById('paramDefaultMaxAnggota').value) || 15;
+            let before = komselData.settings.defaultMaxAnggota || 15;
+            komselData.settings.defaultMaxAnggota = val;
+            if (before !== val) logAudit('Ubah Pengaturan', `Kapasitas default anggota grup baru diubah dari ${before} menjadi ${val}.`);
+            saveData();
+            window.showMessage("Pengaturan kapasitas default berhasil disimpan.", "Berhasil", "fa-check", "text-emerald-500");
+        };
+
+        // ============== HAPUS SEMUA DATA ==============
+        window.bukaModalHapusSemua = function() {
+            document.getElementById('inputKonfirmasiHapus').value = "";
+            document.getElementById('btnKonfirmasiHapusSemua').disabled = true;
+            document.getElementById('modalHapusSemua').classList.remove('hidden');
+        };
+        window.tutupModalHapusSemua = function() { document.getElementById('modalHapusSemua').classList.add('hidden'); };
+        window.cekInputKonfirmasiHapus = function() {
+            document.getElementById('btnKonfirmasiHapusSemua').disabled = document.getElementById('inputKonfirmasiHapus').value.trim() !== 'HAPUS';
+        };
+        window.eksekusiHapusSemuaData = function() {
+            if (document.getElementById('inputKonfirmasiHapus').value.trim() !== 'HAPUS') return;
+            let jmlGrup = komselData.grups.length, jmlAnggota = komselData.anggotas.length, jmlPertemuan = komselData.pertemuans.length;
+            logAudit('Hapus Semua Data', `Seluruh data komsel direset: ${jmlGrup} grup, ${jmlAnggota} anggota, dan ${jmlPertemuan} riwayat pertemuan dihapus permanen.`);
+            komselData.grups = []; komselData.anggotas = []; komselData.pertemuans = [];
+            currentSelectedGrupId = null; currentPertemuanId = null;
+            saveData();
+            window.tutupModalHapusSemua();
+            renderTableGrup(); populateDropdownGrupAbsensi(); renderDashboard(); renderParameterTab();
+            window.showMessage("Semua data komsel berhasil dihapus.", "Berhasil", "fa-check", "text-emerald-500");
+        };
 
         // Utils
         function generateId() { return Date.now().toString() + Math.random().toString(36).slice(2, 6); }
@@ -681,7 +895,7 @@
 
         window.switchTab = function(tabId) {
             currentTab = tabId;
-            ['dashboard', 'grup', 'anggota', 'absensi'].forEach(t => {
+            ['dashboard', 'grup', 'anggota', 'absensi', 'parameter'].forEach(t => {
                 document.getElementById('section-' + t).classList.toggle('hidden', t !== tabId);
                 let btn = document.getElementById('tab-' + t);
                 btn.className = t === tabId ? "pb-3 text-sm font-semibold tab-active transition flex items-center space-x-2" 
@@ -689,8 +903,9 @@
             });
             if(tabId === 'dashboard') renderDashboard();
             if(tabId === 'grup') renderTableGrup();
-            if(tabId === 'anggota') renderListPilihGrup();
+            if(tabId === 'anggota') { renderListPilihGrup(); updateAturanKeanggotaanText(); }
             if(tabId === 'absensi') loadPertemuanList(true);
+            if(tabId === 'parameter') renderParameterTab();
         };
 
         function populateLeaderOptions() {
@@ -737,7 +952,7 @@
             document.getElementById('modalGrupTitle').innerText = "Buat Grup Komsel Baru";
             document.getElementById('formGrup').reset();
             document.getElementById('grupId').value = "";
-            document.getElementById('grupMaxAnggota').value = "15";
+            document.getElementById('grupMaxAnggota').value = String(komselData.settings.defaultMaxAnggota || 15);
             document.getElementById('grupFrekuensi').value = "1 Minggu Sekali";
             document.getElementById('modalGrup').classList.remove('hidden');
         };
@@ -769,17 +984,37 @@
             };
             if(id) {
                 let idx = komselData.grups.findIndex(x => x.id === id);
-                if(idx >= 0) komselData.grups[idx] = { ...komselData.grups[idx], ...data };
-            } else { komselData.grups.push({ id: generateId(), ...data }); }
+                if(idx >= 0) {
+                    let before = komselData.grups[idx];
+                    let fieldLabels = { name: 'Nama', kategori: 'Kategori', wilayah: 'Wilayah', leaderId: 'Ketua', hari: 'Hari', waktu: 'Waktu', frekuensi: 'Frekuensi', maxAnggota: 'Maks. Anggota' };
+                    let perubahan = [];
+                    Object.keys(fieldLabels).forEach(k => {
+                        let oldVal = k === 'leaderId' ? getJemaatName(before[k]) : (before[k] ?? '-');
+                        let newVal = k === 'leaderId' ? getJemaatName(data[k]) : (data[k] ?? '-');
+                        if (String(oldVal) !== String(newVal)) perubahan.push(`${fieldLabels[k]}: "${oldVal}" → "${newVal}"`);
+                    });
+                    komselData.grups[idx] = { ...before, ...data };
+                    logAudit('Mengubah Grup', perubahan.length > 0
+                        ? `Grup "${before.name}": ${perubahan.join('; ')}`
+                        : `Grup "${before.name}" disimpan ulang tanpa perubahan data.`);
+                }
+            } else {
+                komselData.grups.push({ id: generateId(), ...data });
+                logAudit('Membuat Grup Baru', `Grup "${data.name}" dibuat (Ketua: ${getJemaatName(data.leaderId)}, Kategori: ${data.kategori||'Umum'}).`);
+            }
             saveData(); window.closeModalGrup(); renderTableGrup(); populateDropdownGrupAbsensi();
             window.showMessage("Data grup komsel berhasil disimpan.", "Berhasil", "fa-check", "text-emerald-500");
         };
 
         window.hapusGrup = function(id) {
+            let g = komselData.grups.find(x => x.id === id); if(!g) return;
             window.showConfirm("Yakin ingin menghapus grup komsel ini? Anggota dan riwayat absensi terkait akan ikut terhapus.", () => {
+                let jmlAnggota = komselData.anggotas.filter(x => x.grupId === id).length;
+                let jmlPertemuan = komselData.pertemuans.filter(x => x.grupId === id).length;
                 komselData.grups = komselData.grups.filter(x => x.id !== id);
                 komselData.anggotas = komselData.anggotas.filter(x => x.grupId !== id);
                 komselData.pertemuans = komselData.pertemuans.filter(x => x.grupId !== id);
+                logAudit('Menghapus Grup', `Grup "${g.name}" dihapus, beserta ${jmlAnggota} anggota dan ${jmlPertemuan} riwayat pertemuan.`);
                 saveData(); renderTableGrup(); populateDropdownGrupAbsensi();
             });
         };
@@ -812,6 +1047,15 @@
             renderTabelAnggotaGrup();
         };
 
+        function updateAturanKeanggotaanText() {
+            if (currentSelectedGrupId) return; // Sudah menampilkan info grup terpilih, jangan ditimpa
+            let el = document.getElementById('panelAnggotaSubtitle');
+            if (!el) return;
+            el.innerText = komselData.settings.allowLeaderMultiMembership
+                ? "Aturan: 1 jemaat hanya 1 komsel, kecuali Ketua Komsel boleh merangkap sebagai anggota di komsel lain."
+                : "Aturan: 1 jemaat hanya terdaftar di 1 komsel.";
+        }
+
         function renderTabelAnggotaGrup() {
             let tbody = document.getElementById('tableAnggotaGrupBody');
             let list = komselData.anggotas.filter(a => a.grupId === currentSelectedGrupId);
@@ -840,21 +1084,46 @@
         };
         window.closeModalTambahAnggota = function() { document.getElementById('modalTambahAnggota').classList.add('hidden'); };
 
+        function isKetuaKomselDiManapun(jemaatId) {
+            return komselData.grups.some(g => g.leaderId === jemaatId);
+        }
+
         window.renderListJemaatBaru = function() {
             let cont = document.getElementById('listJemaatBaru'); let kw = document.getElementById('searchJemaatBaru').value.toLowerCase();
-            let asgIds = new Set(komselData.anggotas.map(a => a.jemaatId));
-            let ters = dbJemaatMaster.filter(j => j.status_jemaat === 'Aktif' && !asgIds.has(j.id) && j.nama_lengkap.toLowerCase().includes(kw));
+            // Peta jemaatId -> daftar grupId tempat dia sudah terdaftar sebagai anggota
+            let jemaatGrupMap = {};
+            komselData.anggotas.forEach(a => {
+                if (!jemaatGrupMap[a.jemaatId]) jemaatGrupMap[a.jemaatId] = new Set();
+                jemaatGrupMap[a.jemaatId].add(a.grupId);
+            });
+            let allowLeaderMulti = !!(komselData.settings && komselData.settings.allowLeaderMultiMembership);
+
+            let ters = dbJemaatMaster.filter(j => {
+                if (j.status_jemaat !== 'Aktif') return false;
+                if (!j.nama_lengkap.toLowerCase().includes(kw)) return false;
+                let grupSaatIni = jemaatGrupMap[j.id];
+                if (!grupSaatIni || grupSaatIni.size === 0) return true; // belum tergabung di komsel manapun
+                if (grupSaatIni.has(currentSelectedGrupId)) return false; // sudah jadi anggota di grup ini, jangan duplikat
+                // Sudah jadi anggota di grup LAIN — hanya boleh ditambahkan lagi kalau dia
+                // Ketua Komsel (di grup manapun) DAN aturan pengecualian ketua sedang diaktifkan.
+                if (allowLeaderMulti && isKetuaKomselDiManapun(j.id)) return true;
+                return false;
+            });
 
             if(ters.length === 0) { cont.innerHTML = `<div class="p-4 text-center text-slate-400">Semua jemaat aktif sudah masuk komsel atau tidak ditemukan.</div>`; return; }
 
-            cont.innerHTML = ters.sort((a,b) => a.nama_lengkap.localeCompare(b.nama_lengkap)).map(j => `
+            cont.innerHTML = ters.sort((a,b) => a.nama_lengkap.localeCompare(b.nama_lengkap)).map(j => {
+                let sudahDiGrupLain = jemaatGrupMap[j.id] && jemaatGrupMap[j.id].size > 0;
+                let badge = sudahDiGrupLain ? `<span class="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[8px] font-bold" title="Merangkap sebagai Ketua Komsel di grup lain">KETUA GRUP LAIN</span>` : '';
+                return `
                 <div class="flex justify-between items-center p-3 bg-slate-50 hover:bg-indigo-50 rounded-lg border border-slate-100 transition">
                     <div>
-                        <div class="font-bold text-slate-800">${j.nama_lengkap}</div>
+                        <div class="font-bold text-slate-800">${j.nama_lengkap}${badge}</div>
                         <div class="text-[9px] text-slate-400 font-mono">${j.nij}</div>
                     </div>
                     <button onclick="tambahkanJemaatKeGrup('${j.id}')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-medium transition shadow-sm">Pilih</button>
-                </div>`).join('');
+                </div>`;
+            }).join('');
         };
 
         window.tambahkanJemaatKeGrup = function(jId) {
