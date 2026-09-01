@@ -1935,4 +1935,1609 @@
             if (dates.length === 0) return Swal.fire('Info', 'Tidak ada tanggal yang cocok di rentang ini.', 'info');
             genActiveTemplate = tpl;
             genPreviewList = dates.map(d => {
-                const dateStr = ymd(d), conflict = eventsData.find(ev => ev.date === dateStr && ev.eventName
+                const dateStr = ymd(d), conflict = eventsData.find(ev => ev.date === dateStr && ev.eventName === tpl.name);
+                return { date: dateStr, weekday: WEEKDAY_NAMES[d.getDay()], hasConflict: !!conflict, checked: !conflict };
+            });
+            renderGenPreview();
+            document.getElementById('gen-preview-wrapper').classList.remove('hidden'); document.getElementById('gen-save-btn').classList.remove('hidden');
+        }
+        function renderGenPreview() {
+            const tbody = document.getElementById('gen-preview-body'); tbody.innerHTML = '';
+            document.getElementById('gen-preview-count').innerText = genPreviewList.length;
+            genPreviewList.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = item.hasConflict ? 'bg-amber-50' : '';
+                tr.innerHTML = `
+                    <td class="p-2 text-center"><input type="checkbox" ${item.checked ? 'checked' : ''} onchange="genPreviewList[${idx}].checked = this.checked" class="w-4 h-4 text-indigo-600 cursor-pointer"></td>
+                    <td class="p-2 font-medium text-gray-700">${item.date}</td><td class="p-2 text-gray-600">${item.weekday}</td>
+                    <td class="p-2">${item.hasConflict ? '<span class="text-amber-700 text-xs font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Sudah ada data</span>' : '<span class="text-emerald-600 text-xs font-semibold"><i class="fa-solid fa-circle-check mr-1"></i>Baru</span>'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        function genToggleAll(state) { genPreviewList.forEach(item => item.checked = state); renderGenPreview(); }
+
+        function saveGeneratedSchedule() {
+            const selected = genPreviewList.filter(i => i.checked);
+            if (selected.length === 0) return Swal.fire('Info', 'Tidak ada tanggal yang dicentang.', 'info');
+            const doSave = () => {
+                const tpl = genActiveTemplate; let added = 0, replaced = 0;
+                selected.forEach(item => {
+                    const existingIdx = eventsData.findIndex(ev => ev.date === item.date && ev.eventName === tpl.name);
+                    const newEvent = {
+                        id: existingIdx !== -1 ? eventsData[existingIdx].id : (Date.now().toString() + Math.random().toString(36).substr(2, 5)),
+                        ibadahType: 'reguler', eventStatus: 'Terjadwal', eventName: tpl.name, location: tpl.defaultLocation || '',
+                        date: item.date, time: tpl.defaultTime || '', attendance: 0, newVisitors: 0, income: 0, expense: 0,
+                        preacher: '', sermonTheme: '', wl: '', musicians: '', otherServers: '', notes: '', templateId: tpl.id,
+                        isMultiDay: false, endDate: '', sessions: [],
+                        komisiId: tpl.komisiId || ''
+                    };
+                    upsertRawEvent(newEvent);
+                    if (existingIdx !== -1) { replaced++; } else { added++; }
+                });
+                updateUI();
+                closeGenerateModal();
+                forceSyncNow();
+                Swal.fire('Berhasil', `Jadwal dibuat: ${added} baru${replaced > 0 ? `, ${replaced} ditimpa` : ''}.`, 'success');
+            };
+            const conflictCount = selected.filter(i => i.hasConflict).length;
+            if (conflictCount > 0) {
+                Swal.fire({ title: 'Timpa Data Lama?', text: `${conflictCount} tanggal akan ditimpa. Lanjutkan?`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#4f46e5', confirmButtonText: 'Ya' })
+                .then(res => { if (res.isConfirmed) doSave(); });
+            } else doSave();
+        }
+
+        function populateTemplateDropdown() {
+            const select = document.getElementById('form-template-id'); const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Pilih Master Ibadah Reguler --</option>';
+            regularTemplates.forEach(tpl => select.appendChild(new Option(tpl.name, tpl.id)));
+            if(currentVal) select.value = currentVal;
+        }
+
+        function applyTemplateData() {
+            const tplId = document.getElementById('form-template-id').value;
+            if (!tplId) { populateScheduledDates(); return; }
+            const tpl = regularTemplates.find(t => t.id === tplId);
+            if (tpl) {
+                document.getElementById('form-event-name').value = tpl.name; document.getElementById('form-location').value = tpl.defaultLocation || ''; document.getElementById('form-time').value = tpl.defaultTime || '';
+                const komisiSelect = document.getElementById('form-komisi-id');
+                if (komisiSelect) { komisiSelect.value = tpl.komisiId || ''; renderAttendanceChecklist(); }
+            }
+            populateScheduledDates();
+        }
+        function populateScheduledDates() {
+            const group = document.getElementById('scheduled-date-group'); const select = document.getElementById('form-scheduled-date');
+            const tplId = document.getElementById('form-template-id').value; const currentFormId = document.getElementById('form-id').value;
+            if (currentFormId || !tplId) { group.classList.add('hidden'); return; }
+            const tpl = regularTemplates.find(t => t.id === tplId);
+            if (!tpl) { group.classList.add('hidden'); return; }
+            const scheduled = eventsData.filter(ev => ev.ibadahType === 'reguler' && ev.eventStatus === 'Terjadwal' && ev.eventName === tpl.name).sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (scheduled.length === 0) {
+                group.classList.add('hidden');
+                document.getElementById('form-date').readOnly = false; document.getElementById('form-date').classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                return;
+            }
+            select.innerHTML = '<option value="">-- Tanggal Baru (Belum Ada di Jadwal) --</option>';
+            scheduled.forEach(ev => select.appendChild(new Option(`${formatDate(ev.date)}${ev.time ? ' • ' + ev.time : ''}`, ev.id)));
+            select.value = scheduled[0].id; group.classList.remove('hidden'); applyScheduledDate();
+        }
+        function applyScheduledDate() {
+            const val = document.getElementById('form-scheduled-date').value;
+            if (!val) {
+                document.getElementById('form-id').value = ''; lockScheduleFields(false); document.getElementById('form-date').value = '';
+                document.getElementById('modal-title').innerText = 'Tambah Laporan Ibadah'; checkBackdateStatus(); return;
+            }
+            const ev = eventsData.find(e => e.id === val);
+            if (ev) {
+                document.getElementById('form-id').value = ev.id; document.getElementById('form-date').value = ev.date;
+                if (ev.time) document.getElementById('form-time').value = ev.time;
+                if (ev.location) document.getElementById('form-location').value = ev.location;
+                if (ev.komisiId) document.getElementById('form-komisi-id').value = ev.komisiId;
+                renderAttendanceChecklist();
+                lockScheduleFields(true);
+                document.getElementById('modal-title').innerText = 'Lengkapi Laporan Ibadah (Terjadwal)'; checkBackdateStatus();
+            }
+        }
+
+        // ========================================================================
+        // FORM IBADAH
+        // ========================================================================
+        function toggleFormType() {
+            const type = document.querySelector('input[name="form-type"]:checked').value;
+            const tplContainer = document.getElementById('template-selector-group');
+            const nameInput = document.getElementById('form-event-name');
+            const durationGroup = document.getElementById('duration-selector-group');
+            if (type === 'reguler') {
+                tplContainer.classList.remove('hidden'); 
+                nameInput.readOnly = true; nameInput.classList.add('bg-gray-100', 'text-gray-600', 'cursor-not-allowed');
+                if(durationGroup) durationGroup.classList.add('hidden');
+                document.getElementById('form-is-multiday').checked = false;
+                toggleDurationType();
+                populateTemplateDropdown();
+            } else {
+                tplContainer.classList.add('hidden'); 
+                nameInput.readOnly = false; nameInput.classList.remove('bg-gray-100', 'text-gray-600', 'cursor-not-allowed');
+                if(durationGroup) durationGroup.classList.remove('hidden');
+                if (!document.getElementById('form-id').value) { nameInput.value = ''; document.getElementById('form-location').value = ''; document.getElementById('form-time').value = ''; }
+            }
+        }
+
+        function toggleDurationType() {
+            const isMultiDay = document.getElementById('form-is-multiday').checked;
+            const endDateWrapper = document.getElementById('end-date-wrapper');
+            const singleTimeWrapper = document.getElementById('single-time-wrapper');
+            const singlePreacherWrapper = document.getElementById('single-preacher-wrapper');
+            const multiSessionsWrapper = document.getElementById('multi-day-sessions-wrapper');
+            const labelStartDate = document.getElementById('label-start-date');
+            if (isMultiDay) {
+                endDateWrapper.classList.remove('hidden');
+                document.getElementById('form-end-date').required = true;
+                singleTimeWrapper.classList.add('hidden');
+                singlePreacherWrapper.classList.add('hidden');
+                multiSessionsWrapper.classList.remove('hidden');
+                labelStartDate.innerText = 'Tanggal Mulai *';
+            } else {
+                endDateWrapper.classList.add('hidden');
+                document.getElementById('form-end-date').required = false;
+                singleTimeWrapper.classList.remove('hidden');
+                singlePreacherWrapper.classList.remove('hidden');
+                multiSessionsWrapper.classList.add('hidden');
+                labelStartDate.innerText = 'Tanggal Pelaksanaan *';
+            }
+            checkBackdateStatus();
+        }
+
+        function toggleFinanceAttendanceFields() {
+            const status = document.getElementById('form-event-status').value;
+            const lock = status === 'Terjadwal';
+            ['form-attendance', 'form-new-visitors'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) {
+                    el.disabled = lock;
+                    el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-400', lock); el.classList.toggle('cursor-not-allowed', lock);
+                    if (lock) el.placeholder = 'Isi setelah terlaksana'; else el.placeholder = '0';
+                }
+            });
+            document.getElementById('finance-lock-hint')?.classList.toggle('hidden', !lock);
+            const attModeGroup = document.getElementById('attendance-checklist-group');
+            document.querySelectorAll('input[name="attendance-mode"]').forEach(r => r.disabled = lock);
+            if (lock) { attModeGroup?.classList.add('hidden'); } else { toggleAttendanceMode(); }
+        }
+
+        function checkBackdateStatus() {
+            const dateInput = document.getElementById('form-date');
+            const statusSelect = document.getElementById('form-event-status');
+            const hint = document.getElementById('backdate-status-hint');
+            const dateVal = dateInput.value;
+            const isMultiDay = document.getElementById('form-is-multiday').checked;
+            const endDateVal = document.getElementById('form-end-date').value;
+            if (!dateVal) {
+                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.add('hidden'); return;
+            }
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            let referenceDate = new Date(dateVal + 'T00:00:00');
+            if (isMultiDay && endDateVal) {
+                const eDate = new Date(endDateVal + 'T00:00:00');
+                if (!isNaN(eDate)) referenceDate = eDate;
+            }
+            if (!isNaN(referenceDate) && referenceDate < today) {
+                statusSelect.value = 'Selesai'; statusSelect.disabled = true;
+                statusSelect.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.remove('hidden');
+            } else {
+                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.add('hidden');
+            }
+            toggleFinanceAttendanceFields();
+            updateSessionDateBounds();
+        }
+
+        function lockScheduleFields(lock) {
+            ['form-date', 'form-time', 'form-location', 'form-end-date'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.readOnly = lock; el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-500', lock); el.classList.toggle('cursor-not-allowed', lock); }
+            });
+        }
+
+        function updateSessionDateBounds() {
+            const startVal = document.getElementById('form-date').value;
+            const endVal = document.getElementById('form-end-date').value;
+            document.querySelectorAll('.session-date').forEach(inp => {
+                if (startVal) inp.min = startVal; else inp.removeAttribute('min');
+                if (endVal) inp.max = endVal; else inp.removeAttribute('max');
+            });
+        }
+
+        function addSessionField(session = {}) {
+            const container = document.getElementById('sessions-container');
+            const emptyHint = document.getElementById('sessions-empty');
+            if(emptyHint) emptyHint.style.display = 'none';
+            const div = document.createElement('div');
+            div.className = 'session-row bg-white p-3.5 rounded-lg border border-indigo-200 shadow-sm relative group transition hover:border-indigo-400';
+            const existingServersHtml = (session.servers ? session.servers.split(', ').filter(Boolean) : []).map(s => {
+                let role = ''; let name = s;
+                if (s.includes(': ')) { const parts = s.split(': '); role = parts[0]; name = parts.slice(1).join(': '); }
+                return sessionServerRowHtml(role, name);
+            }).join('');
+            div.innerHTML = `
+                <button type="button" onclick="this.closest('.session-row').remove(); if(document.querySelectorAll('.session-row').length===0) document.getElementById('sessions-empty').style.display='block';" class="absolute top-2 right-2 text-red-300 hover:text-red-600 transition p-1 cursor-pointer"><i class="fa-solid fa-circle-xmark text-lg"></i></button>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3 pr-6">
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Tgl Sesi</label>
+                        <input type="date" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-date" value="${session.date || ''}" onchange="validateSessionDate(this)">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Jam Mulai</label>
+                        <input type="time" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-start" value="${session.startTime || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Jam Selesai</label>
+                        <input type="time" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-end" value="${session.endTime || ''}">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Topik / Tema Sesi</label>
+                        <input type="text" placeholder="Mis: Sesi 1 - Panggilan" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-theme" value="${session.theme || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Pembicara (Hamba Tuhan)</label>
+                        <input type="text" placeholder="Nama Pembicara" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-speaker" value="${session.speaker || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide mb-1">Kehadiran Sesi (Jiwa)</label>
+                        <input type="number" min="0" placeholder="0" class="w-full px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-sm session-attendance" value="${session.attendance || ''}">
+                    </div>
+                </div>
+                <div class="border-t border-indigo-100 pt-2.5 mt-1">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-[11px] font-bold text-gray-500 uppercase tracking-wide">Pelayan Sesi Ini (WL, Pemusik, Usher, dll)</label>
+                        <button type="button" onclick="addSessionServerField(this)" class="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-2 py-1 rounded text-[11px] font-semibold transition flex items-center shadow-sm cursor-pointer"><i class="fa-solid fa-plus mr-1 pointer-events-none"></i> Tambah Pelayan</button>
+                    </div>
+                    <div class="session-servers-container space-y-1.5">${existingServersHtml}</div>
+                </div>
+            `;
+            container.appendChild(div);
+            updateSessionDateBounds();
+        }
+
+        function sessionServerRowHtml(role = '', name = '') {
+            return `<div class="flex gap-1.5 session-server-row items-center">
+                <input type="text" placeholder="Tugas (Mis: WL/Usher)" value="${role}" class="w-2/5 px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-xs session-server-role">
+                <input type="text" placeholder="Nama Pelayan" value="${name}" class="w-3/5 px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-xs session-server-name">
+                <button type="button" onclick="this.closest('.session-server-row').remove()" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded px-2 py-1.5 transition flex-shrink-0 cursor-pointer"><i class="fa-solid fa-trash-can text-xs"></i></button>
+            </div>`;
+        }
+
+        function addSessionServerField(btn) {
+            const container = btn.closest('.session-row').querySelector('.session-servers-container');
+            container.insertAdjacentHTML('beforeend', sessionServerRowHtml());
+        }
+
+        function addOtherServerField(role = '', name = '') {
+            const container = document.getElementById('other-servers-container');
+            const row = document.createElement('div'); row.className = 'flex gap-2 other-server-row items-center mt-2';
+            row.innerHTML = `
+                <input type="text" placeholder="Tugas (Mis: Usher)" value="${role}" class="w-2/5 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm server-role">
+                <input type="text" placeholder="Nama Pelayan" value="${name}" class="w-3/5 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm server-name">
+                <button type="button" onclick="this.closest('.other-server-row').remove()" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg px-3 py-2 transition flex-shrink-0 cursor-pointer"><i class="fa-solid fa-trash-can"></i></button>
+            `;
+            container.appendChild(row);
+        }
+        document.getElementById('btn-tambah-pelayan').addEventListener('click', (e) => { e.preventDefault(); addOtherServerField(); });
+
+        function openModal(defaultType = 'adhoc') {
+            document.getElementById('data-form').reset(); document.getElementById('form-id').value = '';
+            document.getElementById('modal-title').innerText = 'Tambah Laporan Ibadah'; document.getElementById('other-servers-container').innerHTML = '';
+            document.getElementById('scheduled-date-group').classList.add('hidden'); lockScheduleFields(false);
+            const statusSelect = document.getElementById('form-event-status');
+            statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+            document.getElementById('backdate-status-hint')?.classList.add('hidden');
+            document.getElementById('form-is-multiday').checked = false;
+            document.getElementById('sessions-container').innerHTML = '';
+            document.getElementById('sessions-empty').style.display = 'block';
+            toggleDurationType();
+            toggleFinanceAttendanceFields();
+            selectedAttendeeIds = new Set();
+            const manualModeRadio = document.querySelector('input[name="attendance-mode"][value="manual"]');
+            if (manualModeRadio) manualModeRadio.checked = true;
+            const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = '';
+            const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
+            toggleAttendanceMode();
+            document.getElementById('form-komisi-id').value = '';
+            populateKomisiDropdown();
+            const radio = document.querySelector(`input[name="form-type"][value="${defaultType}"]`);
+            if(radio) { radio.checked = true; toggleFormType(); }
+            const backdrop = document.getElementById('modal-backdrop'); const modal = document.getElementById('modal');
+            backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('modal'); const backdrop = document.getElementById('modal-backdrop');
+            modal.classList.remove('modal-enter'); modal.classList.add('modal-leave');
+            setTimeout(() => { backdrop.classList.add('hidden'); modal.classList.add('hidden'); }, 200);
+        }
+
+        function saveData(e) {
+            e.preventDefault();
+            const typeRadio = document.querySelector('input[name="form-type"]:checked').value;
+            const tplId = document.getElementById('form-template-id').value;
+            if (typeRadio === 'reguler' && !tplId) return Swal.fire('Perhatian', 'Silakan pilih Master Ibadah Reguler.', 'warning');
+
+            const isMultiDay = document.getElementById('form-is-multiday').checked && typeRadio === 'adhoc';
+            let endDate = '';
+            let sessions = [];
+            
+            if (isMultiDay) {
+                const startDateVal = document.getElementById('form-date').value;
+                endDate = document.getElementById('form-end-date').value;
+                const rangeStart = startDateVal ? new Date(startDateVal + 'T00:00:00') : null;
+                const rangeEnd = endDate ? new Date(endDate + 'T00:00:00') : null;
+                let sessionDateError = false;
+                document.querySelectorAll('.session-row').forEach(row => {
+                    const sessDate = row.querySelector('.session-date').value;
+                    if (sessDate) {
+                        const d = new Date(sessDate + 'T00:00:00');
+                        if ((rangeStart && d < rangeStart) || (rangeEnd && d > rangeEnd)) sessionDateError = true;
+                    }
+                    let sessionServersArray = [];
+                    row.querySelectorAll('.session-server-row').forEach(srow => {
+                        const role = srow.querySelector('.session-server-role').value.trim(), name = srow.querySelector('.session-server-name').value.trim();
+                        if (role && name) sessionServersArray.push(`${role}: ${name}`); else if (name) sessionServersArray.push(name); else if (role) sessionServersArray.push(role);
+                    });
+                    sessions.push({
+                        date: sessDate,
+                        startTime: row.querySelector('.session-start').value,
+                        endTime: row.querySelector('.session-end').value,
+                        theme: row.querySelector('.session-theme').value,
+                        speaker: row.querySelector('.session-speaker').value,
+                        attendance: row.querySelector('.session-attendance').value || 0,
+                        servers: sessionServersArray.join(', ')
+                    });
+                });
+                if (sessionDateError) {
+                    return Swal.fire('Perhatian', `Tanggal setiap sesi harus berada dalam rentang ${formatDate(startDateVal)} s/d ${formatDate(endDate)}. Silakan periksa kembali tanggal sesi.`, 'warning');
+                }
+            }
+
+            let otherServersArray = [];
+            document.querySelectorAll('.other-server-row').forEach(row => {
+                const role = row.querySelector('.server-role').value.trim(), name = row.querySelector('.server-name').value.trim();
+                if (role && name) otherServersArray.push(`${role}: ${name}`); else if (name) otherServersArray.push(name); else if (role) otherServersArray.push(role);
+            });
+
+            const attModeRadio = document.querySelector('input[name="attendance-mode"]:checked');
+            const attendanceMode = attModeRadio ? attModeRadio.value : 'manual';
+            const attendeeIds = attendanceMode === 'checklist' ? Array.from(selectedAttendeeIds) : [];
+            const attendanceGuests = attendanceMode === 'checklist' ? (parseInt(document.getElementById('form-attendance-guests').value) || 0) : 0;
+
+            const id = document.getElementById('form-id').value;
+            const newData = {
+                id: id ? id : Date.now().toString(),
+                ibadahType: typeRadio, eventStatus: document.getElementById('form-event-status').value,
+                eventName: document.getElementById('form-event-name').value, location: document.getElementById('form-location').value,
+                date: document.getElementById('form-date').value, time: document.getElementById('form-time').value,
+                attendance: document.getElementById('form-attendance').value || 0, newVisitors: document.getElementById('form-new-visitors').value || 0,
+                attendanceMode: attendanceMode, attendeeIds: attendeeIds, attendanceGuests: attendanceGuests,
+                income: 0, expense: 0, preacher: document.getElementById('form-preacher').value,
+                sermonTheme: document.getElementById('form-sermon-theme').value, wl: document.getElementById('form-wl').value,
+                musicians: document.getElementById('form-musicians').value, otherServers: otherServersArray.join(', '),
+                notes: document.getElementById('form-notes').value,
+                isMultiDay: isMultiDay,
+                endDate: endDate,
+                sessions: sessions,
+                komisiId: document.getElementById('form-komisi-id').value || ''
+            };
+
+            if (id) {
+                const existing = eventsData.find(item => item.id === id);
+                if (existing) { newData.income = existing.income || 0; newData.expense = existing.expense || 0; }
+            }
+            upsertRawEvent(newData);
+            closeModal();
+            updateUI();
+            forceSyncNow(); // <<< Sinkronisasi setelah simpan
+
+            if (newData.eventStatus !== 'Terjadwal') {
+                Swal.fire({
+                    title: 'Laporan Tersimpan',
+                    text: `Data kehadiran ibadah "${newData.eventName}" berhasil disimpan. Cetak laporan ibadah sekarang?`,
+                    icon: 'success',
+                    showCancelButton: true,
+                    confirmButtonColor: '#059669',
+                    confirmButtonText: '<i class="fa-solid fa-file-pdf"></i> Cetak Laporan',
+                    cancelButtonText: 'Nanti Saja'
+                }).then(result => { if (result.isConfirmed) generateSingleEventReport(newData.id); });
+            } else {
+                Swal.fire({ title: 'Berhasil', text: id ? 'Jadwal ibadah diupdate.' : 'Jadwal ibadah ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+            }
+        }
+
+        // ========================================================================
+        // TABEL & EDIT / DELETE IBADAH
+        // ========================================================================
+        function renderTable() {
+            const tbody = document.getElementById('table-body'); const emptyState = document.getElementById('empty-state');
+            tbody.innerHTML = '';
+            const filterValue = document.getElementById('month-filter').value;
+            let filteredEvents = eventsData;
+            if (filterValue !== 'all') filteredEvents = eventsData.filter(item => item.date && item.date.startsWith(filterValue));
+            if (filteredEvents.length === 0) { emptyState.style.display = 'flex'; return; } 
+            else { emptyState.style.display = 'none'; }
+            filteredEvents.forEach(item => {
+                const isScheduled = item.eventStatus === 'Terjadwal', isReg = item.ibadahType === 'reguler';
+                let dateDisplay = formatDate(item.date);
+                let timeDisplay = `<i class="fa-regular fa-clock mr-1 w-3 text-center"></i> ${item.time || '-'}`;
+                if (item.isMultiDay && item.endDate) {
+                    dateDisplay = `<span class="whitespace-normal block text-xs bg-indigo-50 border border-indigo-100 rounded px-2 py-1 mb-1"><b>${formatDate(item.date)}</b><br><span class="text-indigo-400">s/d</span><br><b>${formatDate(item.endDate)}</b></span>`;
+                    timeDisplay = `<i class="fa-solid fa-list-ul mr-1 w-3 text-center"></i> ${item.sessions ? item.sessions.length : 0} Sesi`;
+                }
+                let preacherDisplay = item.preacher ? `<i class="fa-solid fa-microphone text-blue-500 mr-1 w-4 text-center"></i> ${item.preacher}` : (isScheduled ? '' : '<span class="text-gray-400 italic text-xs">Tanpa Khotbah</span>');
+                let themeDisplay = item.sermonTheme ? `<i class="fa-solid fa-book-bible mr-1 text-slate-400 w-3 text-center"></i> ${item.sermonTheme}` : '';
+                if (item.isMultiDay) {
+                    themeDisplay = `<i class="fa-solid fa-layer-group mr-1 text-indigo-400 w-3 text-center"></i> Acara Multi-Sesi`;
+                    let uniqueSpeakers = [];
+                    if (item.sessions && item.sessions.length > 0) {
+                        uniqueSpeakers = [...new Set(item.sessions.map(s => s.speaker).filter(Boolean))];
+                    }
+                    if(uniqueSpeakers.length > 0) {
+                        preacherDisplay = `<i class="fa-solid fa-users-viewfinder text-indigo-500 mr-1 w-4 text-center"></i> ${uniqueSpeakers.join(', ')}`;
+                    } else {
+                        preacherDisplay = `<i class="fa-solid fa-users-viewfinder text-indigo-500 mr-1 w-4 text-center"></i> Belum ada pembicara`;
+                    }
+                }
+                let komisiDisplay = '';
+                if (item.komisiId) {
+                    const komisi = komisiMasterData.find(k => k.name === item.komisiId);
+                    komisiDisplay = `<div class="text-[10px] text-indigo-600 mt-1"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : item.komisiId}</div>`;
+                }
+                const tr = document.createElement('tr');
+                tr.className = `transition group ${isScheduled ? 'bg-amber-50/30 hover:bg-amber-50' : 'hover:bg-blue-50/50'}`;
+                tr.innerHTML = `
+                    <td class="p-4 align-top">
+                        <div class="font-medium text-gray-800">${dateDisplay}</div>
+                        <div class="text-xs text-gray-500 mt-1">${timeDisplay}</div>
+                        <div class="text-xs text-gray-500 mt-1 truncate max-w-[150px]" title="${item.location || '-'}"><i class="fa-solid fa-location-dot mr-1 w-3 text-center"></i> ${item.location || '-'}</div>
+                        ${komisiDisplay}
+                        ${isScheduled ? `<span class="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200"><i class="fa-regular fa-calendar-clock mr-1"></i> Program (Terjadwal)</span>` : `<span class="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200"><i class="fa-solid fa-check-double mr-1"></i> Selesai</span>`}
+                    </td>
+                    <td class="p-4 align-top">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-bold text-gray-900 whitespace-normal line-clamp-2">${item.eventName}</span>
+                            <span class="text-[10px] px-2 py-0.5 rounded border font-semibold ${isReg ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200 flex-shrink-0'}">${isReg ? 'Reguler' : 'Adhoc'}</span>
+                        </div>
+                        <div class="text-xs text-gray-600">${themeDisplay}</div>
+                    </td>
+                    <td class="p-4 align-top text-center">
+                        ${isScheduled ? `<span class="text-xs italic text-gray-400">Menunggu Pelaksanaan</span>` : `
+                        <div class="text-sm font-bold text-gray-800 bg-gray-100 rounded-full px-2.5 py-1 inline-block mb-1">${(parseInt(item.attendance)||0).toLocaleString('id-ID')} Total</div>
+                        ${(parseInt(item.newVisitors)||0) > 0 ? `<div class="text-xs font-semibold text-emerald-600">${item.newVisitors} Baru</div>` : ''}
+                        `}
+                    </td>
+                    <td class="p-4 align-top whitespace-normal min-w-[200px]">
+                        <div class="text-sm space-y-1">
+                            <div class="text-gray-800 font-medium">${preacherDisplay}</div>
+                            ${item.wl ? `<div class="text-gray-600 text-xs"><i class="fa-solid fa-music text-amber-500 mr-1 w-4 text-center"></i> WL: ${item.wl}</div>` : ''}
+                            ${item.musicians ? `<div class="text-gray-500 text-xs"><i class="fa-solid fa-guitar text-gray-400 mr-1 w-4 text-center"></i> Musik: ${item.musicians}</div>` : ''}
+                        </div>
+                    </td>
+                    <td class="p-4 align-top text-center">
+                        <div class="flex flex-col items-center justify-center gap-2 lg:opacity-0 lg:group-hover:opacity-100 transition">
+                            ${isScheduled ? `<button type="button" onclick="editData('${item.id}')" class="text-amber-600 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer shadow-sm w-full"><i class="fa-solid fa-clipboard-check mr-1"></i> Lengkapi</button>` : `
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick="editData('${item.id}')" class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-2 rounded transition cursor-pointer" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button type="button" onclick="generateSingleEventReport('${item.id}')" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-2 rounded transition cursor-pointer" title="Cetak Laporan Ibadah (PDF)"><i class="fa-solid fa-file-pdf"></i></button>
+                            </div>
+                            `}
+                            <button type="button" onclick="confirmDelete('${item.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition cursor-pointer" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function editData(id) {
+            const data = eventsData.find(item => item.id === id);
+            if (!data) return;
+            document.getElementById('form-id').value = data.id;
+            const type = data.ibadahType || 'adhoc';
+            const radio = document.querySelector(`input[name="form-type"][value="${type}"]`);
+            if(radio) radio.checked = true; toggleFormType();
+            if(type === 'reguler') {
+                const tpl = regularTemplates.find(t => t.name === data.eventName);
+                if(tpl) document.getElementById('form-template-id').value = tpl.id;
+            }
+            const isMultiDay = data.isMultiDay || false;
+            const multiCheck = document.getElementById('form-is-multiday');
+            if (multiCheck) multiCheck.checked = isMultiDay;
+            toggleDurationType();
+            document.getElementById('scheduled-date-group').classList.add('hidden'); lockScheduleFields(false);
+            const statusSelect = document.getElementById('form-event-status');
+            statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+            statusSelect.value = data.eventStatus || 'Selesai';
+            ['eventName','location','date','time','attendance','newVisitors','preacher','sermonTheme','wl','musicians','notes'].forEach(k => {
+                const el = document.getElementById(`form-${k.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
+                if(el) el.value = data[k] || '';
+            });
+            if (data.komisiId) {
+                document.getElementById('form-komisi-id').value = data.komisiId;
+            } else {
+                document.getElementById('form-komisi-id').value = '';
+            }
+            populateKomisiDropdown();
+            selectedAttendeeIds = new Set(Array.isArray(data.attendeeIds) ? data.attendeeIds : []);
+            const attMode = data.attendanceMode === 'checklist' ? 'checklist' : 'manual';
+            const attModeRadio = document.querySelector(`input[name="attendance-mode"][value="${attMode}"]`);
+            if (attModeRadio) attModeRadio.checked = true;
+            const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = data.attendanceGuests || '';
+            const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
+            toggleAttendanceMode();
+            if (isMultiDay) {
+                document.getElementById('form-end-date').value = data.endDate || '';
+                document.getElementById('sessions-container').innerHTML = '';
+                if (data.sessions && data.sessions.length > 0) {
+                    document.getElementById('sessions-empty').style.display = 'none';
+                    data.sessions.forEach(s => addSessionField(s));
+                } else {
+                    document.getElementById('sessions-empty').style.display = 'block';
+                }
+            }
+            if (data.eventStatus === 'Terjadwal') lockScheduleFields(true);
+            checkBackdateStatus();
+            document.getElementById('other-servers-container').innerHTML = '';
+            if (data.otherServers) {
+                data.otherServers.split(', ').forEach(server => {
+                    let role = ''; let name = server;
+                    if (server.includes(': ')) { const parts = server.split(': '); role = parts[0]; name = parts.slice(1).join(': '); }
+                    addOtherServerField(role, name);
+                });
+            }
+            document.getElementById('modal-title').innerText = 'Edit Laporan Ibadah';
+            const backdrop = document.getElementById('modal-backdrop'); const modal = document.getElementById('modal');
+            backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
+        }
+
+        function confirmDelete(id) {
+            Swal.fire({ title: 'Hapus data ibadah?', text: "Data tidak dapat dikembalikan!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
+            .then((result) => { if (result.isConfirmed) { deleteRawEvent(id); updateUI(); forceSyncNow(); Swal.fire('Terhapus!', 'Data ibadah dihapus.', 'success'); } });
+        }
+
+        function clearAllData() {
+            if (eventsData.length === 0) return;
+            Swal.fire({ title: 'Kosongkan Laporan Ibadah?', text:'Master Data tidak akan terhapus.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
+            .then(res => { if (res.isConfirmed) { eventsData.map(ev => ev.id).forEach(deleteRawEvent); updateUI(); forceSyncNow(); Swal.fire('Dikosongkan!', '', 'success'); } });
+        }
+
+        // ========================================================================
+        // KEGIATAN PASTORAL
+        // ========================================================================
+        function openActivityModal() {
+            document.getElementById('activity-form').reset();
+            document.getElementById('act-form-id').value = '';
+            document.getElementById('activity-modal-title').innerText = 'Tambah Kegiatan Gereja';
+            const nameLabel = document.getElementById('act-name-label');
+            if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
+            document.getElementById('act-name').placeholder = 'Mis: Kel. Budi Santoso';
+            document.getElementById('dynamic-activity-fields').innerHTML = '';
+            const statusSelect = document.getElementById('act-status');
+            statusSelect.innerHTML = `
+                <option value="Selesai / Terlaksana">Selesai / Terlaksana</option>
+                <option value="Terjadwal / Akan Datang">Terjadwal / Akan Datang</option>
+            `;
+            statusSelect.value = 'Terjadwal / Akan Datang';
+            checkActivityBackdateStatus();
+            const backdrop = document.getElementById('activity-modal-backdrop');
+            const modal = document.getElementById('activity-modal');
+            backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
+        }
+
+        function closeActivityModal() {
+            const modal = document.getElementById('activity-modal'); const backdrop = document.getElementById('activity-modal-backdrop');
+            modal.classList.remove('modal-enter'); modal.classList.add('modal-leave');
+            setTimeout(() => { backdrop.classList.add('hidden'); modal.classList.add('hidden'); }, 200);
+        }
+
+        function onActivityTypeChange(existingData = {}) {
+            const type = document.getElementById('act-type').value;
+            const container = document.getElementById('dynamic-activity-fields');
+            const nameLabel = document.getElementById('act-name-label');
+            const nameInput = document.getElementById('act-name');
+            container.innerHTML = '';
+            const statusSelect = document.getElementById('act-status');
+            const currentStatus = existingData.status || statusSelect.value;
+            statusSelect.innerHTML = `
+                <option value="Selesai / Terlaksana">Selesai / Terlaksana</option>
+                <option value="Terjadwal / Akan Datang">Terjadwal / Akan Datang</option>
+            `;
+            if(Array.from(statusSelect.options).some(opt => opt.value === currentStatus) && existingData.status) {
+                statusSelect.value = currentStatus;
+            } else {
+                statusSelect.value = 'Terjadwal / Akan Datang';
+            }
+            if (!type) {
+                if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
+                if(nameInput) nameInput.placeholder = 'Mis: Kel. Budi Santoso';
+                checkActivityBackdateStatus();
+                return;
+            }
+            let html = '';
+            if (type === 'Penyerahan Anak') {
+                if(nameLabel) nameLabel.innerText = 'Nama Keluarga / Orang Tua *';
+                if(nameInput) nameInput.placeholder = 'Mis: Kel. Budi Santoso';
+                html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Anak *</label><input type="text" id="act-sub-name" required value="${existingData.subName || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir Anak</label><input type="date" id="act-detail-1" value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div></div>`;
+            } else if (type === 'Baptisan Kudus') {
+                if(nameLabel) nameLabel.innerText = 'Nama Yang Dibaptis (Bisa koma) *';
+                if(nameInput) nameInput.placeholder = 'Mis: Budi, Andi, Candra';
+                html = `<div><label class="block text-sm font-medium text-gray-700 mb-1">Tempat Baptis</label><input type="text" id="act-detail-1" value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>`;
+            } else if (type === 'Pemberkatan Nikah') {
+                if(nameLabel) nameLabel.innerText = 'Nama Mempelai Pria *';
+                if(nameInput) nameInput.placeholder = 'Nama Lengkap Pria';
+                html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-700 mb-1">Nama Mempelai Wanita *</label><input type="text" id="act-sub-name" required value="${existingData.subName || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm" placeholder="Nama Lengkap Wanita"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">No. Surat Nikah</label><input type="text" id="act-detail-1" value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div></div>`;
+            } else if (type === 'Kedukaan & Kematian') {
+                if(nameLabel) nameLabel.innerText = 'Nama Almarhum/Almarhumah *';
+                if(nameInput) nameInput.placeholder = 'Nama yang meninggal';
+                html = `<div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label class="block text-sm font-medium text-gray-700 mb-1">Tgl Meninggal *</label><input type="date" id="act-detail-1" required value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">Lokasi Pemakaman</label><input type="text" id="act-detail-2" value="${existingData.detail2 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div></div>`;
+            } else if (type === 'Pemberkatan Rumah' || type === 'Kunjungan Kasih') {
+                if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
+                if(nameInput) nameInput.placeholder = 'Mis: Kel. Budi Santoso';
+                html = `<div><label class="block text-sm font-medium text-gray-700 mb-1">Alamat Tujuan *</label><input type="text" id="act-detail-1" required value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>`;
+            } else {
+                if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
+                if(nameInput) nameInput.placeholder = 'Mis: Kel. Budi Santoso';
+                html = `<div><label class="block text-sm font-medium text-gray-700 mb-1">Detail Tambahan</label><input type="text" id="act-detail-1" value="${existingData.detail1 || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"></div>`;
+            }
+            container.innerHTML = html;
+            checkActivityBackdateStatus();
+        }
+
+        function checkActivityBackdateStatus() {
+            const dateInput = document.getElementById('act-date');
+            const statusSelect = document.getElementById('act-status');
+            const hint = document.getElementById('act-backdate-status-hint');
+            const dateVal = dateInput.value;
+            statusSelect.disabled = false; 
+            statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+            if (!dateVal) {
+                if (hint) hint.classList.add('hidden');
+                return;
+            }
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const selectedDate = new Date(dateVal + 'T00:00:00');
+            if (!isNaN(selectedDate) && selectedDate < today) {
+                if (hint) {
+                    hint.innerHTML = '<i class="fa-solid fa-circle-exclamation mr-1"></i> Tanggal lewat. Pastikan mengubah status ke "Selesai" jika sudah terjadi.';
+                    hint.className = 'text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded-lg px-3 py-2 mt-2';
+                    hint.classList.remove('hidden');
+                }
+            } else {
+                if (hint) hint.classList.add('hidden');
+            }
+        }
+
+        function saveActivity(e) {
+            e.preventDefault();
+            const id = document.getElementById('act-form-id').value;
+            const type = document.getElementById('act-type').value;
+            const subNameEl = document.getElementById('act-sub-name');
+            const detail1El = document.getElementById('act-detail-1');
+            const detail2El = document.getElementById('act-detail-2');
+
+            let detailInfoSummary = '';
+            if (type === 'Penyerahan Anak') detailInfoSummary = `Anak: ${subNameEl?.value || '-'} (Lahir: ${detail1El?.value || '-'})`;
+            else if (type === 'Baptisan Kudus') detailInfoSummary = `Tmpt: ${detail1El?.value || '-'}`;
+            else if (type === 'Pemberkatan Nikah') detailInfoSummary = `Wanita: ${subNameEl?.value || '-'} | Surat: ${detail1El?.value || '-'}`;
+            else if (type === 'Kedukaan & Kematian') detailInfoSummary = `Wafat: ${detail1El?.value || '-'} | Makam: ${detail2El?.value || '-'}`;
+            else detailInfoSummary = detail1El?.value || '-';
+
+            const newActivity = {
+                id: id ? id : Date.now().toString(),
+                type, name: document.getElementById('act-name').value,
+                subName: subNameEl?.value || '', detail1: detail1El?.value || '', detail2: detail2El?.value || '',
+                detailInfo: detailInfoSummary, date: document.getElementById('act-date').value,
+                minister: document.getElementById('act-minister').value, status: document.getElementById('act-status').value,
+                notes: document.getElementById('act-notes').value
+            };
+
+            const index = activitiesData.findIndex(item => item.id === id);
+            if (index !== -1) activitiesData[index] = newActivity;
+            else activitiesData.push(newActivity);
+
+            updateUI();
+            forceSyncNow(); // <<< Sinkronisasi setelah tambah/edit kegiatan
+            Swal.fire({ title: 'Berhasil', text: 'Kegiatan tersimpan.', icon: 'success', timer: 1200, showConfirmButton: false });
+            closeActivityModal();
+        }
+
+        function renderActivityTable() {
+            const tbody = document.getElementById('activity-table-body');
+            const emptyState = document.getElementById('activity-empty-state');
+            tbody.innerHTML = '';
+            if (activitiesData.length === 0) { emptyState.style.display = 'flex'; return; } 
+            else { emptyState.style.display = 'none'; }
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            activitiesData.forEach(act => {
+                let subLabel = 'Sub: ';
+                if (act.type === 'Pemberkatan Nikah') subLabel = 'Mempelai Wnt: ';
+                else if (act.type === 'Penyerahan Anak') subLabel = 'Anak: ';
+                const subNameHtml = act.subName ? `<div class="text-xs text-gray-500 mt-0.5">${subLabel}${act.subName}</div>` : '';
+                const actDate = new Date(act.date + 'T00:00:00');
+                const isPast = !isNaN(actDate) && actDate < today;
+                const isTerjadwal = act.status === 'Terjadwal / Akan Datang';
+                const needsUpdate = isPast && isTerjadwal;
+                let statusBadge = '';
+                if (needsUpdate) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 font-bold shadow-sm animate-pulse"><i class="fa-solid fa-circle-exclamation mr-1"></i> Perlu Update</span>`;
+                } else if (isTerjadwal) {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium">Terjadwal</span>`;
+                } else {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 font-medium">Selesai</span>`;
+                }
+                let actionButtons = '';
+                if (needsUpdate) {
+                    actionButtons = `
+                        <button onclick="editActivity('${act.id}')" class="text-red-700 bg-red-100 hover:bg-red-200 px-3 py-1.5 text-xs font-bold rounded-lg transition shadow-sm whitespace-nowrap cursor-pointer"><i class="fa-solid fa-exclamation-circle mr-1"></i> Update Status</button>
+                        <button onclick="confirmDeleteActivity('${act.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition cursor-pointer" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    `;
+                } else {
+                    actionButtons = `
+                        <button onclick="editActivity('${act.id}')" class="text-purple-500 hover:text-purple-700 bg-purple-50 hover:bg-purple-100 p-2 rounded transition cursor-pointer" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                        <button onclick="confirmDeleteActivity('${act.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition cursor-pointer" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    `;
+                }
+                const tr = document.createElement('tr');
+                tr.className = `transition group ${needsUpdate ? 'bg-red-50/30 hover:bg-red-50' : 'hover:bg-purple-50/50'}`;
+                tr.innerHTML = `
+                    <td class="p-4 align-top">
+                        <div class="font-bold text-purple-700">${act.type}</div>
+                        <div class="text-xs text-gray-500 mt-1"><i class="fa-regular fa-calendar mr-1"></i> ${formatDate(act.date)}</div>
+                    </td>
+                    <td class="p-4 align-top">
+                        <div class="font-medium text-gray-900">${act.name}</div>
+                        ${subNameHtml}
+                    </td>
+                    <td class="p-4 align-top text-xs text-gray-600">${act.detailInfo || '-'}</td>
+                    <td class="p-4 align-top text-sm">
+                        <div class="text-gray-800 font-medium"><i class="fa-solid fa-user-tie text-purple-500 mr-1"></i> ${act.minister || '-'}</div>
+                        <div class="text-xs mt-1">${statusBadge}</div>
+                    </td>
+                    <td class="p-4 align-top text-xs text-gray-500 max-w-[200px] truncate" title="${act.notes || ''}">${act.notes || '-'}</td>
+                    <td class="p-4 align-top text-center">
+                        <div class="flex items-center justify-center gap-2 lg:opacity-0 lg:group-hover:opacity-100 transition">
+                            ${actionButtons}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function editActivity(id) {
+            const act = activitiesData.find(i => i.id === id);
+            if (!act) return;
+            document.getElementById('act-form-id').value = act.id;
+            ['name','date','minister','notes'].forEach(k => document.getElementById(`act-${k}`).value = act[k] || '');
+            document.getElementById('act-type').value = act.type || '';
+            onActivityTypeChange({ subName: act.subName, detail1: act.detail1, detail2: act.detail2, status: act.status });
+            document.getElementById('activity-modal-title').innerText = 'Edit Kegiatan';
+            const b = document.getElementById('activity-modal-backdrop'); const m = document.getElementById('activity-modal');
+            b.classList.remove('hidden'); m.classList.remove('hidden', 'modal-leave'); m.classList.add('modal-enter');
+        }
+
+        function confirmDeleteActivity(id) {
+            Swal.fire({ title: 'Hapus kegiatan?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
+            .then((r) => { if (r.isConfirmed) { activitiesData = activitiesData.filter(i => i.id !== id); updateUI(); forceSyncNow(); } });
+        }
+
+        function clearAllActivities() {
+            if (activitiesData.length === 0) return;
+            Swal.fire({ title: 'Kosongkan Kegiatan?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya!' })
+            .then(res => { if (res.isConfirmed) { activitiesData = []; updateUI(); forceSyncNow(); Swal.fire('Dikosongkan!', '', 'success'); } });
+        }
+
+        // ========================================================================
+        // EKSPOR / IMPORT EXCEL
+        // ========================================================================
+        function exportAllToExcel() {
+            if (eventsData.length === 0 && activitiesData.length === 0 && regularTemplates.length === 0) {
+                Swal.fire('Info', 'Tidak ada data untuk diexport.', 'warning'); return;
+            }
+            const workbook = XLSX.utils.book_new();
+
+            const sheet0Data = regularTemplates.map(tpl => {
+                const f = tpl.frequency || {}; let interval = '', anchor = '', weeks = '';
+                if (f.type === 'interval') { interval = f.interval || ''; anchor = f.anchor || ''; }
+                if (f.type === 'monthly') { weeks = (f.occurrences || []).map(o => o === 'last' ? 'Terakhir' : o).join(','); }
+                return {
+                    'ID (Jangan Diubah)': tpl.id, 'Nama Ibadah': tpl.name || '', 'Lokasi Default': tpl.defaultLocation || '', 'Waktu Default': tpl.defaultTime || '',
+                    'Tipe Frekuensi': f.type === 'weekly' ? 'Mingguan' : f.type === 'interval' ? 'Interval' : f.type === 'monthly' ? 'Bulanan' : '',
+                    'Hari': f.weekday !== undefined ? WEEKDAY_NAMES[f.weekday] : '', 'Interval (Setiap X Minggu)': interval, 'Tanggal Acuan': anchor,
+                    'Minggu Ke- (pisahkan koma, mis: 1,3 atau Terakhir)': weeks, 'Deskripsi Pola': tpl.frequency ? describeFrequency(tpl).replace(/<\/?b>/g, '') : ''
+                };
+            });
+            const ws0 = sheet0Data.length > 0 ? XLSX.utils.json_to_sheet(sheet0Data) : XLSX.utils.aoa_to_sheet([['ID (Jangan Diubah)', 'Nama Ibadah', 'Lokasi Default', 'Waktu Default', 'Tipe Frekuensi', 'Hari', 'Interval (Setiap X Minggu)', 'Tanggal Acuan', 'Minggu Ke- (pisahkan koma, mis: 1,3 atau Terakhir)', 'Deskripsi Pola']]);
+            XLSX.utils.book_append_sheet(workbook, ws0, "Master Ibadah Reguler");
+
+            const sheet1Data = eventsData.map(item => {
+                let preacherExport = item.preacher || '';
+                let themeExport = item.sermonTheme || '';
+                let notesExport = item.notes || '';
+                let dateExport = item.date;
+                let timeExport = item.time || '';
+                let komisiExport = item.komisiId || '';
+                if (item.isMultiDay) {
+                    dateExport = `${item.date} s/d ${item.endDate}`;
+                    timeExport = '(Banyak Sesi)';
+                    preacherExport = '(Daftar Sesi di Catatan)';
+                    themeExport = 'Acara Multi-Sesi';
+                    const sessionsText = (item.sessions || []).map(s => `[${s.date}] ${s.startTime}-${s.endTime} : ${s.theme} (${s.speaker})`).join(' | ');
+                    notesExport += (notesExport ? '\n\n' : '') + 'Detail Sesi: ' + sessionsText;
+                }
+                return {
+                    'ID (Jangan Diubah)': item.id, 'Kategori': item.ibadahType === 'reguler' ? 'Reguler' : 'Spesial',
+                    'Status': item.eventStatus === 'Terjadwal' ? 'Terjadwal' : 'Selesai', 'Tanggal': dateExport, 'Waktu': timeExport,
+                    'Nama Acara': item.eventName, 'Lokasi': item.location || '', 'Tema Khotbah': themeExport,
+                    'Total Kehadiran': parseInt(item.attendance) || 0, 'Jemaat Baru': parseInt(item.newVisitors) || 0,
+                    'Pengkhotbah': preacherExport, 'Worship Leader': item.wl || '', 'Pemusik': item.musicians || '',
+                    'Pelayan Lainnya': item.otherServers || '', 'Catatan': notesExport,
+                    'Komisi / Departemen': komisiExport
+                };
+            });
+            const ws1 = XLSX.utils.json_to_sheet(sheet1Data); XLSX.utils.book_append_sheet(workbook, ws1, "Laporan Ibadah");
+
+            const sheet2Data = activitiesData.map(act => ({
+                'ID (Jangan Diubah)': act.id, 'Jenis Kegiatan': act.type, 'Nama Jemaat / Keluarga': act.name,
+                'Nama Sub / Pasangan / Anak': act.subName || '', 'Detail Khusus 1': act.detail1 || '', 'Detail Khusus 2': act.detail2 || '',
+                'Tanggal': act.date, 'Pendeta / Pelayan': act.minister || '', 'Status': act.status || '', 'Catatan': act.notes || ''
+            }));
+            const ws2 = XLSX.utils.json_to_sheet(sheet2Data); XLSX.utils.book_append_sheet(workbook, ws2, "Kegiatan Gereja");
+
+            XLSX.writeFile(workbook, `${churchName.replace(/\s+/g, '_')}_Laporan.xlsx`);
+        }
+
+        function downloadTemplateExcel() {
+            const workbook = XLSX.utils.book_new();
+            const ws0 = XLSX.utils.aoa_to_sheet([
+                ['ID (Jangan Diubah)', 'Nama Ibadah', 'Lokasi Default', 'Waktu Default', 'Tipe Frekuensi', 'Hari', 'Interval (Setiap X Minggu)', 'Tanggal Acuan', 'Minggu Ke- (pisahkan koma, mis: 1,3 atau Terakhir)', 'Deskripsi Pola'],
+                ['', 'Ibadah Minggu Raya', 'Gedung Utama', '09:00', 'Mingguan', 'Minggu', '', '', '', 'Contoh baris, silakan hapus/ubah']
+            ]); XLSX.utils.book_append_sheet(workbook, ws0, "Master Ibadah Reguler");
+
+            const ws1 = XLSX.utils.aoa_to_sheet([
+                ['ID (Jangan Diubah)', 'Kategori', 'Status', 'Tanggal', 'Waktu', 'Nama Acara', 'Lokasi', 'Tema Khotbah', 'Total Kehadiran', 'Jemaat Baru', 'Pengkhotbah', 'Worship Leader', 'Pemusik', 'Pelayan Lainnya', 'Catatan', 'Komisi / Departemen'],
+                ['', 'Spesial', 'Terjadwal', '2025-01-01', '09:00', 'Contoh Acara', 'Gedung Utama', 'Contoh Tema', 100, 2, 'Nama Pengkhotbah', 'Nama WL', 'Nama Pemusik', '', 'Contoh baris, hapus', 'Contoh Komisi']
+            ]); XLSX.utils.book_append_sheet(workbook, ws1, "Laporan Ibadah");
+
+            const ws2 = XLSX.utils.aoa_to_sheet([
+                ['ID (Jangan Diubah)', 'Jenis Kegiatan', 'Nama Jemaat / Keluarga', 'Nama Sub / Pasangan / Anak', 'Detail Khusus 1', 'Detail Khusus 2', 'Tanggal', 'Pendeta / Pelayan', 'Status', 'Catatan'],
+                ['', 'Baptisan Kudus', 'Contoh Nama', '', 'Tempat Baptis', '', '2025-01-01', 'Nama Pendeta', 'Selesai / Terlaksana', 'Contoh baris, hapus']
+            ]); XLSX.utils.book_append_sheet(workbook, ws2, "Kegiatan Gereja");
+
+            XLSX.writeFile(workbook, "Template_Import_Acara_Gereja.xlsx");
+        }
+
+        function excelValueToYMD(val) {
+            if (!val) return '';
+            if (val instanceof Date) return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
+            if (typeof val === 'number') {
+                const date = new Date(Math.round((val - 25569) * 86400 * 1000)); return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+            }
+            const str = val.toString().trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+            const parsed = new Date(str); if (!isNaN(parsed)) return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+            return str;
+        }
+
+        function importAllFromExcel(event) {
+            const file = event.target.files[0]; if (!file) return;
+            const reader = new FileReader(); Swal.fire({ title: 'Memproses file...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+                    let importedEvents = 0, importedActivities = 0, importedTemplates = 0;
+
+                    if (workbook.SheetNames.includes("Master Ibadah Reguler")) {
+                        XLSX.utils.sheet_to_json(workbook.Sheets["Master Ibadah Reguler"]).forEach(row => {
+                            if (row['Nama Ibadah']) {
+                                const id = row['ID (Jangan Diubah)']?.toString() || 'tpl_' + Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                                const freqTypeRaw = (row['Tipe Frekuensi'] || '').toString().trim().toLowerCase();
+                                const weekdayIdx = WEEKDAY_NAMES.findIndex(w => w.toLowerCase() === (row['Hari'] || '').toString().trim().toLowerCase());
+                                let frequency = null;
+                                if (freqTypeRaw === 'mingguan' && weekdayIdx !== -1) frequency = { type: 'weekly', weekday: weekdayIdx };
+                                else if (freqTypeRaw === 'interval' && weekdayIdx !== -1) frequency = { type: 'interval', weekday: weekdayIdx, interval: parseInt(row['Interval (Setiap X Minggu)']) || 2, anchor: excelValueToYMD(row['Tanggal Acuan']) || new Date().toISOString().slice(0,10) };
+                                else if (freqTypeRaw === 'bulanan' && weekdayIdx !== -1) {
+                                    const occurrences = (row['Minggu Ke- (pisahkan koma, mis: 1,3 atau Terakhir)'] || '').toString().split(',').map(s => s.trim()).filter(Boolean).map(s => s.toLowerCase() === 'terakhir' ? 'last' : parseInt(s)).filter(v => v === 'last' || !isNaN(v));
+                                    if (occurrences.length > 0) frequency = { type: 'monthly', weekday: weekdayIdx, occurrences: occurrences };
+                                }
+                                const tpl = { id, name: row['Nama Ibadah'], defaultLocation: row['Lokasi Default'] || '', defaultTime: row['Waktu Default']?.toString() || '', frequency };
+                                upsertInRawList(regularTemplatesRaw, tpl); importedTemplates++;
+                            }
+                        });
+                    }
+
+                    if (workbook.SheetNames.includes("Laporan Ibadah")) {
+                        XLSX.utils.sheet_to_json(workbook.Sheets["Laporan Ibadah"]).forEach(row => {
+                            if (row['Nama Acara'] && row['Tanggal']) {
+                                const id = row['ID (Jangan Diubah)']?.toString() || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                                const item = {
+                                    id, ibadahType: (row['Kategori'] && row['Kategori'].toLowerCase() === 'reguler') ? 'reguler' : 'adhoc',
+                                    eventStatus: (row['Status'] && row['Status'] === 'Terjadwal') ? 'Terjadwal' : 'Selesai',
+                                    eventName: row['Nama Acara'], location: row['Lokasi'] || '', date: excelValueToYMD(row['Tanggal']),
+                                    time: row['Waktu']?.toString() || '', attendance: row['Total Kehadiran'] || 0, newVisitors: row['Jemaat Baru'] || 0,
+                                    income: row['Penerimaan (Rp)'] || 0, expense: row['Pengeluaran (Rp)'] || 0, preacher: row['Pengkhotbah'] || '',
+                                    sermonTheme: row['Tema Khotbah'] || '', wl: row['Worship Leader'] || '', musicians: row['Pemusik'] || '',
+                                    otherServers: row['Pelayan Lainnya'] || '', notes: row['Catatan'] || '', isMultiDay: false, endDate: '', sessions: [],
+                                    komisiId: row['Komisi / Departemen'] || ''
+                                };
+                                upsertRawEvent(item); importedEvents++;
+                            }
+                        });
+                    }
+
+                    if (workbook.SheetNames.includes("Kegiatan Gereja")) {
+                        XLSX.utils.sheet_to_json(workbook.Sheets["Kegiatan Gereja"]).forEach(row => {
+                            if (row['Jenis Kegiatan'] && row['Nama Jemaat / Keluarga']) {
+                                const id = row['ID (Jangan Diubah)']?.toString() || Date.now().toString() + Math.random().toString(36).substr(2, 5);
+                                const act = {
+                                    id, type: row['Jenis Kegiatan'], name: row['Nama Jemaat / Keluarga'], subName: row['Nama Sub / Pasangan / Anak'] || '',
+                                    detail1: row['Detail Khusus 1'] || '', detail2: row['Detail Khusus 2'] || '', detailInfo: row['Detail Khusus 1'] || '',
+                                    date: excelValueToYMD(row['Tanggal']), minister: row['Pendeta / Pelayan'] || '', status: row['Status'] || 'Selesai', notes: row['Catatan'] || ''
+                                };
+                                const idx = activitiesData.findIndex(d => d.id === id); if (idx !== -1) activitiesData[idx] = act; else activitiesData.push(act); importedActivities++;
+                            }
+                        });
+                    }
+
+                    updateUI(); renderTemplateTable(); forceSyncNow();
+                    Swal.fire('Berhasil', `Import: ${importedTemplates} Master, ${importedEvents} Ibadah, ${importedActivities} Kegiatan.`, 'success');
+                } catch (err) { Swal.fire('Gagal', 'Pastikan format file Excel sesuai dengan template.', 'error'); }
+                event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // ========================================================================
+        // PDF REPORT
+        // ========================================================================
+        function generatePDFReport() {
+            const fVal = document.getElementById('month-filter').value;
+            const fText = document.getElementById('month-filter').options[document.getElementById('month-filter').selectedIndex].text;
+            let fEvents = eventsData; if (fVal !== 'all') fEvents = eventsData.filter(i => i.date && i.date.startsWith(fVal));
+            if (fEvents.length === 0) return Swal.fire('Info', 'Tidak ada data untuk dicetak.', 'info');
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(30, 58, 138); doc.text(`LAPORAN RESMI IBADAH & ANALISIS`, 14, 20);
+            doc.setFontSize(12); doc.setTextColor(80, 80, 80); doc.text(`${churchName}`, 14, 27);
+            doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(`Periode: ${fText} | Dicetak: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date())}`, 14, 34);
+            doc.setDrawColor(200, 200, 200); doc.line(14, 38, 196, 38);
+            doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("1. Ringkasan & Analisis Pelayanan", 14, 46);
+            doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.text(`• Total Kehadiran: ${currentAnalyticsData.totalAttendance.toLocaleString('id-ID')} jiwa (${currentAnalyticsData.totalNewVisitors} baru)`, 14, 53);
+            let yPos = 61;
+            if (currentAnalyticsData.suggestionPoints?.length > 0) {
+                currentAnalyticsData.suggestionPoints.forEach(p => { const lines = doc.splitTextToSize(`• ${p}`, 180); doc.text(lines, 14, yPos); yPos += (lines.length * 5) + 2; });
+            }
+            yPos += 5; doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("2. Rincian Ibadah", 14, yPos); yPos += 6;
+            const tCols = ["Tanggal", "Kategori", "Acara", "Hadir", "Pelayan Utama", "Komisi"];
+            const tRows = fEvents.map(i => [ i.date, i.ibadahType === 'reguler' ? 'Reguler' : 'Spesial', i.eventName, `${i.attendance||0}`, `K: ${i.preacher||'-'}\nWL: ${i.wl||'-'}`, i.komisiId || '-' ]);
+            doc.autoTable({ startY: yPos, head: [tCols], body: tRows, theme: 'striped', headStyles: { fillColor: [30, 58, 138] }, styles: { fontSize: 8 } });
+            doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
+        }
+
+        function generateSingleEventReport(id) {
+            const item = eventsData.find(e => e.id === id);
+            if (!item) return Swal.fire('Info', 'Data ibadah tidak ditemukan.', 'info');
+            if (item.eventStatus === 'Terjadwal') return Swal.fire('Info', 'Lengkapi dulu data kehadiran ibadah ini sebelum mencetak laporan.', 'info');
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            const pageWidth = doc.internal.pageSize.getWidth();
+            doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(30, 58, 138);
+            doc.text(`LAPORAN PERIBADATAN`, 14, 18);
+            doc.setFontSize(11); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "normal");
+            doc.text(`${churchName}`, 14, 25);
+            doc.setDrawColor(200, 200, 200); doc.line(14, 30, pageWidth - 14, 30);
+            let y = 39;
+            doc.setFontSize(13); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+            doc.text(item.eventName || '-', 14, y); y += 7;
+            doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+            const infoLeft = [
+                `Kategori   : ${item.ibadahType === 'reguler' ? 'Reguler' : 'Adhoc / Spesial'}`,
+                `Tanggal    : ${formatDate(item.date)}${item.isMultiDay && item.endDate ? ' s/d ' + formatDate(item.endDate) : ''}`,
+                `Waktu      : ${item.time || '-'}`,
+                `Lokasi     : ${item.location || '-'}`,
+                `Komisi     : ${item.komisiId || '-'}`,
+            ];
+            const infoRight = [
+                `Pengkhotbah : ${item.preacher || '-'}`,
+                `Tema Khotbah: ${item.sermonTheme || '-'}`,
+                `Worship Leader: ${item.wl || '-'}`,
+                `Pemusik     : ${item.musicians || '-'}`,
+                `Pelayan Lain: ${item.otherServers || '-'}`,
+            ];
+            infoLeft.forEach((line, i) => doc.text(line, 14, y + i * 5.2));
+            infoRight.forEach((line, i) => {
+                const wrapped = doc.splitTextToSize(line, 95);
+                doc.text(wrapped, pageWidth / 2 + 4, y + i * 5.2);
+            });
+            y += Math.max(infoLeft.length, infoRight.length) * 5.2 + 6;
+
+            const totalHadir = parseInt(item.attendance) || 0;
+            const jemaatChecked = Array.isArray(item.attendeeIds) ? item.attendeeIds.length : 0;
+            const tamuCount = parseInt(item.attendanceGuests) || 0;
+            const newVCount = parseInt(item.newVisitors) || 0;
+
+            doc.setFillColor(239, 246, 255);
+            doc.roundedRect(14, y, pageWidth - 28, 22, 2, 2, 'F');
+            doc.setFontSize(10.5); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 58, 138);
+            doc.text(`Total Kehadiran: ${totalHadir.toLocaleString('id-ID')} jiwa`, 18, y + 9);
+            doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(50, 50, 50);
+            if (item.attendanceMode === 'checklist') {
+                doc.text(`Jemaat (checklist): ${jemaatChecked}    |    Tamu: ${tamuCount}    |    Jemaat Baru: ${newVCount}`, 18, y + 17);
+            } else if (newVCount > 0) {
+                doc.text(`Jemaat Baru: ${newVCount}`, 18, y + 17);
+            }
+            y += 30;
+
+            if (item.attendanceMode === 'checklist' && jemaatChecked > 0) {
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Daftar Jemaat Hadir (Checklist)", 14, y); y += 5;
+                const idSet = new Set(item.attendeeIds);
+                const hadirList = (jemaatMasterData || [])
+                    .filter(j => idSet.has(j.id))
+                    .map(j => j.nama_lengkap || '(Tanpa Nama)')
+                    .sort((a, b) => a.localeCompare(b, 'id'));
+                const foundCount = hadirList.length;
+                const rows = hadirList.map((nama, idx) => [idx + 1, nama]);
+                if (foundCount < jemaatChecked) {
+                    rows.push(['-', `(${jemaatChecked - foundCount} data jemaat lain tidak ditemukan di Database Jemaat)`]);
+                }
+                doc.autoTable({
+                    startY: y,
+                    head: [['No', 'Nama Jemaat']],
+                    body: rows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138], fontSize: 9 },
+                    styles: { fontSize: 9 },
+                    columnStyles: { 0: { cellWidth: 12, halign: 'center' } },
+                    margin: { left: 14, right: 14 }
+                });
+                y = doc.lastAutoTable.finalY + 8;
+            } else if (item.isMultiDay && item.sessions && item.sessions.length > 0) {
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Rincian Sesi", 14, y); y += 5;
+                const rows = item.sessions.map(s => [formatDate(s.date), `${s.startTime||'-'} - ${s.endTime||'-'}`, s.theme||'-', s.speaker||'-', `${s.attendance||0}`]);
+                doc.autoTable({
+                    startY: y,
+                    head: [['Tanggal', 'Waktu', 'Tema', 'Pembicara', 'Hadir']],
+                    body: rows,
+                    theme: 'grid',
+                    headStyles: { fillColor: [30, 58, 138], fontSize: 9 },
+                    styles: { fontSize: 8.5 },
+                    margin: { left: 14, right: 14 }
+                });
+                y = doc.lastAutoTable.finalY + 8;
+            }
+
+            if (item.notes) {
+                if (y > 260) { doc.addPage(); y = 20; }
+                doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
+                doc.text("Catatan Tambahan", 14, y); y += 6;
+                doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
+                const noteLines = doc.splitTextToSize(item.notes, pageWidth - 28);
+                doc.text(noteLines, 14, y);
+                y += noteLines.length * 5 + 4;
+            }
+
+            const pageCount = doc.internal.getNumberOfPages();
+            for (let p = 1; p <= pageCount; p++) {
+                doc.setPage(p);
+                doc.setFontSize(8); doc.setTextColor(150, 150, 150); doc.setFont("helvetica", "normal");
+                doc.text(`Dicetak: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}`, 14, 290);
+                doc.text(`Halaman ${p}/${pageCount}`, pageWidth - 14, 290, { align: 'right' });
+            }
+            const safeDate = (item.date || 'tanpa-tanggal').replace(/[^0-9\-]/g, '');
+            const safeName = (item.eventName || 'Laporan').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40);
+            doc.save(`Laporan_Ibadah_${safeDate}_${safeName}.pdf`);
+        }
+
+        // ========================================================================
+        // KALENDER
+        // ========================================================================
+        function renderCalendar() {
+            const grid = document.getElementById('cal-grid');
+            const label = document.getElementById('cal-month-label');
+            if (!grid || !label) return;
+            const year = calViewDate.getFullYear();
+            const month = calViewDate.getMonth();
+            label.innerText = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(calViewDate);
+            const firstDayOfWeek = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
+            const todayStr = todayYMD();
+            let cells = [];
+            for (let i = 0; i < firstDayOfWeek; i++) {
+                const d = daysInPrevMonth - firstDayOfWeek + i + 1;
+                cells.push({ day: d, inMonth: false, dateStr: null });
+            }
+            for (let d = 1; d <= daysInMonth; d++) {
+                cells.push({ day: d, inMonth: true, dateStr: toYMD(year, month, d) });
+            }
+            let nextDay = 1;
+            while (cells.length % 7 !== 0) {
+                cells.push({ day: nextDay, inMonth: false, dateStr: null });
+                nextDay++;
+            }
+            grid.innerHTML = cells.map(cell => {
+                if (!cell.inMonth) {
+                    return `<div class="min-h-[64px] sm:min-h-[84px] rounded-lg bg-gray-50 text-gray-300 text-xs p-1.5">${cell.day}</div>`;
+                }
+                const dayEvents = eventsData.filter(ev => {
+                    if (ev.isMultiDay && ev.endDate) {
+                        return cell.dateStr >= ev.date && cell.dateStr <= ev.endDate;
+                    }
+                    return ev.date === cell.dateStr;
+                });
+                const dayActivities = activitiesData.filter(ac => ac.date === cell.dateStr);
+                const dayHoliday = holidaysData.find(h => h.date === cell.dateStr);
+                const isToday = cell.dateStr === todayStr;
+                let cellClasses = "min-h-[64px] sm:min-h-[84px] rounded-lg p-1.5 text-left cursor-pointer transition border flex flex-col gap-1 ";
+                if (dayHoliday) cellClasses += "bg-red-50 border-red-200 hover:bg-red-100 ";
+                else cellClasses += "bg-white border-gray-100 hover:bg-gray-50 ";
+                if (isToday) cellClasses += "ring-2 ring-blue-500 ring-offset-1 ";
+                const numberClasses = isToday ? "bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-bold" : (dayHoliday ? "text-red-600 font-bold text-xs" : "text-gray-700 font-semibold text-xs");
+                let dotsHtml = '';
+                if (dayEvents.length > 0) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" title="${dayEvents.length} Ibadah"></span>`;
+                if (dayActivities.length > 0) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500 inline-block" title="${dayActivities.length} Kegiatan"></span>`;
+                if (dayHoliday) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" title="Libur"></span>`;
+                const threshold = getAttendanceThreshold();
+                if (threshold !== null) {
+                    const belowThreshold = dayEvents.some(ev => ev.eventStatus !== 'Terjadwal' && (parseInt(ev.attendance) || 0) < threshold);
+                    if (belowThreshold) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" title="Kehadiran di bawah ambang batas"></span>`;
+                }
+                const holidayLabel = dayHoliday ? `<div class="text-[9px] sm:text-[10px] leading-tight text-red-700 font-medium truncate" title="${dayHoliday.name}">${dayHoliday.name}</div>` : '';
+                return `
+                    <button type="button" onclick="showDayDetail('${cell.dateStr}')" class="${cellClasses}">
+                        <div class="flex items-center justify-between">
+                            <span class="${numberClasses}">${cell.day}</span>
+                            <span class="flex items-center gap-0.5">${dotsHtml}</span>
+                        </div>
+                        ${holidayLabel}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function showDayDetail(dateStr) {
+            const dayEvents = eventsData.filter(ev => {
+                if (ev.isMultiDay && ev.endDate) {
+                    return dateStr >= ev.date && dateStr <= ev.endDate;
+                }
+                return ev.date === dateStr;
+            });
+            const dayActivities = activitiesData.filter(ac => ac.date === dateStr);
+            const dayHoliday = holidaysData.find(h => h.date === dateStr);
+            const niceDate = formatDate(dateStr);
+            let html = '';
+            if (dayHoliday) {
+                html += `<div class="mb-3 p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-semibold text-left"><i class="fa-solid fa-flag mr-1.5"></i>${dayHoliday.name} <span class="font-normal text-xs">(${dayHoliday.type})</span></div>`;
+            }
+            if (dayEvents.length === 0 && dayActivities.length === 0) {
+                html += `<p class="text-sm text-gray-400 text-left mb-4">Belum ada ibadah atau kegiatan tercatat pada tanggal ini.</p>`;
+            } else {
+                if (dayEvents.length > 0) {
+                    html += `<p class="text-xs font-bold text-blue-700 uppercase mt-2 mb-2 text-left tracking-wide">Daftar Ibadah & Acara</p>`;
+                    html += dayEvents.map(ev => {
+                        const isDone = ev.eventStatus !== 'Terjadwal';
+                        let spanLabel = '';
+                        if (ev.isMultiDay && ev.endDate) {
+                            if (ev.date === dateStr) spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Hari Pertama</span>`;
+                            else if (ev.endDate === dateStr) spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Hari Terakhir</span>`;
+                            else spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Berlangsung</span>`;
+                        }
+                        let statsHtml = '';
+                        if (isDone) {
+                            const att = parseInt(ev.attendance) || 0;
+                            const newV = parseInt(ev.newVisitors) || 0;
+                            const threshold = getAttendanceThreshold();
+                            const belowBadge = (threshold !== null && att < threshold) ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-[11px] font-bold mt-1"><i class="fa-solid fa-triangle-exclamation"></i> Di Bawah Target (${threshold})</span>` : '';
+                            statsHtml = `
+                                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold"><i class="fa-solid fa-users"></i> ${att} Hadir</span>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[11px] font-bold"><i class="fa-solid fa-seedling"></i> ${newV} Jiwa Baru</span>
+                                </div>
+                                ${belowBadge}
+                            `;
+                        } else {
+                            statsHtml = `<div class="mt-1.5"><span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold"><i class="fa-solid fa-clock mr-1"></i>Terjadwal (Akan Datang)</span></div>`;
+                        }
+                        let komisiHtml = '';
+                        if (ev.komisiId) {
+                            const komisi = komisiMasterData.find(k => k.name === ev.komisiId);
+                            komisiHtml = `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : ev.komisiId}</div>`;
+                        }
+                        return `
+                        <div onclick="editFromCalendar('event', '${ev.id}')" class="text-left text-sm border border-blue-100 bg-white hover:bg-blue-50 hover:border-blue-300 rounded-xl p-3 mb-2 cursor-pointer transition shadow-sm group">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <b class="text-gray-800 group-hover:text-blue-700 transition">${ev.eventName}</b> ${spanLabel}
+                                    <div class="text-xs text-gray-500 mt-0.5">${ev.isMultiDay ? 'Acara Multi-Hari' : (ev.time ? ev.time + ' &middot; ' : '')}${ev.location || 'Lokasi Belum Diatur'}</div>
+                                    ${komisiHtml}
+                                </div>
+                                <div class="text-blue-400 opacity-0 group-hover:opacity-100 transition"><i class="fa-solid fa-pen-to-square"></i></div>
+                            </div>
+                            ${statsHtml}
+                        </div>`;
+                    }).join('');
+                }
+                if (dayActivities.length > 0) {
+                    html += `<p class="text-xs font-bold text-purple-700 uppercase mt-4 mb-2 text-left tracking-wide">Kegiatan Pastoral</p>`;
+                    html += dayActivities.map(ac => `
+                        <div onclick="editFromCalendar('activity', '${ac.id}')" class="text-left text-sm border border-purple-100 bg-white hover:bg-purple-50 hover:border-purple-300 rounded-xl p-3 mb-2 cursor-pointer transition shadow-sm group">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <b class="text-gray-800 group-hover:text-purple-700 transition">${ac.type}</b> &middot; ${ac.name}
+                                    <div class="text-xs text-gray-500 mt-0.5">${ac.detailInfo || ''}</div>
+                                </div>
+                                <div class="text-purple-400 opacity-0 group-hover:opacity-100 transition"><i class="fa-solid fa-pen-to-square"></i></div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            }
+            Swal.fire({
+                title: niceDate,
+                html: `<div class="max-h-[60vh] overflow-y-auto pr-1">${html}</div>`,
+                showCancelButton: true,
+                showDenyButton: true,
+                confirmButtonText: '<i class="fa-solid fa-plus"></i> Ibadah',
+                denyButtonText: '<i class="fa-solid fa-plus"></i> Kegiatan',
+                cancelButtonText: 'Tutup',
+                confirmButtonColor: '#2563eb',
+                denyButtonColor: '#9333ea'
+            }).then((result) => {
+                if (result.isConfirmed) { quickAddEvent(dateStr); }
+                else if (result.isDenied) { quickAddActivity(dateStr); }
+            });
+        }
+
+        function quickAddEvent(dateStr) {
+            openModal('adhoc');
+            setTimeout(() => {
+                const dateInput = document.getElementById('form-date');
+                if (dateInput) { dateInput.value = dateStr; checkBackdateStatus(); }
+            }, 50);
+        }
+        function quickAddActivity(dateStr) {
+            openActivityModal();
+            setTimeout(() => {
+                const dateInput = document.getElementById('act-date');
+                if (dateInput) { dateInput.value = dateStr; checkActivityBackdateStatus(); }
+            }, 50);
+        }
+        function editFromCalendar(type, id) {
+            Swal.close();
+            if (type === 'event') editData(id);
+            else if (type === 'activity') editActivity(id);
+        }
+        function calChangeMonth(delta) { calViewDate.setMonth(calViewDate.getMonth() + delta); renderCalendar(); }
+        function calGoToday() { calViewDate = new Date(); renderCalendar(); }
+
+        // ========================================================================
+        // TANGGAL MERAH / HARI LIBUR
+        // ========================================================================
+        const OFFICIAL_HOLIDAYS_BY_YEAR = {
+            2026: [
+                { date: '2026-01-01', name: 'Tahun Baru 2026 Masehi', type: 'Nasional' },
+                { date: '2026-01-16', name: 'Isra Mikraj Nabi Muhammad SAW', type: 'Nasional' },
+                { date: '2026-02-16', name: 'Cuti Bersama Tahun Baru Imlek', type: 'Cuti Bersama' },
+                { date: '2026-02-17', name: 'Tahun Baru Imlek 2577 Kongzili', type: 'Nasional' },
+                { date: '2026-03-18', name: 'Cuti Bersama Hari Suci Nyepi', type: 'Cuti Bersama' },
+                { date: '2026-03-19', name: 'Hari Suci Nyepi (Tahun Baru Saka 1948)', type: 'Nasional' },
+                { date: '2026-03-20', name: 'Cuti Bersama Idulfitri', type: 'Cuti Bersama' },
+                { date: '2026-03-21', name: 'Idulfitri 1447 H (Hari Pertama)', type: 'Nasional' },
+                { date: '2026-03-22', name: 'Idulfitri 1447 H (Hari Kedua)', type: 'Nasional' },
+                { date: '2026-03-23', name: 'Cuti Bersama Idulfitri', type: 'Cuti Bersama' },
+                { date: '2026-03-24', name: 'Cuti Bersama Idulfitri', type: 'Cuti Bersama' },
+                { date: '2026-04-03', name: 'Wafat Yesus Kristus', type: 'Nasional' },
+                { date: '2026-04-05', name: 'Kebangkitan Yesus Kristus (Paskah)', type: 'Nasional' },
+                { date: '2026-05-01', name: 'Hari Buruh Internasional', type: 'Nasional' },
+                { date: '2026-05-14', name: 'Kenaikan Yesus Kristus', type: 'Nasional' },
+                { date: '2026-05-15', name: 'Cuti Bersama Kenaikan Yesus Kristus', type: 'Cuti Bersama' },
+                { date: '2026-05-27', name: 'Iduladha 1447 H', type: 'Nasional' },
+                { date: '2026-05-28', name: 'Cuti Bersama Iduladha', type: 'Cuti Bersama' },
+                { date: '2026-05-31', name: 'Hari Raya Waisak 2570 BE', type: 'Nasional' },
+                { date: '2026-06-01', name: 'Hari Lahir Pancasila', type: 'Nasional' },
+                { date: '2026-06-16', name: '1 Muharam Tahun Baru Islam 1448 H', type: 'Nasional' },
+                { date: '2026-08-17', name: 'Proklamasi Kemerdekaan RI', type: 'Nasional' },
+                { date: '2026-08-25', name: 'Maulid Nabi Muhammad SAW', type: 'Nasional' },
+                { date: '2026-12-24', name: 'Cuti Bersama Hari Raya Natal', type: 'Cuti Bersama' },
+                { date: '2026-12-25', name: 'Kelahiran Yesus Kristus (Natal)', type: 'Nasional' }
+            ]
+        };
+
+        function renderHolidayTable() {
+            const tbody = document.getElementById('holiday-table-body');
+            const emptyState = document.getElementById('holiday-empty-state');
+            if (!tbody) return;
+            const sorted = [...holidaysData].sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (sorted.length === 0) {
+                tbody.innerHTML = '';
+                emptyState?.classList.remove('hidden'); emptyState?.classList.add('flex');
+                return;
+            }
+            emptyState?.classList.add('hidden'); emptyState?.classList.remove('flex');
+            const typeBadge = (type) => {
+                if (type === 'Cuti Bersama') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">Cuti Bersama</span>`;
+                if (type === 'Gereja') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700">Libur Gereja</span>`;
+                return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Nasional</span>`;
+            };
+            tbody.innerHTML = sorted.map(h => `
+                <tr class="hover:bg-gray-50">
+                    <td class="p-4 font-medium text-gray-700">${formatDate(h.date)}</td>
+                    <td class="p-4 text-gray-700">${h.name}</td>
+                    <td class="p-4">${typeBadge(h.type)}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="deleteHoliday('${h.id}')" class="text-red-500 hover:text-red-700 transition cursor-pointer" title="Hapus">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function saveHoliday(e) {
+            e.preventDefault();
+            const date = document.getElementById('hol-date').value;
+            const name = document.getElementById('hol-name').value.trim();
+            const type = document.getElementById('hol-type').value;
+            if (!date || !name) return;
+            upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), date, name, type });
+            document.getElementById('holiday-form').reset();
+            updateUI();
+            forceSyncNow();
+            Swal.fire({ title: 'Tersimpan', text: 'Tanggal merah berhasil ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+        }
+
+        function deleteHoliday(id) {
+            Swal.fire({
+                title: 'Hapus Tanggal Merah?', text: 'Data yang dihapus tidak dapat dikembalikan.', icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    deleteFromRawList(holidaysDataRaw, id);
+                    updateUI();
+                    forceSyncNow();
+                }
+            });
+        }
+
+        function clearAllHolidays() {
+            if (holidaysData.length === 0) return;
+            Swal.fire({
+                title: 'Kosongkan Semua Tanggal Merah?', text: 'Seluruh data hari libur akan dihapus permanen.', icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus Semua', cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    holidaysData.map(h => h.id).forEach(deleteFromRawList.bind(null, holidaysDataRaw));
+                    updateUI();
+                    forceSyncNow();
+                    Swal.fire({ title: 'Terhapus', icon: 'success', timer: 1000, showConfirmButton: false });
+                }
+            });
+        }
+
+        function populateHolidayImportYearSelect() {
+            const select = document.getElementById('hol-import-year');
+            const note = document.getElementById('hol-import-note');
+            if (!select) return;
+            const years = Object.keys(OFFICIAL_HOLIDAYS_BY_YEAR).sort();
+            select.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+            const currentYear = new Date().getFullYear().toString();
+            if (years.includes(currentYear)) select.value = currentYear;
+            if (note) {
+                const maxYear = years[years.length - 1];
+                note.innerText = `Data resmi tersedia untuk tahun: ${years.join(', ')}. Tahun berikutnya (mis. ${parseInt(maxYear) + 1}) akan ditambahkan setelah SKB 3 Menteri resmi terbit — sementara itu tambahkan manual lewat form di bawah.`;
+            }
+        }
+
+        function importOfficialHolidays() {
+            const select = document.getElementById('hol-import-year');
+            const year = select ? select.value : null;
+            const dataset = OFFICIAL_HOLIDAYS_BY_YEAR[year];
+            if (!dataset) {
+                Swal.fire('Info', 'Data resmi untuk tahun tersebut belum tersedia. Silakan tambah manual lewat form di bawah.', 'info');
+                return;
+            }
+            Swal.fire({
+                title: `Import Libur Nasional ${year}?`,
+                text: `Akan menambahkan ${dataset.length} tanggal merah resmi (SKB 3 Menteri) untuk tahun ${year}. Tanggal yang sudah ada tidak akan diduplikasi.`,
+                icon: 'question', showCancelButton: true, confirmButtonText: 'Ya, Import', cancelButtonText: 'Batal', confirmButtonColor: '#d97706'
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+                let added = 0;
+                dataset.forEach(h => {
+                    const exists = holidaysData.some(x => x.date === h.date && x.name === h.name);
+                    if (!exists) {
+                        upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), ...h });
+                        added++;
+                    }
+                });
+                updateUI();
+                forceSyncNow();
+                Swal.fire('Berhasil', `${added} tanggal merah baru ditambahkan.`, 'success');
+            });
+        }
+
+        // ========================================================================
+        // PARAMETER TAB
+        // ========================================================================
+        function renderParameterTab() {
+            const nameEl = document.getElementById('param-church-name');
+            if (nameEl) nameEl.innerText = churchName;
+            const thresholdInput = document.getElementById('param-threshold');
+            if (thresholdInput) {
+                const threshold = getAttendanceThreshold();
+                thresholdInput.value = threshold !== null ? threshold : '';
+            }
+            renderLocationList();
+            populateHolidayImportYearSelect();
+            const visitThresholdInput = document.getElementById('param-visit-threshold');
+            if (visitThresholdInput) visitThresholdInput.value = getVisitThreshold();
+        }
+
+        function saveAttendanceThreshold(e) {
+            e.preventDefault();
+            const val = document.getElementById('param-threshold').value;
+            if (val === '' || isNaN(parseInt(val))) {
+                Swal.fire('Info', 'Masukkan angka ambang batas kehadiran terlebih dahulu.', 'info');
+                return;
+            }
+            attendanceThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
+            forceSyncNow();
+            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kehadiran diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+        }
+
+        function clearAttendanceThreshold() {
+            attendanceThresholdSetting = makeScalarSetting(null);
+            document.getElementById('param-threshold').value = '';
+            updateUI();
+            forceSyncNow();
+            Swal.fire({ title: 'Dinonaktifkan', icon: 'success', timer: 1000, showConfirmButton: false });
+        }
+
+        function saveVisitThreshold(e) {
+            e.preventDefault();
+            const val = document.getElementById('param-visit-threshold').value;
+            if (!val || parseInt(val) <= 0) { Swal.fire('Info', 'Masukkan angka minggu berturut-turut yang valid.', 'info'); return; }
+            visitThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
+            forceSyncNow();
+            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kunjungan pastoral diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+            renderPastoralVisitList();
+        }
+
+        function renderLocationList() {
+            const container = document.getElementById('param-location-list');
+            const emptyState = document.getElementById('param-location-empty');
+            const datalist = document.getElementById('master-locations-list');
+            if (datalist) {
+                datalist.innerHTML = masterLocations.map(l => `<option value="${l.name}">`).join('');
+            }
+            if (!container) return;
+            if (masterLocations.length === 0) {
+                container.innerHTML = '';
+                emptyState?.classList.remove('hidden');
+                return;
+            }
+            emptyState?.classList.add('hidden');
+            container.innerHTML = masterLocations.map(l => `
+                <span class="inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium">
+                    ${l.name}
+                    <button onclick="deleteLocation('${l.id}')" class="w-5 h-5 rounded-full hover:bg-emerald-200 flex items-center justify-center transition cursor-pointer" title="Hapus">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        function saveLocation(e) {
+            e.preventDefault();
+            const input = document.getElementById('param-loc-name');
+            const name = input.value.trim();
+            if (!name) return;
+            if (masterLocations.some(l => l.name.toLowerCase() === name.toLowerCase())) {
+                Swal.fire('Info', 'Lokasi tersebut sudah ada di daftar.', 'info');
+                return;
+            }
+            upsertInRawList(masterLocationsRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name });
+            input.value = '';
+            updateUI();
+            forceSyncNow();
+        }
+
+        function deleteLocation(id) {
+            deleteFromRawList(masterLocationsRaw, id);
+            updateUI();
+            forceSyncNow();
+        }
+
+        function clearAllLocations() {
+            if (masterLocations.length === 0) return Swal.fire('Info', 'Belum ada lokasi tersimpan.', 'info');
+            Swal.fire({ title: 'Kosongkan Master Lokasi?', text: 'Semua lokasi tersimpan akan dihapus. Ibadah yang sudah dibuat tidak akan terpengaruh.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
+            .then(result => {
+                if (result.isConfirmed) {
+                    masterLocations.forEach(l => deleteFromRawList(masterLocationsRaw, l.id));
+                    updateUI();
+                    forceSyncNow();
+                    Swal.fire({ title: 'Terhapus', text: 'Semua lokasi berhasil dikosongkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+                }
+            });
+        }
+
+        // ========================================================================
+        // SWITCH TAB
+        // ========================================================================
+        const MAIN_TABS = ['data', 'calendar', 'parameter'];
+        const activeTabClasses = ['bg-blue-600', 'text-white', 'shadow-sm'];
+        const inactiveTabClasses = ['bg-gray-100', 'text-gray-600', 'hover:bg-gray-200'];
+
+        function switchMainTab(tab) {
+            MAIN_TABS.forEach(t => {
+                const panel = document.getElementById(`tab-panel-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (!panel || !btn) return;
+                if (t === tab) {
+                    panel.classList.remove('hidden');
+                    btn.classList.remove(...inactiveTabClasses); btn.classList.add(...activeTabClasses);
+                } else {
+                    panel.classList.add('hidden');
+                    btn.classList.remove(...activeTabClasses); btn.classList.add(...inactiveTabClasses);
+                }
+            });
+            if (tab === 'calendar') { renderCalendar(); }
+            if (tab === 'parameter') { renderHolidayTable(); renderParameterTab(); }
+        }
+
+        function editChurchName() {
+            Swal.fire({
+                title: 'Ubah Nama Gereja',
+                input: 'text',
+                inputValue: churchName,
+                showCancelButton: true,
+                confirmButtonText: 'Simpan',
+                cancelButtonText: 'Batal',
+                inputValidator: (value) => {
+                    if (!value) return 'Nama gereja tidak boleh kosong!';
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    churchName = result.value.trim();
+                    churchNameSetting = makeScalarSetting(churchName);
+                    document.getElementById('nav-church-name').innerText = churchName;
+                    updateUI();
+                    forceSyncNow();
+                    Swal.fire({ title: 'Tersimpan', text: 'Nama gereja diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+                }
+            });
+        }
+
+        // ========================================================================
+        // WINDOW ONLOAD
+        // ========================================================================
+        window.onload = function() {
+            // Tampilkan data lokal dulu (cepat)
+            updateUI({ skipMirror: true });
+            // Lalu tarik data dari Firebase dan gabungkan
+            initialSyncPromise = loadEventsFromFirebase()
+                .then(() => {
+                    // Setelah sync selesai, perbarui UI dan kirim data ke Firebase (jika ada perubahan lokal)
+                    updateUI({ skipMirror: false });
+                })
+                .catch((err) => {
+                    console.warn('Gagal sync awal, gunakan data lokal', err);
+                    updateUI({ skipMirror: false });
+                });
+            // Muat data jemaat untuk checklist
+            loadJemaatMasterData();
+        };
+    </script>
+</body>
+</html>
