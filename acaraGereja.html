@@ -12,26 +12,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JemaatID - Laporan Ibadah & Kegiatan Gereja</title>
     
-    <!-- Tailwind CSS -->
+    <!-- Tailwind CSS untuk Styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- FontAwesome -->
+    <!-- FontAwesome untuk Icon -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- SheetJS untuk Excel -->
+    <!-- SheetJS untuk Export/Import Excel -->
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
-    <!-- jsPDF & AutoTable -->
+    <!-- jsPDF & AutoTable untuk Export PDF -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 
-    <!-- SweetAlert2 -->
+    <!-- SweetAlert2 untuk Notifikasi -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-    <!-- Firebase (baca database jemaat & tulis data acara) -->
+    <!-- MULAI DARI SINI: Koneksi Firebase (khusus MEMBACA Database Jemaat) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -49,17 +49,21 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // Referensi ke dokumen Database Jemaat (koleksi "gerejaData", dokumen "main")
         window.jemaatDocRef = doc(db, "gerejaData", "main");
-        window.jemaatChunksColRef = collection(db, "gerejaData", "main", "jemaatChunks");
+        window.jemaatChunksColRef = collection(db, "gerejaData", "main", "jemaatChunks"); // Referensi koleksi chunk data jemaat
         window.firestoreGetDocJemaat = getDoc;
-        window.firestoreGetDocsJemaat = getDocs;
+        window.firestoreGetDocsJemaat = getDocs; // Fungsi tambahan untuk getDocs
 
+        // Referensi ke dokumen data Acara Gereja milik halaman ini sendiri (koleksi "gerejaData",
+        // dokumen "acara"). Dipakai agar dbJemaat.html bisa membaca riwayat kehadiran (read-only).
         window.acaraDocRef = doc(db, "gerejaData", "acara");
         window.firestoreSetDocAcara = setDoc;
 
         window.firebaseReadyJemaat = true;
         console.log("Firebase Terhubung! (Baca Database Jemaat Chunking & Tulis Cermin Data Acara)");
     </script>
+    <!-- SELESAI: Batas Kode Firebase -->
 
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
@@ -91,14 +95,15 @@
                         </div>
                         <span class="text-[11px] text-blue-200 font-medium tracking-wide mt-1 leading-none truncate">Modul Acara &amp; Kegiatan Gereja</span>
                     </div>
+                    <button id="sync-status-badge" onclick="manualRefreshSync()" title="Klik untuk sinkronisasi ulang sekarang" class="flex items-center gap-1.5 text-[11px] font-semibold px-2 py-1 rounded-full bg-white/10 text-blue-100 cursor-pointer hover:bg-white/20 transition flex-shrink-0">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> <span id="sync-status-text">Menyambungkan...</span>
+                    </button>
                 </div>
 
                 <div class="flex items-center flex-wrap gap-2 self-stretch sm:self-auto justify-start sm:justify-end">
-                    <!-- Tombol Sinkronisasi Manual -->
-                    <button onclick="forceSyncNow()" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center shadow-sm cursor-pointer border border-indigo-400">
-                        <i class="fa-solid fa-cloud-arrow-up mr-1.5"></i> Sinkronisasi
+                    <button onclick="manualRefreshSync()" id="manual-refresh-btn" class="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center shadow-sm cursor-pointer border border-white/20" title="Tarik &amp; kirim ulang data sekarang">
+                        <i class="fa-solid fa-rotate mr-1.5"></i> Sync Ulang
                     </button>
-
                     <button onclick="document.getElementById('global-file-upload').click()" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center shadow-sm cursor-pointer border border-amber-400" title="Import Data Excel">
                         <i class="fa-solid fa-file-import mr-1.5"></i> Import Excel
                     </button>
@@ -211,7 +216,7 @@
             </div>
         </div>
 
-        <!-- Jemaat Perlu Dikunjungi -->
+        <!-- SECTION 0: Jemaat Perlu Dikunjungi (dari absensi checklist ibadah reguler) -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" id="pastoral-visit-section">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -232,7 +237,7 @@
             </div>
         </div>
 
-        <!-- Daftar Ibadah -->
+        <!-- SECTION 1: Daftar Acara & Ibadah -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -278,7 +283,7 @@
             </div>
         </div>
 
-        <!-- Kegiatan Pastoral -->
+        <!-- SECTION 2: Daftar Kegiatan Gereja (Pastoral) -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -324,7 +329,7 @@
 
         <div id="tab-panel-calendar" class="space-y-8 hidden">
 
-        <!-- Kalender Acara -->
+        <!-- SECTION 3: Kalender Acara Bulanan -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -365,7 +370,7 @@
 
         <div id="tab-panel-parameter" class="space-y-8 hidden">
 
-        <!-- Identitas Gereja -->
+        <!-- SECTION 5: Identitas Gereja -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100">
                 <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-church text-blue-600 mr-2"></i>Identitas Gereja</h2>
@@ -382,7 +387,7 @@
             </div>
         </div>
 
-        <!-- Ambang Batas Kehadiran -->
+        <!-- SECTION 6: Ambang Batas Kehadiran -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100">
                 <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-gauge-high text-orange-500 mr-2"></i>Ambang Batas Kehadiran</h2>
@@ -405,7 +410,7 @@
             </div>
         </div>
 
-        <!-- Ambang Batas Kunjungan Pastoral -->
+        <!-- SECTION 6B: Ambang Batas Kunjungan Pastoral -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100">
                 <h2 class="text-lg font-bold text-gray-800"><i class="fa-solid fa-hand-holding-heart text-rose-500 mr-2"></i>Ambang Batas Kunjungan Pastoral</h2>
@@ -425,7 +430,7 @@
             </div>
         </div>
 
-        <!-- Master Lokasi Ibadah -->
+        <!-- SECTION 7: Master Lokasi Ibadah -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -455,7 +460,7 @@
             </div>
         </div>
 
-        <!-- Tanggal Merah -->
+        <!-- SECTION 4: Manajemen Tanggal Merah / Hari Libur -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div class="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
@@ -535,7 +540,7 @@
         <!-- Diisi dinamis via JS -->
     </datalist>
 
-    <!-- MODAL 0: Master Ibadah Reguler -->
+    <!-- MODAL 0: Master Template Ibadah Reguler -->
     <div id="template-modal-backdrop" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div id="template-modal" class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden hidden modal-enter flex flex-col max-h-[90vh]">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
@@ -674,7 +679,7 @@
         </div>
     </div>
 
-    <!-- MODAL 0B: Generate Jadwal -->
+    <!-- MODAL 0B: Generate Jadwal dari Master -->
     <div id="generate-modal-backdrop" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div id="generate-modal" class="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden hidden modal-enter flex flex-col max-h-[90vh]">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50 flex-shrink-0">
@@ -797,7 +802,7 @@
                         </div>
                     </div>
 
-                    <!-- Komisi Terkait -->
+                    <!-- ====== BARU: Dropdown Komisi Terkait ====== -->
                     <div class="mb-4 bg-indigo-50/60 p-4 rounded-xl border border-indigo-200">
                         <label class="block text-sm font-bold text-indigo-900 mb-1">
                             <i class="fa-solid fa-people-group mr-1.5"></i> Komisi / Departemen Terkait
@@ -808,6 +813,7 @@
                         </select>
                         <p id="komisi-info-text" class="text-[11px] text-indigo-600 mt-1.5 italic hidden">Memuat daftar komisi dari Database Jemaat...</p>
                     </div>
+                    <!-- ====== AKHIR BARU ====== -->
 
                     <div class="mb-5 bg-amber-50/50 p-4 rounded-xl border border-amber-100">
                         <label class="block text-sm font-bold text-amber-900 mb-2">Status Pelaksanaan</label>
@@ -1003,6 +1009,7 @@
                         </div>
                     </div>
 
+                    <!-- Field Dinamis berdasarkan jenis kegiatan -->
                     <div id="dynamic-activity-fields" class="mb-4 space-y-4">
                         <!-- Diisi via JS -->
                     </div>
@@ -1036,75 +1043,53 @@
         </div>
     </div>
 
-    <!-- ========================================================== -->
-    <!-- JAVASCRIPT LENGKAP (dengan perbaikan sinkronisasi)          -->
-    <!-- ========================================================== -->
+    <!-- JavaScript Application Logic -->
     <script>
-        // ========================================================================
-        // STORAGE KEYS & STATE
-        // ========================================================================
+        // Storage Keys
         const STORAGE_KEY_EVENTS = 'jemaatid_events_data_v3';
         const STORAGE_KEY_ACTIVITIES = 'jemaatid_activities_data_v2';
         const CHURCH_NAME_KEY = 'jemaatid_church_name_v2';
         const STORAGE_KEY_TEMPLATES = 'jemaatid_regular_templates_v1';
-        const STORAGE_KEY_THRESHOLD = 'jemaatid_attendance_threshold_v1';
-        const STORAGE_KEY_VISIT_THRESHOLD = 'jemaatid_visit_threshold_v1';
-        const STORAGE_KEY_LOCATIONS = 'jemaatid_master_locations_v1';
-        const STORAGE_KEY_HOLIDAYS = 'jemaatid_holidays_v1';
-
-        // Data mentah (termasuk tombstone)
+        
+        // State Variables
+        // PENTING (sinkronisasi antar-device): `allEventsRaw` adalah data MENTAH yang disimpan &
+        // disinkronkan ke Firestore, termasuk "tombstone" (penanda terhapus: {id, deleted:true, updatedAt}).
+        // `eventsData` adalah versi TURUNAN yang cuma berisi data aktif (belum dihapus) — inilah yang
+        // dipakai oleh semua fungsi tampilan/kalkulasi (dashboard, tabel, kalender, export, dsb) TANPA
+        // perlu diubah satu per satu. Setiap kali ada perubahan data, panggil recomputeActiveEvents()
+        // lalu updateUI() supaya keduanya tetap sinkron.
         let allEventsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_EVENTS)) || [];
-        let regularTemplatesRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES)) || [];
-        let masterLocationsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_LOCATIONS)) || [];
-        let holidaysDataRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_HOLIDAYS)) || [];
-
-        // Data aktif (filter tidak terhapus)
         let eventsData = allEventsRaw.filter(e => !e.deleted);
-        let regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
-        let masterLocations = masterLocationsRaw.filter(e => !e.deleted);
-        let holidaysData = holidaysDataRaw.filter(e => !e.deleted);
-
         let activitiesData = JSON.parse(localStorage.getItem(STORAGE_KEY_ACTIVITIES)) || [];
-
-        // Setting skalar
+        // Master Ibadah Reguler ikut pola raw+tombstone yang sama dengan data ibadah supaya tersinkron.
+        let regularTemplatesRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_TEMPLATES)) || [];
+        let regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
+        // Nama gereja disimpan sebagai {value, updatedAt} supaya ikut Last-Write-Wins antar device.
         let churchNameSetting = loadScalarSetting(CHURCH_NAME_KEY, 'Gereja JemaatID');
         let churchName = churchNameSetting.value;
-        let attendanceThresholdSetting = loadScalarSetting(STORAGE_KEY_THRESHOLD, null);
-        let visitThresholdSetting = loadScalarSetting(STORAGE_KEY_VISIT_THRESHOLD, null);
-
-        // State tambahan
         let isFirstLoad = true;
         let currentAnalyticsData = {};
-        let jemaatMasterData = [];
-        let komisiMasterData = [];
-        let selectedAttendeeIds = new Set();
-        let genActiveTemplate = null;
-        let genPreviewList = [];
-        let calViewDate = new Date();
-        let initialSyncPromise = null;
 
         // ========================================================================
-        // HELPER FUNGSI
+        // LINK KE DATABASE JEMAAT (via Firebase, read-only) — untuk Checklist Absensi
+        // dan deteksi otomatis "Jemaat Perlu Dikunjungi"
         // ========================================================================
+        let jemaatMasterData = [];
+        let komisiMasterData = []; // <-- BARU: daftar komisi dari dbJemaat
+        let selectedAttendeeIds = new Set();
+        const STORAGE_KEY_VISIT_THRESHOLD = 'jemaatid_visit_threshold_v1';
+
         function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-        function makeScalarSetting(value) { return { value, updatedAt: new Date().toISOString() }; }
-        function loadScalarSetting(key, fallbackValue) {
-            const raw = localStorage.getItem(key);
-            if (raw === null) return { value: fallbackValue, updatedAt: null };
-            try {
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && 'value' in parsed) return { value: parsed.value, updatedAt: parsed.updatedAt || null };
-                return { value: parsed, updatedAt: null };
-            } catch { return { value: raw, updatedAt: null }; }
-        }
-        function mergeScalarSetting(cloudSetting, localSetting) {
-            if (!cloudSetting) return localSetting;
-            if (!localSetting) return cloudSetting;
-            const tCloud = cloudSetting.updatedAt ? new Date(cloudSetting.updatedAt).getTime() : 0;
-            const tLocal = localSetting.updatedAt ? new Date(localSetting.updatedAt).getTime() : 0;
-            return tCloud > tLocal ? cloudSetting : localSetting;
-        }
+        // ========================================================================
+        // HELPER SINKRONISASI DATA (dipakai bersama untuk: data ibadah, master ibadah
+        // reguler, master lokasi, tanggal merah, DAN pengaturan skalar seperti nama
+        // gereja & ambang batas). Semua perubahan (tambah/edit/hapus) WAJIB lewat
+        // fungsi-fungsi ini, supaya setiap perubahan punya jejak waktu (updatedAt) yang
+        // benar. Timestamp inilah yang dipakai untuk memutuskan versi mana yang menang
+        // saat data dari perangkat lain digabung (Last-Write-Wins per item/per field),
+        // termasuk membedakan "dihapus setelah diedit" vs "diedit setelah dihapus".
+        // ========================================================================
         function upsertInRawList(rawArr, item) {
             item.updatedAt = new Date().toISOString();
             const idx = rawArr.findIndex(e => e.id === item.id);
@@ -1113,6 +1098,7 @@
         function deleteFromRawList(rawArr, id) {
             rawArr.push({ id, deleted: true, updatedAt: new Date().toISOString() });
         }
+        // Buang duplikat id (sisa proses gabung), sisakan versi ber-updatedAt paling baru per id.
         function dedupeRawList(rawArr) {
             const latestById = new Map();
             rawArr.forEach(ev => {
@@ -1124,6 +1110,7 @@
             });
             return Array.from(latestById.values());
         }
+        // Gabungkan dua daftar mentah (cloud & lokal) dengan Last-Write-Wins per id.
         function mergeRawLists(cloudArr, localArr) {
             const merged = new Map();
             const consider = (ev) => {
@@ -1139,6 +1126,30 @@
             return Array.from(merged.values());
         }
 
+        // Untuk nilai tunggal (bukan daftar) seperti nama gereja / ambang batas: simpan sebagai
+        // {value, updatedAt} supaya bisa ikut dibandingkan "siapa yang terakhir mengubah".
+        function makeScalarSetting(value) { return { value, updatedAt: new Date().toISOString() }; }
+        function loadScalarSetting(key, fallbackValue) {
+            const raw = localStorage.getItem(key);
+            if (raw === null) return { value: fallbackValue, updatedAt: null };
+            try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && 'value' in parsed) return { value: parsed.value, updatedAt: parsed.updatedAt || null };
+                // JSON valid tapi bukan format {value, updatedAt} (mis. angka polos "10" dari versi lama)
+                return { value: parsed, updatedAt: null };
+            } catch (e) {
+                // Bukan JSON sama sekali (mis. nama gereja tersimpan sebagai teks polos di versi lama)
+                return { value: raw, updatedAt: null };
+            }
+        }
+        function mergeScalarSetting(cloudSetting, localSetting) {
+            if (!cloudSetting) return localSetting;
+            if (!localSetting) return cloudSetting;
+            const tCloud = cloudSetting.updatedAt ? new Date(cloudSetting.updatedAt).getTime() : 0;
+            const tLocal = localSetting.updatedAt ? new Date(localSetting.updatedAt).getTime() : 0;
+            return tCloud > tLocal ? cloudSetting : localSetting;
+        }
+
         function upsertRawEvent(newData) { upsertInRawList(allEventsRaw, newData); }
         function deleteRawEvent(id) { deleteFromRawList(allEventsRaw, id); }
         function recomputeActiveEvents() {
@@ -1146,158 +1157,62 @@
             eventsData = allEventsRaw.filter(e => !e.deleted);
         }
 
-        function getVisitThreshold() {
-            const n = parseInt(visitThresholdSetting.value);
-            return (!isNaN(n) && n > 0) ? n : 3;
-        }
-        function getAttendanceThreshold() {
-            const val = parseInt(attendanceThresholdSetting.value);
-            return isNaN(val) ? null : val;
-        }
-
-        function formatDate(dateString) {
-            if(!dateString) return '-';
-            const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
-            return new Intl.DateTimeFormat('id-ID', options).format(new Date(dateString));
-        }
-        function formatNoWhatsAppAcara(no) {
-            if (!no) return null;
-            let digits = String(no).replace(/[^0-9]/g, '');
-            if (!digits) return null;
-            if (digits.startsWith('0')) digits = '62' + digits.slice(1);
-            else if (!digits.startsWith('62')) digits = '62' + digits;
-            return digits;
-        }
-        function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
-        function todayYMD() { const t = new Date(); return ymd(t); }
-
-        const WEEKDAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-
-        // ========================================================================
-        // FIREBASE SYNC (DIPERBAIKI)
-        // ========================================================================
-        async function mirrorAllToFirebase() {
-            try {
-                if (!window.acaraDocRef || !window.firestoreSetDocAcara) return;
-                await window.firestoreSetDocAcara(window.acaraDocRef, {
-                    eventsData: allEventsRaw,
-                    regularTemplates: regularTemplatesRaw,
-                    masterLocations: masterLocationsRaw,
-                    holidaysData: holidaysDataRaw,
-                    settings: {
-                        churchName: churchNameSetting,
-                        attendanceThreshold: attendanceThresholdSetting,
-                        visitThreshold: visitThresholdSetting
-                    },
-                    lastUpdated: new Date().toISOString()
-                });
-                console.log('[Sync] Berhasil kirim data ke Firestore');
-            } catch (e) {
-                console.error('[Sync] GAGAL mengirim data ke Firestore:', e);
-                throw e;
-            }
-        }
-
-        // === FORCE SYNC (dipanggil manual atau otomatis) ===
-        async function forceSyncNow() {
-            try {
-                await mirrorAllToFirebase();
-                Swal.fire({ title: 'Sinkronisasi Berhasil', text: 'Data telah dikirim ke server.', icon: 'success', timer: 1500, showConfirmButton: false });
-            } catch (e) {
-                Swal.fire({ title: 'Gagal Sinkronisasi', text: 'Periksa koneksi internet. Akan dicoba ulang.', icon: 'error', timer: 2000, showConfirmButton: false });
-                // Retry setelah 3 detik
-                setTimeout(() => {
-                    mirrorAllToFirebase().catch(console.error);
-                }, 3000);
-            }
-        }
-
-        async function loadEventsFromFirebase() {
-            try {
-                await waitForFirebaseJemaatReady();
-                if (!window.acaraDocRef || !window.firestoreGetDocJemaat) {
-                    console.warn('[Sync] Firebase tidak siap, gunakan data lokal.');
-                    return;
-                }
-                const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
-                if (snap.exists()) {
-                    const data = snap.data();
-                    console.log('[Sync] Berhasil tarik data dari Firestore. Last updated:', data.lastUpdated);
-                    if (Array.isArray(data.eventsData)) allEventsRaw = mergeRawLists(data.eventsData, allEventsRaw);
-                    if (Array.isArray(data.regularTemplates)) regularTemplatesRaw = mergeRawLists(data.regularTemplates, regularTemplatesRaw);
-                    if (Array.isArray(data.masterLocations)) masterLocationsRaw = mergeRawLists(data.masterLocations, masterLocationsRaw);
-                    if (Array.isArray(data.holidaysData)) holidaysDataRaw = mergeRawLists(data.holidaysData, holidaysDataRaw);
-                    if (data.settings) {
-                        churchNameSetting = mergeScalarSetting(data.settings.churchName, churchNameSetting);
-                        churchName = churchNameSetting.value || churchName;
-                        attendanceThresholdSetting = mergeScalarSetting(data.settings.attendanceThreshold, attendanceThresholdSetting);
-                        visitThresholdSetting = mergeScalarSetting(data.settings.visitThreshold, visitThresholdSetting);
-                    }
-                }
-            } catch (e) {
-                console.error('Gagal memuat data dari Firebase:', e);
-            } finally {
-                updateUI({ skipMirror: true }); // tampilkan hasil gabungan
-                await mirrorAllToFirebase(); // selalu dorong hasil akhir ke cloud
-            }
-        }
-
         function waitForFirebaseJemaatReady() {
             return new Promise((resolve) => {
-                if (window.firebaseReadyJemaat && window.acaraDocRef) return resolve();
+                if (window.firebaseReadyJemaat && window.jemaatDocRef) return resolve();
                 const check = setInterval(() => {
-                    if (window.firebaseReadyJemaat && window.acaraDocRef) { clearInterval(check); resolve(); }
+                    if (window.firebaseReadyJemaat && window.jemaatDocRef) { clearInterval(check); resolve(); }
                 }, 50);
-                setTimeout(() => { clearInterval(check); resolve(); }, 8000);
+                setTimeout(() => { clearInterval(check); resolve(); }, 8000); // jangan menggantung selamanya jika Firebase gagal terhubung
             });
         }
 
         // ========================================================================
-        // FUNGSI UPDATE UI & SINKRONISASI OTOMATIS
+        // STATUS SINKRONISASI (TAMPAK JELAS DI LAYAR, TIDAK DIAM-DIAM GAGAL LAGI)
         // ========================================================================
-        function updateUI(options = {}) {
-            const { skipMirror = false } = options;
-            recomputeActiveEvents();
-            regularTemplatesRaw = dedupeRawList(regularTemplatesRaw);
-            regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
-            masterLocationsRaw = dedupeRawList(masterLocationsRaw);
-            masterLocations = masterLocationsRaw.filter(e => !e.deleted);
-            holidaysDataRaw = dedupeRawList(holidaysDataRaw);
-            holidaysData = holidaysDataRaw.filter(e => !e.deleted);
-
-            document.getElementById('nav-church-name').innerText = churchName;
-            eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
-            activitiesData.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-            populateMonthFilter();
-            renderDashboard();
-            renderTable();
-            renderActivityTable();
-            renderCalendar();
-            renderHolidayTable();
-            renderParameterTab();
-
-            // Simpan ke localStorage
-            localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(allEventsRaw));
-            localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
-            localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplatesRaw));
-            localStorage.setItem(STORAGE_KEY_LOCATIONS, JSON.stringify(masterLocationsRaw));
-            localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysDataRaw));
-            localStorage.setItem(CHURCH_NAME_KEY, JSON.stringify(churchNameSetting));
-            localStorage.setItem(STORAGE_KEY_THRESHOLD, JSON.stringify(attendanceThresholdSetting));
-            localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, JSON.stringify(visitThresholdSetting));
-
-            if (!skipMirror) {
-                // Tunggu initial sync selesai, lalu kirim ke Firebase
-                (initialSyncPromise || Promise.resolve()).then(() => {
-                    mirrorAllToFirebase().catch(console.error);
-                });
+        // Sebelumnya kalau koneksi ke Firestore gagal/lambat (paling sering kejadian
+        // di HP: tab dibangunkan dari background, bukan reload penuh), aplikasi cuma
+        // console.warn (tidak kelihatan user) lalu diam-diam lanjut pakai data LOKAL
+        // SAJA. Akibatnya: (1) angka lama nyangkut di layar karena tidak pernah ditarik
+        // ulang, dan (2) perubahan yang dibuat saat itu (mis. checklist kehadiran)
+        // TIDAK PERNAH terkirim ke Firestore, sehingga tidak muncul di dbJemaat.html
+        // yang membaca langsung dari cloud. Kode di bawah ini membuat status sinkron
+        // selalu terlihat, retry otomatis kalau gagal, dan re-sync otomatis begitu
+        // tab aktif lagi / internet nyambung lagi.
+        let isSyncing = false;
+        let syncRetryTimer = null;
+        function setSyncStatus(state) {
+            const badge = document.getElementById('sync-status-badge');
+            const text = document.getElementById('sync-status-text');
+            const icon = badge ? badge.querySelector('i') : null;
+            if (!badge || !text || !icon) return;
+            badge.classList.remove('bg-white/10', 'bg-red-500/80', 'bg-emerald-500/80', 'bg-amber-500/80');
+            icon.className = 'fa-solid';
+            if (state === 'syncing') {
+                badge.classList.add('bg-white/10'); icon.classList.add('fa-circle-notch', 'fa-spin'); text.innerText = 'Menyinkronkan...';
+            } else if (state === 'online') {
+                badge.classList.add('bg-emerald-500/80'); icon.classList.add('fa-circle-check'); text.innerText = 'Tersambung';
+            } else if (state === 'offline') {
+                badge.classList.add('bg-red-500/80'); icon.classList.add('fa-triangle-exclamation'); text.innerText = 'Gagal sync (data lokal) - klik utk coba lagi';
+            } else if (state === 'pending') {
+                badge.classList.add('bg-amber-500/80'); icon.classList.add('fa-clock'); text.innerText = 'Ada perubahan belum terkirim...';
             }
         }
 
-        // ========================================================================
-        // LOAD DATA JEMAAT (untuk checklist)
-        // ========================================================================
+        async function manualRefreshSync() {
+            if (isSyncing) return;
+            const btn = document.getElementById('manual-refresh-btn');
+            if (btn) btn.disabled = true;
+            await loadEventsFromFirebase();
+            if (btn) btn.disabled = false;
+        }
+
+        // Kalau tab di HP dibangunkan lagi dari background (bukan reload penuh),
+        // atau koneksi internet baru pulih, otomatis tarik & kirim ulang data.
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) manualRefreshSync(); });
+        window.addEventListener('online', () => manualRefreshSync());
+        window.addEventListener('focus', () => manualRefreshSync());
+
         async function loadChunkedCollection(colRef) {
             const snap = await window.firestoreGetDocsJemaat(colRef);
             const chunkDocs = snap.docs.map((d) => {
@@ -1316,14 +1231,21 @@
             try {
                 await waitForFirebaseJemaatReady();
                 if (!window.jemaatDocRef) throw new Error('Firebase belum siap');
+                
+                // Ambil settings dari main doc
                 const snap = await window.firestoreGetDocJemaat(window.jemaatDocRef);
                 const data = snap.exists() ? snap.data() : {};
+                
+                // Ambil dataJemaat dari chunks collection (versi Enterprise)
                 jemaatMasterData = await loadChunkedCollection(window.jemaatChunksColRef);
+                
+                // Ambil settings.komisi dari dbJemaat
                 if (data.settings && Array.isArray(data.settings.komisi)) {
                     komisiMasterData = data.settings.komisi;
                 } else {
                     komisiMasterData = [];
                 }
+                // Isi dropdown komisi di form
                 populateKomisiDropdown();
                 populateTplKomisiDropdown();
                 renderAttendanceChecklist();
@@ -1337,13 +1259,44 @@
             }
         }
 
+        function populateKomisiDropdown() {
+            const select = document.getElementById('form-komisi-id');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
+            if (komisiMasterData.length === 0) {
+                select.innerHTML += '<option value="" disabled>-- Tidak ada komisi di Database Jemaat --</option>';
+            } else {
+                komisiMasterData.forEach(k => {
+                    const opt = document.createElement('option');
+                    opt.value = k.name;
+                    opt.text = k.name;
+                    select.appendChild(opt);
+                });
+            }
+            if (currentVal) select.value = currentVal;
+            const infoText = document.getElementById('komisi-info-text');
+            if (infoText) infoText.classList.add('hidden');
+        }
+
+        function formatNoWhatsAppAcara(no) {
+            if (!no) return null;
+            let digits = String(no).replace(/[^0-9]/g, '');
+            if (!digits) return null;
+            if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+            else if (!digits.startsWith('62')) digits = '62' + digits;
+            return digits;
+        }
+
         function getActiveJemaatList() {
             return (jemaatMasterData || []).filter(j => j.status_jemaat === 'Aktif');
         }
+
         function getJemaatByKomisi(komisiName) {
             if (!komisiName) return getActiveJemaatList();
             const komisi = komisiMasterData.find(k => k.name === komisiName);
             if (!komisi) return getActiveJemaatList();
+            // Filter jemaat yang memenuhi kriteria komisi (gunakan logika dari dbJemaat)
             return getActiveJemaatList().filter(j => {
                 let age = hitungUsiaSaatIni(j.tanggal_lahir);
                 if (age === null || age < komisi.minAge || age > komisi.maxAge) return false;
@@ -1358,6 +1311,7 @@
                     if (!komisi.bidangPelayanan.includes(bidangJemaat)) return false;
                 }
                 if (komisi.pekerjaan && komisi.pekerjaan !== "Semua" && j.pekerjaan !== komisi.pekerjaan) return false;
+                // status pernikahan, baptis, sidi (jika ada di komisi)
                 if (komisi.statusPernikahan && komisi.statusPernikahan !== "Semua" && j.status_pernikahan !== komisi.statusPernikahan) return false;
                 if (komisi.baptisSyarat === "Sudah Baptis" && j.jenis_baptis === "Belum Baptis") return false;
                 if (komisi.baptisSyarat === "Belum Baptis" && j.jenis_baptis !== "Belum Baptis") return false;
@@ -1366,6 +1320,7 @@
                 return true;
             });
         }
+
         function hitungUsiaSaatIni(tanggalLahirStr) {
             let parsed = parseRobustDate(tanggalLahirStr);
             if (!parsed) return null;
@@ -1375,6 +1330,7 @@
             if (bulanIni < parsed.m || (bulanIni === parsed.m && tglIni < parsed.d)) age--;
             return age;
         }
+
         function parseRobustDate(tglStr) {
             if (!tglStr) return null;
             tglStr = String(tglStr).trim();
@@ -1397,237 +1353,7 @@
             return null;
         }
 
-        // ========================================================================
-        // DASHBOARD & ANALYTICS
-        // ========================================================================
-        function populateMonthFilter() {
-            const select = document.getElementById('month-filter');
-            const currentValue = select.value;
-            const months = new Set();
-            eventsData.forEach(item => {
-                if(item.date) {
-                    const d = new Date(item.date);
-                    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-                }
-            });
-            const now = new Date();
-            const currentMonthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            months.add(currentMonthYear);
-            const sortedMonths = Array.from(months).sort().reverse();
-            select.innerHTML = '<option value="all">Semua Waktu (All Time)</option>';
-            sortedMonths.forEach(my => {
-                const [y, m] = my.split('-');
-                const date = new Date(y, m - 1, 1);
-                const monthName = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(date);
-                const option = document.createElement('option');
-                option.value = my;
-                option.text = monthName;
-                select.appendChild(option);
-            });
-            if (isFirstLoad) {
-                select.value = currentMonthYear;
-                isFirstLoad = false;
-            } else if (sortedMonths.includes(currentValue) || currentValue === 'all') {
-                select.value = currentValue;
-            }
-        }
-
-        function calculateAdvancedAnalytics(filterValue) {
-            let result = {
-                filter: filterValue, totalEvents: 0, totalAttendance: 0, totalNewVisitors: 0,
-                avgAttendance: 0, momText: '-', topWeek: '-', lowestWeek: '-', weekBreakdown: [], suggestionPoints: []
-            };
-            const allEvents = eventsData;
-            if (allEvents.length === 0) return result;
-            let filteredEvents = allEvents;
-            if (filterValue !== 'all') filteredEvents = allEvents.filter(d => d.date && d.date.startsWith(filterValue));
-            const completedEvents = filteredEvents.filter(d => d.eventStatus !== 'Terjadwal');
-            result.totalEvents = filteredEvents.length;
-            if (completedEvents.length === 0) return result;
-            result.totalAttendance = completedEvents.reduce((sum, item) => sum + (parseInt(item.attendance) || 0), 0);
-            result.totalNewVisitors = completedEvents.reduce((sum, item) => sum + (parseInt(item.newVisitors) || 0), 0);
-            result.avgAttendance = Math.round(result.totalAttendance / completedEvents.length);
-            const preacherMap = {}, wlMap = {}, weekMap = {};
-            let totalWithFullMusic = 0, countFullMusic = 0, totalWithMinMusic = 0, countMinMusic = 0;
-            completedEvents.forEach(item => {
-                const att = parseInt(item.attendance) || 0;
-                const preacher = (item.preacher || 'Tidak Tercatat').trim();
-                if (!preacherMap[preacher]) preacherMap[preacher] = { count: 0, totalAtt: 0 };
-                preacherMap[preacher].count++; preacherMap[preacher].totalAtt += att;
-                const wl = (item.wl || 'Tidak Tercatat').trim();
-                if (!wlMap[wl]) wlMap[wl] = { count: 0, totalAtt: 0 };
-                wlMap[wl].count++; wlMap[wl].totalAtt += att;
-                const musCount = item.musicians ? item.musicians.split(',').filter(m => m.trim().length > 0).length : 0;
-                if (musCount >= 3) { totalWithFullMusic += att; countFullMusic++; } else { totalWithMinMusic += att; countMinMusic++; }
-                if (item.date) {
-                    const d = new Date(item.date + 'T00:00:00');
-                    if (!isNaN(d)) {
-                        const weekOfMonth = Math.ceil(d.getDate() / 7);
-                        if (!weekMap[weekOfMonth]) weekMap[weekOfMonth] = { count: 0, totalAtt: 0 };
-                        weekMap[weekOfMonth].count++; weekMap[weekOfMonth].totalAtt += att;
-                    }
-                }
-            });
-            const preacherList = Object.keys(preacherMap).map(n => ({ name: n, avgAtt: Math.round(preacherMap[n].totalAtt / preacherMap[n].count) })).sort((a, b) => b.avgAtt - a.avgAtt);
-            const wlList = Object.keys(wlMap).map(n => ({ name: n, avgAtt: Math.round(wlMap[n].totalAtt / wlMap[n].count) })).sort((a, b) => b.avgAtt - a.avgAtt);
-            const weekList = Object.keys(weekMap).map(w => ({ week: parseInt(w), avgAtt: Math.round(weekMap[w].totalAtt / weekMap[w].count), count: weekMap[w].count })).sort((a, b) => b.avgAtt - a.avgAtt);
-            result.weekBreakdown = weekList;
-            if (weekList.length > 0) {
-                result.topWeek = `Minggu ke-${weekList[0].week} (Rata ${weekList[0].avgAtt} jiwa)`;
-                result.lowestWeek = `Minggu ke-${weekList[weekList.length - 1].week} (Rata ${weekList[weekList.length - 1].avgAtt} jiwa)`;
-            }
-            if (preacherList.length > 0) result.suggestionPoints.push(`Khotbah: Pengkhotbah '${preacherList[0].name}' mencatatkan kehadiran tertinggi (${preacherList[0].avgAtt} jiwa rata-rata).`);
-            if (wlList.length > 0) {
-                const avgFull = countFullMusic > 0 ? Math.round(totalWithFullMusic / countFullMusic) : 0;
-                const avgMin = countMinMusic > 0 ? Math.round(totalWithMinMusic / countMinMusic) : 0;
-                if (avgFull > avgMin && avgFull > 0) result.suggestionPoints.push(`Musik: Ibadah dengan tim lengkap (≥3 pemusik) rata-rata dihadiri ${avgFull} jiwa dibanding ${avgMin} jiwa (tim minimal).`);
-            }
-            if (weekList.length > 1) {
-                result.suggestionPoints.push(`Pola Mingguan: Ibadah pada Minggu ke-${weekList[0].week} tiap bulan cenderung paling ramai (rata-rata ${weekList[0].avgAtt} jiwa), sedangkan Minggu ke-${weekList[weekList.length - 1].week} cenderung paling sepi (rata-rata ${weekList[weekList.length - 1].avgAtt} jiwa).`);
-            }
-            return result;
-        }
-
-        function renderDashboard() {
-            const filterValue = document.getElementById('month-filter').value;
-            let filteredEvents = eventsData;
-            if (filterValue !== 'all') filteredEvents = eventsData.filter(item => item.date && item.date.startsWith(filterValue));
-            const completedEvents = filteredEvents.filter(item => item.eventStatus !== 'Terjadwal');
-            document.getElementById('dash-total-events').innerText = filteredEvents.length;
-            document.getElementById('dash-total-attendance').innerText = completedEvents.reduce((sum, item) => sum + (parseInt(item.attendance) || 0), 0).toLocaleString('id-ID');
-            document.getElementById('dash-total-new-visitors').innerText = completedEvents.reduce((sum, item) => sum + (parseInt(item.newVisitors) || 0), 0).toLocaleString('id-ID');
-            currentAnalyticsData = calculateAdvancedAnalytics(filterValue);
-            const analyticsContainer = document.getElementById('analytics-container');
-            analyticsContainer.innerHTML = `
-                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
-                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Rata-rata Kehadiran</p>
-                    <p class="text-xl font-bold text-gray-800">${currentAnalyticsData.avgAttendance || 0} <span class="text-sm font-normal text-gray-500">jiwa/ibadah</span></p>
-                </div>
-                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
-                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Minggu Ibadah Terpadat</p>
-                    <p class="text-sm font-bold text-blue-700 truncate" title="${currentAnalyticsData.topWeek}"><i class="fa-solid fa-calendar-week mr-1"></i> ${currentAnalyticsData.topWeek}</p>
-                </div>
-                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
-                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Minggu Ibadah Terendah</p>
-                    <p class="text-sm font-bold text-amber-600 truncate" title="${currentAnalyticsData.lowestWeek}"><i class="fa-solid fa-calendar-minus mr-1"></i> ${currentAnalyticsData.lowestWeek}</p>
-                </div>
-            `;
-            const suggestionContent = document.getElementById('suggestion-content');
-            if (currentAnalyticsData.suggestionPoints && currentAnalyticsData.suggestionPoints.length > 0) {
-                suggestionContent.innerHTML = `<ul class="list-disc pl-5 space-y-1.5">` + currentAnalyticsData.suggestionPoints.map(p => `<li>${p}</li>`).join('') + `</ul>`;
-            } else {
-                suggestionContent.innerHTML = `<p class="text-gray-500">Belum cukup data untuk analisis lanjutan.</p>`;
-            }
-            renderPastoralVisitList();
-        }
-
-        function toggleSuggestion() { document.getElementById('suggestion-area').classList.toggle('hidden'); }
-
-        // ========================================================================
-        // PASTORAL VISIT
-        // ========================================================================
-        function computeJemaatPerluDikunjungi() {
-            const threshold = getVisitThreshold();
-            const regulerChecklist = eventsData
-                .filter(e => e.ibadahType === 'reguler' && e.eventStatus !== 'Terjadwal' && e.attendanceMode === 'checklist')
-                .slice()
-                .sort((a, b) => new Date(`${b.date}T${b.time || '00:00'}`) - new Date(`${a.date}T${a.time || '00:00'}`));
-            if (regulerChecklist.length < threshold) {
-                return { list: [], totalRegulerChecklist: regulerChecklist.length, note: `Minimal ${threshold} data ibadah reguler (mode checklist) diperlukan agar sistem bisa mendeteksi. Saat ini baru ada ${regulerChecklist.length}.` };
-            }
-            const activeJemaat = getActiveJemaatList();
-            const result = [];
-            activeJemaat.forEach(j => {
-                let consecutiveAbsent = 0;
-                let lastAttendedDate = null;
-                for (const ev of regulerChecklist) {
-                    const attended = Array.isArray(ev.attendeeIds) && ev.attendeeIds.includes(j.id);
-                    if (attended) { lastAttendedDate = ev.date; break; }
-                    consecutiveAbsent++;
-                }
-                if (consecutiveAbsent >= threshold) result.push({ jemaat: j, consecutiveAbsent, lastAttendedDate });
-            });
-            result.sort((a, b) => b.consecutiveAbsent - a.consecutiveAbsent);
-            return { list: result, totalRegulerChecklist: regulerChecklist.length, note: '' };
-        }
-
-        function renderPastoralVisitList() {
-            const container = document.getElementById('pastoral-visit-list');
-            const emptyState = document.getElementById('pastoral-visit-empty');
-            const note = document.getElementById('pastoral-visit-note');
-            const thresholdLabel = document.getElementById('visit-threshold-label');
-            if (!container) return;
-            const threshold = getVisitThreshold();
-            if (thresholdLabel) thresholdLabel.innerText = threshold;
-            if (!jemaatMasterData || jemaatMasterData.length === 0) {
-                container.innerHTML = ''; emptyState.style.display = 'none';
-                if (note) note.innerText = 'Data jemaat belum termuat. Pastikan koneksi internet aktif, lalu klik "Muat Ulang Data Jemaat".';
-                return;
-            }
-            const { list, totalRegulerChecklist, note: computeNote } = computeJemaatPerluDikunjungi();
-            if (list.length === 0) {
-                container.innerHTML = ''; emptyState.style.display = 'flex';
-                if (note) note.innerText = computeNote || 'Semua jemaat aktif tercatat hadir dalam batas wajar.';
-                return;
-            }
-            emptyState.style.display = 'none';
-            container.innerHTML = list.map(({ jemaat, consecutiveAbsent, lastAttendedDate }) => {
-                const nomor = formatNoWhatsAppAcara(jemaat.no_telepon);
-                const pesan = `Salam damai sejahtera ${jemaat.nama_lengkap}, kami dari ${churchName} merindukan kehadiran Bapak/Ibu/Saudara/i. Boleh kami menjadwalkan waktu untuk berkunjung?`;
-                const waBtn = nomor
-                    ? `<button onclick="window.open('https://wa.me/${nomor}?text=${encodeURIComponent(pesan)}','_blank')" class="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"><i class="fa-brands fa-whatsapp"></i> Chat WhatsApp</button>`
-                    : `<p class="text-[11px] text-gray-400 italic mt-2">No. telepon tidak tercatat</p>`;
-                return `
-                    <div class="border border-rose-200 bg-rose-50/50 rounded-xl p-4">
-                        <p class="font-bold text-gray-800 text-sm">${esc(jemaat.nama_lengkap)}</p>
-                        <p class="text-[10px] text-gray-400 font-mono mb-1">${esc(jemaat.nij || '-')}</p>
-                        <p class="text-xs text-gray-600 mb-1 flex items-start gap-1"><i class="fa-solid fa-location-dot mt-0.5 text-gray-400"></i><span>${esc(jemaat.alamat) || 'Alamat tidak tercatat'}</span></p>
-                        <p class="text-xs text-rose-600 font-semibold"><i class="fa-solid fa-calendar-xmark mr-1"></i>Absen ${consecutiveAbsent}x berturut-turut</p>
-                        <p class="text-[11px] text-gray-400">${lastAttendedDate ? 'Terakhir hadir: ' + formatDate(lastAttendedDate) : 'Belum pernah tercatat hadir'}</p>
-                        ${waBtn}
-                    </div>
-                `;
-            }).join('');
-            if (note) note.innerText = `${list.length} jemaat aktif teridentifikasi perlu dikunjungi, dihitung dari ${totalRegulerChecklist} data ibadah reguler bermode checklist.`;
-        }
-
-        // ========================================================================
-        // ATTENDANCE CHECKLIST
-        // ========================================================================
-        function populateKomisiDropdown() {
-            const select = document.getElementById('form-komisi-id');
-            if (!select) return;
-            const currentVal = select.value;
-            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
-            if (komisiMasterData.length === 0) {
-                select.innerHTML += '<option value="" disabled>-- Tidak ada komisi di Database Jemaat --</option>';
-            } else {
-                komisiMasterData.forEach(k => {
-                    const opt = document.createElement('option');
-                    opt.value = k.name;
-                    opt.text = k.name;
-                    select.appendChild(opt);
-                });
-            }
-            if (currentVal) select.value = currentVal;
-            const infoText = document.getElementById('komisi-info-text');
-            if (infoText) infoText.classList.add('hidden');
-        }
-
-        function populateTplKomisiDropdown() {
-            const select = document.getElementById('tpl-komisi-id');
-            if (!select) return;
-            const currentVal = select.value;
-            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
-            komisiMasterData.forEach(k => {
-                const opt = document.createElement('option');
-                opt.value = k.name;
-                opt.text = k.name;
-                select.appendChild(opt);
-            });
-            if (currentVal) select.value = currentVal;
-        }
-
+        // ---- Checklist Absensi (dipakai di Modal Form Ibadah) ----
         function toggleAttendanceMode() {
             const modeInput = document.querySelector('input[name="attendance-mode"]:checked');
             const mode = modeInput ? modeInput.value : 'manual';
@@ -1650,13 +1376,19 @@
             if (!container) return;
             const search = (document.getElementById('checklist-search')?.value || '').toLowerCase().trim();
             const komisiId = document.getElementById('form-komisi-id')?.value || '';
+            
+            // Daftar jemaat komisi terpilih (ditampilkan default)
             const komisiJemaat = getJemaatByKomisi(komisiId);
+            // Semua jemaat aktif (dipakai untuk pencarian & jemaat luar komisi yang sudah join)
             const allActiveJemaat = getActiveJemaatList();
+
             let activeJemaat;
             if (komisiId) {
                 if (search) {
+                    // Saat mencari, jangan batasi ke komisi saja agar jemaat luar komisi/department bisa ditemukan & join
                     activeJemaat = allActiveJemaat;
                 } else {
+                    // Tampilkan jemaat komisi + jemaat luar komisi yang sudah tercentang (sudah join) agar tidak hilang dari daftar
                     const komisiIds = new Set(komisiJemaat.map(j => j.id));
                     const extraSelected = allActiveJemaat.filter(j => selectedAttendeeIds.has(j.id) && !komisiIds.has(j.id));
                     activeJemaat = [...komisiJemaat, ...extraSelected];
@@ -1664,6 +1396,7 @@
             } else {
                 activeJemaat = allActiveJemaat;
             }
+            
             if (komisiId) {
                 if (filterInfo) filterInfo.classList.remove('hidden');
                 const komisiName = komisiMasterData.find(k => k.name === komisiId)?.name || komisiId;
@@ -1671,7 +1404,9 @@
             } else {
                 if (filterInfo) filterInfo.classList.add('hidden');
             }
+
             const filtered = search ? activeJemaat.filter(j => (j.nama_lengkap || '').toLowerCase().includes(search) || (j.nij || '').toLowerCase().includes(search)) : activeJemaat;
+
             if (activeJemaat.length === 0) {
                 container.innerHTML = '';
                 emptyState?.classList.remove('hidden');
@@ -1709,9 +1444,289 @@
             if (attInput && modeInput && modeInput.value === 'checklist') attInput.value = total;
         }
 
-        // ========================================================================
-        // MASTER TEMPLATE IBADAH REGULER
-        // ========================================================================
+        // ---- Deteksi Jemaat Perlu Dikunjungi ----
+        let visitThresholdSetting = loadScalarSetting(STORAGE_KEY_VISIT_THRESHOLD, null);
+        function getVisitThreshold() {
+            const n = parseInt(visitThresholdSetting.value);
+            return (!isNaN(n) && n > 0) ? n : 3;
+        }
+
+        function saveVisitThreshold(e) {
+            e.preventDefault();
+            const val = document.getElementById('param-visit-threshold').value;
+            if (!val || parseInt(val) <= 0) { Swal.fire('Info', 'Masukkan angka minggu berturut-turut yang valid.', 'info'); return; }
+            visitThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
+            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kunjungan pastoral diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+            renderPastoralVisitList();
+        }
+
+        function computeJemaatPerluDikunjungi() {
+            const threshold = getVisitThreshold();
+            const regulerChecklist = eventsData
+                .filter(e => e.ibadahType === 'reguler' && e.eventStatus !== 'Terjadwal' && e.attendanceMode === 'checklist')
+                .slice()
+                .sort((a, b) => new Date(`${b.date}T${b.time || '00:00'}`) - new Date(`${a.date}T${a.time || '00:00'}`));
+
+            if (regulerChecklist.length < threshold) {
+                return { list: [], totalRegulerChecklist: regulerChecklist.length, note: `Minimal ${threshold} data ibadah reguler (mode checklist) diperlukan agar sistem bisa mendeteksi. Saat ini baru ada ${regulerChecklist.length}.` };
+            }
+
+            const activeJemaat = getActiveJemaatList();
+            const result = [];
+            activeJemaat.forEach(j => {
+                let consecutiveAbsent = 0;
+                let lastAttendedDate = null;
+                for (const ev of regulerChecklist) {
+                    const attended = Array.isArray(ev.attendeeIds) && ev.attendeeIds.includes(j.id);
+                    if (attended) { lastAttendedDate = ev.date; break; }
+                    consecutiveAbsent++;
+                }
+                if (consecutiveAbsent >= threshold) result.push({ jemaat: j, consecutiveAbsent, lastAttendedDate });
+            });
+            result.sort((a, b) => b.consecutiveAbsent - a.consecutiveAbsent);
+            return { list: result, totalRegulerChecklist: regulerChecklist.length, note: '' };
+        }
+
+        function renderPastoralVisitList() {
+            const container = document.getElementById('pastoral-visit-list');
+            const emptyState = document.getElementById('pastoral-visit-empty');
+            const note = document.getElementById('pastoral-visit-note');
+            const thresholdLabel = document.getElementById('visit-threshold-label');
+            if (!container) return;
+            const threshold = getVisitThreshold();
+            if (thresholdLabel) thresholdLabel.innerText = threshold;
+
+            if (!jemaatMasterData || jemaatMasterData.length === 0) {
+                container.innerHTML = ''; emptyState.style.display = 'none';
+                if (note) note.innerText = 'Data jemaat belum termuat. Pastikan koneksi internet aktif, lalu klik "Muat Ulang Data Jemaat".';
+                return;
+            }
+
+            const { list, totalRegulerChecklist, note: computeNote } = computeJemaatPerluDikunjungi();
+            if (list.length === 0) {
+                container.innerHTML = ''; emptyState.style.display = 'flex';
+                if (note) note.innerText = computeNote || 'Semua jemaat aktif tercatat hadir dalam batas wajar.';
+                return;
+            }
+            emptyState.style.display = 'none';
+            container.innerHTML = list.map(({ jemaat, consecutiveAbsent, lastAttendedDate }) => {
+                const nomor = formatNoWhatsAppAcara(jemaat.no_telepon);
+                const pesan = `Salam damai sejahtera ${jemaat.nama_lengkap}, kami dari ${churchName} merindukan kehadiran Bapak/Ibu/Saudara/i. Boleh kami menjadwalkan waktu untuk berkunjung?`;
+                const waBtn = nomor
+                    ? `<button onclick="window.open('https://wa.me/${nomor}?text=${encodeURIComponent(pesan)}','_blank')" class="w-full mt-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"><i class="fa-brands fa-whatsapp"></i> Chat WhatsApp</button>`
+                    : `<p class="text-[11px] text-gray-400 italic mt-2">No. telepon tidak tercatat</p>`;
+                return `
+                    <div class="border border-rose-200 bg-rose-50/50 rounded-xl p-4">
+                        <p class="font-bold text-gray-800 text-sm">${esc(jemaat.nama_lengkap)}</p>
+                        <p class="text-[10px] text-gray-400 font-mono mb-1">${esc(jemaat.nij || '-')}</p>
+                        <p class="text-xs text-gray-600 mb-1 flex items-start gap-1"><i class="fa-solid fa-location-dot mt-0.5 text-gray-400"></i><span>${esc(jemaat.alamat) || 'Alamat tidak tercatat'}</span></p>
+                        <p class="text-xs text-rose-600 font-semibold"><i class="fa-solid fa-calendar-xmark mr-1"></i>Absen ${consecutiveAbsent}x berturut-turut</p>
+                        <p class="text-[11px] text-gray-400">${lastAttendedDate ? 'Terakhir hadir: ' + formatDate(lastAttendedDate) : 'Belum pernah tercatat hadir'}</p>
+                        ${waBtn}
+                    </div>
+                `;
+            }).join('');
+            if (note) note.innerText = `${list.length} jemaat aktif teridentifikasi perlu dikunjungi, dihitung dari ${totalRegulerChecklist} data ibadah reguler bermode checklist.`;
+        }
+
+        function formatDate(dateString) {
+            if(!dateString) return '-';
+            const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+            return new Intl.DateTimeFormat('id-ID', options).format(new Date(dateString));
+        }
+
+        function editChurchName() {
+            Swal.fire({
+                title: 'Ubah Nama Gereja',
+                input: 'text',
+                inputValue: churchName,
+                showCancelButton: true,
+                confirmButtonText: 'Simpan',
+                cancelButtonText: 'Batal',
+                inputValidator: (value) => {
+                    if (!value) return 'Nama gereja tidak boleh kosong!';
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    churchName = result.value.trim();
+                    churchNameSetting = makeScalarSetting(churchName);
+                    document.getElementById('nav-church-name').innerText = churchName;
+                    updateUI();
+                    Swal.fire({ title: 'Tersimpan', text: 'Nama gereja diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+                }
+            });
+        }
+
+        function populateMonthFilter() {
+            const select = document.getElementById('month-filter');
+            const currentValue = select.value;
+            
+            const months = new Set();
+            eventsData.forEach(item => {
+                if(item.date) {
+                    const d = new Date(item.date);
+                    months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                }
+            });
+            
+            const now = new Date();
+            const currentMonthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            months.add(currentMonthYear);
+            
+            const sortedMonths = Array.from(months).sort().reverse(); 
+            select.innerHTML = '<option value="all">Semua Waktu (All Time)</option>';
+            
+            sortedMonths.forEach(my => {
+                const [y, m] = my.split('-');
+                const date = new Date(y, m - 1, 1);
+                const monthName = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(date);
+                
+                const option = document.createElement('option');
+                option.value = my;
+                option.text = monthName;
+                select.appendChild(option);
+            });
+            
+            if (isFirstLoad) {
+                select.value = currentMonthYear;
+                isFirstLoad = false;
+            } else if (sortedMonths.includes(currentValue) || currentValue === 'all') {
+                select.value = currentValue;
+            }
+        }
+
+        function calculateAdvancedAnalytics(filterValue) {
+            let result = {
+                filter: filterValue, totalEvents: 0, totalAttendance: 0, totalNewVisitors: 0,
+                avgAttendance: 0, momText: '-', topWeek: '-', lowestWeek: '-', weekBreakdown: [], suggestionPoints: []
+            };
+
+            const allEvents = eventsData;
+            if (allEvents.length === 0) return result;
+
+            let filteredEvents = allEvents;
+            if (filterValue !== 'all') filteredEvents = allEvents.filter(d => d.date && d.date.startsWith(filterValue));
+
+            const completedEvents = filteredEvents.filter(d => d.eventStatus !== 'Terjadwal');
+
+            result.totalEvents = filteredEvents.length;
+            if (completedEvents.length === 0) return result;
+
+            result.totalAttendance = completedEvents.reduce((sum, item) => sum + (parseInt(item.attendance) || 0), 0);
+            result.totalNewVisitors = completedEvents.reduce((sum, item) => sum + (parseInt(item.newVisitors) || 0), 0);
+            result.avgAttendance = Math.round(result.totalAttendance / completedEvents.length);
+
+            const preacherMap = {};
+            const wlMap = {};
+            const weekMap = {};
+            let totalWithFullMusic = 0; let countFullMusic = 0;
+            let totalWithMinMusic = 0; let countMinMusic = 0;
+
+            completedEvents.forEach(item => {
+                const att = parseInt(item.attendance) || 0;
+                const preacher = (item.preacher || 'Tidak Tercatat').trim();
+                if (!preacherMap[preacher]) preacherMap[preacher] = { count: 0, totalAtt: 0 };
+                preacherMap[preacher].count++; preacherMap[preacher].totalAtt += att;
+
+                const wl = (item.wl || 'Tidak Tercatat').trim();
+                if (!wlMap[wl]) wlMap[wl] = { count: 0, totalAtt: 0 };
+                wlMap[wl].count++; wlMap[wl].totalAtt += att;
+
+                const musCount = item.musicians ? item.musicians.split(',').filter(m => m.trim().length > 0).length : 0;
+                if (musCount >= 3) { totalWithFullMusic += att; countFullMusic++; } 
+                else { totalWithMinMusic += att; countMinMusic++; }
+
+                if (item.date) {
+                    const d = new Date(item.date + 'T00:00:00');
+                    if (!isNaN(d)) {
+                        const weekOfMonth = Math.ceil(d.getDate() / 7);
+                        if (!weekMap[weekOfMonth]) weekMap[weekOfMonth] = { count: 0, totalAtt: 0 };
+                        weekMap[weekOfMonth].count++; weekMap[weekOfMonth].totalAtt += att;
+                    }
+                }
+            });
+
+            const preacherList = Object.keys(preacherMap).map(n => ({ name: n, avgAtt: Math.round(preacherMap[n].totalAtt / preacherMap[n].count) })).sort((a, b) => b.avgAtt - a.avgAtt);
+            const wlList = Object.keys(wlMap).map(n => ({ name: n, avgAtt: Math.round(wlMap[n].totalAtt / wlMap[n].count) })).sort((a, b) => b.avgAtt - a.avgAtt);
+
+            const weekList = Object.keys(weekMap).map(w => ({ week: parseInt(w), avgAtt: Math.round(weekMap[w].totalAtt / weekMap[w].count), count: weekMap[w].count })).sort((a, b) => b.avgAtt - a.avgAtt);
+            result.weekBreakdown = weekList;
+            if (weekList.length > 0) {
+                result.topWeek = `Minggu ke-${weekList[0].week} (Rata ${weekList[0].avgAtt} jiwa)`;
+                result.lowestWeek = `Minggu ke-${weekList[weekList.length - 1].week} (Rata ${weekList[weekList.length - 1].avgAtt} jiwa)`;
+            }
+
+            if (preacherList.length > 0) result.suggestionPoints.push(`Khotbah: Pengkhotbah '${preacherList[0].name}' mencatatkan kehadiran tertinggi (${preacherList[0].avgAtt} jiwa rata-rata).`);
+            if (wlList.length > 0) {
+                const avgFull = countFullMusic > 0 ? Math.round(totalWithFullMusic / countFullMusic) : 0;
+                const avgMin = countMinMusic > 0 ? Math.round(totalWithMinMusic / countMinMusic) : 0;
+                if (avgFull > avgMin && avgFull > 0) result.suggestionPoints.push(`Musik: Ibadah dengan tim lengkap (≥3 pemusik) rata-rata dihadiri ${avgFull} jiwa dibanding ${avgMin} jiwa (tim minimal).`);
+            }
+            if (weekList.length > 1) {
+                result.suggestionPoints.push(`Pola Mingguan: Ibadah pada Minggu ke-${weekList[0].week} tiap bulan cenderung paling ramai (rata-rata ${weekList[0].avgAtt} jiwa), sedangkan Minggu ke-${weekList[weekList.length - 1].week} cenderung paling sepi (rata-rata ${weekList[weekList.length - 1].avgAtt} jiwa).`);
+            }
+
+            return result;
+        }
+
+        function renderDashboard() {
+            const filterValue = document.getElementById('month-filter').value;
+            let filteredEvents = eventsData;
+
+            if (filterValue !== 'all') {
+                filteredEvents = eventsData.filter(item => item.date && item.date.startsWith(filterValue));
+            }
+
+            const completedEvents = filteredEvents.filter(item => item.eventStatus !== 'Terjadwal');
+
+            document.getElementById('dash-total-events').innerText = filteredEvents.length;
+            document.getElementById('dash-total-attendance').innerText = completedEvents.reduce((sum, item) => sum + (parseInt(item.attendance) || 0), 0).toLocaleString('id-ID');
+            document.getElementById('dash-total-new-visitors').innerText = completedEvents.reduce((sum, item) => sum + (parseInt(item.newVisitors) || 0), 0).toLocaleString('id-ID');
+
+            currentAnalyticsData = calculateAdvancedAnalytics(filterValue);
+            
+            const analyticsContainer = document.getElementById('analytics-container');
+            analyticsContainer.innerHTML = `
+                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Rata-rata Kehadiran</p>
+                    <p class="text-xl font-bold text-gray-800">${currentAnalyticsData.avgAttendance || 0} <span class="text-sm font-normal text-gray-500">jiwa/ibadah</span></p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Minggu Ibadah Terpadat</p>
+                    <p class="text-sm font-bold text-blue-700 truncate" title="${currentAnalyticsData.topWeek}"><i class="fa-solid fa-calendar-week mr-1"></i> ${currentAnalyticsData.topWeek}</p>
+                </div>
+                <div class="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                    <p class="text-xs text-gray-500 font-semibold uppercase mb-1">Minggu Ibadah Terendah</p>
+                    <p class="text-sm font-bold text-amber-600 truncate" title="${currentAnalyticsData.lowestWeek}"><i class="fa-solid fa-calendar-minus mr-1"></i> ${currentAnalyticsData.lowestWeek}</p>
+                </div>
+            `;
+
+            const suggestionContent = document.getElementById('suggestion-content');
+            if (currentAnalyticsData.suggestionPoints && currentAnalyticsData.suggestionPoints.length > 0) {
+                suggestionContent.innerHTML = `<ul class="list-disc pl-5 space-y-1.5">` + currentAnalyticsData.suggestionPoints.map(p => `<li>${p}</li>`).join('') + `</ul>`;
+            } else {
+                suggestionContent.innerHTML = `<p class="text-gray-500">Belum cukup data untuk analisis lanjutan.</p>`;
+            }
+
+            renderPastoralVisitList();
+        }
+
+        function toggleSuggestion() { document.getElementById('suggestion-area').classList.toggle('hidden'); }
+
+        function populateTplKomisiDropdown() {
+            const select = document.getElementById('tpl-komisi-id');
+            if (!select) return;
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Tidak Terikat Komisi (Semua Jemaat) --</option>';
+            komisiMasterData.forEach(k => {
+                const opt = document.createElement('option');
+                opt.value = k.name; opt.text = k.name;
+                select.appendChild(opt);
+            });
+            if (currentVal) select.value = currentVal;
+        }
+
         function openTemplateModal() {
             renderTemplateTable();
             populateTplKomisiDropdown();
@@ -1721,6 +1736,7 @@
             modal.classList.remove('hidden', 'modal-leave');
             modal.classList.add('modal-enter');
         }
+
         function closeTemplateModal() {
             const modal = document.getElementById('template-modal');
             const backdrop = document.getElementById('template-modal-backdrop');
@@ -1730,12 +1746,16 @@
             cancelEditTemplate();
             populateTemplateDropdown();
         }
+
+        const WEEKDAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
         function toggleTplFrequencyFields() {
             const type = document.getElementById('tpl-freq-type').value;
             document.getElementById('tpl-freq-weekly').classList.toggle('hidden', type !== 'weekly');
             document.getElementById('tpl-freq-interval').classList.toggle('hidden', type !== 'interval');
             document.getElementById('tpl-freq-monthly').classList.toggle('hidden', type !== 'monthly');
         }
+
         function describeFrequency(tpl) {
             if (!tpl.frequency) return '<span class="text-gray-400 italic">Belum diatur</span>';
             const f = tpl.frequency;
@@ -1748,13 +1768,16 @@
             }
             return '-';
         }
+
         function renderTemplateTable() {
             const tbody = document.getElementById('template-table-body');
             tbody.innerHTML = '';
+            
             if (regularTemplates.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-sm text-gray-500 italic">Belum ada master data ibadah reguler.</td></tr>`;
                 return;
             }
+
             regularTemplates.forEach(tpl => {
                 const tr = document.createElement('tr');
                 const komisiBadge = tpl.komisiId ? `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fa-solid fa-people-group mr-0.5"></i> ${esc(tpl.komisiId)}</div>` : '';
@@ -1784,6 +1807,7 @@
             e.preventDefault();
             const freqType = document.getElementById('tpl-freq-type').value;
             let frequency = null;
+
             if (freqType === 'weekly') {
                 frequency = { type: 'weekly', weekday: parseInt(document.getElementById('tpl-freq-weekday').value) };
             } else if (freqType === 'interval') {
@@ -1796,6 +1820,7 @@
                 if (occurrences.length === 0) return Swal.fire('Perhatian', 'Pilih minimal satu "Minggu Ke-" untuk pola Bulanan.', 'warning');
                 frequency = { type: 'monthly', weekday: parseInt(document.getElementById('tpl-freq-monthly-weekday').value), occurrences: occurrences };
             }
+
             const editId = document.getElementById('tpl-edit-id').value;
             upsertInRawList(regularTemplatesRaw, {
                 id: editId ? editId : 'tpl_' + Date.now().toString(),
@@ -1805,26 +1830,25 @@
                 komisiId: document.getElementById('tpl-komisi-id')?.value || '',
                 frequency: frequency
             });
+
             const wasEdit = !!editId;
             document.getElementById('template-form').reset();
             cancelEditTemplate();
-            toggleTplFrequencyFields();
-            updateUI();
-            renderTemplateTable();
-            populateTplKomisiDropdown();
-            forceSyncNow(); // <<< Sinkronisasi setelah perubahan
+            toggleTplFrequencyFields(); updateUI(); renderTemplateTable(); populateTplKomisiDropdown();
             Swal.fire({ title: 'Tersimpan', text: wasEdit ? 'Master diperbarui.' : 'Master ditambahkan.', icon: 'success', timer: 1000, showConfirmButton: false });
         }
 
         function editTemplate(id) {
             const tpl = regularTemplates.find(t => t.id === id);
             if (!tpl) return;
+
             document.getElementById('tpl-edit-id').value = tpl.id;
             document.getElementById('tpl-name').value = tpl.name || '';
             document.getElementById('tpl-loc').value = tpl.defaultLocation || '';
             document.getElementById('tpl-time').value = tpl.defaultTime || '';
             populateTplKomisiDropdown();
             document.getElementById('tpl-komisi-id').value = tpl.komisiId || '';
+
             const f = tpl.frequency || { type: 'weekly', weekday: 0 };
             document.getElementById('tpl-freq-type').value = f.type || 'weekly';
             toggleTplFrequencyFields();
@@ -1838,6 +1862,7 @@
                 document.getElementById('tpl-freq-monthly-weekday').value = f.weekday ?? 0;
                 document.querySelectorAll('.tpl-week-occ').forEach(c => { c.checked = (f.occurrences || []).includes(c.value === 'last' ? 'last' : parseInt(c.value)); });
             }
+
             document.getElementById('tpl-form-title').innerText = 'Edit Master Ibadah';
             document.getElementById('tpl-submit-btn').innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i> Update Master';
             document.getElementById('tpl-cancel-edit-btn').classList.remove('hidden');
@@ -1856,17 +1881,12 @@
             .then((result) => {
                 if (result.isConfirmed) {
                     deleteFromRawList(regularTemplatesRaw, id);
-                    updateUI();
-                    renderTemplateTable();
-                    forceSyncNow();
-                    Swal.fire('Terhapus!', '', 'success');
+                    updateUI(); renderTemplateTable(); Swal.fire('Terhapus!', '', 'success');
                 }
             });
         }
 
-        // ========================================================================
-        // GENERATE JADWAL DARI MASTER
-        // ========================================================================
+        function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
         function nthWeekdayOfMonth(year, month, weekday, n) {
             if (n === 'last') {
                 const lastDay = new Date(year, month + 1, 0);
@@ -1876,11 +1896,13 @@
             const result = new Date(year, month, 1 + ((weekday - firstDay.getDay() + 7) % 7) + (n - 1) * 7);
             return result.getMonth() !== month ? null : result;
         }
+
         function computeScheduleDates(tpl, startStr, endStr) {
             const start = new Date(startStr + 'T00:00:00'), end = new Date(endStr + 'T00:00:00');
             if (isNaN(start) || isNaN(end) || start > end) return [];
             const f = tpl.frequency; const dates = [];
             if (!f) return dates;
+
             if (f.type === 'weekly') {
                 let cur = new Date(start); cur.setDate(cur.getDate() + ((f.weekday - cur.getDay() + 7) % 7));
                 while (cur <= end) { dates.push(new Date(cur)); cur.setDate(cur.getDate() + 7); }
@@ -1905,34 +1927,42 @@
             return dates;
         }
 
+        let genActiveTemplate = null; let genPreviewList = [];
         function openGenerateModal(presetTemplateId) {
             const select = document.getElementById('gen-template-select');
             select.innerHTML = '';
             if (regularTemplates.length === 0) select.innerHTML = '<option value="">-- Belum ada Master Ibadah --</option>';
             else regularTemplates.forEach(tpl => { select.appendChild(new Option(tpl.name, tpl.id)); });
             if (presetTemplateId) select.value = presetTemplateId;
+
             document.getElementById('gen-preview-wrapper').classList.add('hidden');
             document.getElementById('gen-save-btn').classList.add('hidden');
             genPreviewList = [];
+            
             const today = new Date();
             if (!document.getElementById('gen-start-date').value) document.getElementById('gen-start-date').value = ymd(today);
             if (!document.getElementById('gen-end-date').value) document.getElementById('gen-end-date').value = ymd(new Date(today.getFullYear(), 11, 31));
+
             const backdrop = document.getElementById('generate-modal-backdrop'); const modal = document.getElementById('generate-modal');
             backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
         }
+
         function closeGenerateModal() {
             const modal = document.getElementById('generate-modal'); const backdrop = document.getElementById('generate-modal-backdrop');
             modal.classList.remove('modal-enter'); modal.classList.add('modal-leave');
             setTimeout(() => { backdrop.classList.add('hidden'); modal.classList.add('hidden'); }, 200);
         }
+
         function previewGenerateSchedule() {
             const tplId = document.getElementById('gen-template-select').value;
             const tpl = regularTemplates.find(t => t.id === tplId);
             if (!tpl || !tpl.frequency) return Swal.fire('Perhatian', 'Pilih Master yang memiliki pola frekuensi.', 'warning');
             const startStr = document.getElementById('gen-start-date').value, endStr = document.getElementById('gen-end-date').value;
             if (!startStr || !endStr || startStr > endStr) return Swal.fire('Perhatian', 'Cek kembali rentang tanggal.', 'warning');
+
             const dates = computeScheduleDates(tpl, startStr, endStr);
             if (dates.length === 0) return Swal.fire('Info', 'Tidak ada tanggal yang cocok di rentang ini.', 'info');
+
             genActiveTemplate = tpl;
             genPreviewList = dates.map(d => {
                 const dateStr = ymd(d), conflict = eventsData.find(ev => ev.date === dateStr && ev.eventName === tpl.name);
@@ -1941,6 +1971,7 @@
             renderGenPreview();
             document.getElementById('gen-preview-wrapper').classList.remove('hidden'); document.getElementById('gen-save-btn').classList.remove('hidden');
         }
+
         function renderGenPreview() {
             const tbody = document.getElementById('gen-preview-body'); tbody.innerHTML = '';
             document.getElementById('gen-preview-count').innerText = genPreviewList.length;
@@ -1960,6 +1991,7 @@
         function saveGeneratedSchedule() {
             const selected = genPreviewList.filter(i => i.checked);
             if (selected.length === 0) return Swal.fire('Info', 'Tidak ada tanggal yang dicentang.', 'info');
+
             const doSave = () => {
                 const tpl = genActiveTemplate; let added = 0, replaced = 0;
                 selected.forEach(item => {
@@ -1975,11 +2007,9 @@
                     upsertRawEvent(newEvent);
                     if (existingIdx !== -1) { replaced++; } else { added++; }
                 });
-                updateUI();
-                closeGenerateModal();
-                forceSyncNow();
-                Swal.fire('Berhasil', `Jadwal dibuat: ${added} baru${replaced > 0 ? `, ${replaced} ditimpa` : ''}.`, 'success');
+                updateUI(); closeGenerateModal(); Swal.fire('Berhasil', `Jadwal dibuat: ${added} baru${replaced > 0 ? `, ${replaced} ditimpa` : ''}.`, 'success');
             };
+
             const conflictCount = selected.filter(i => i.hasConflict).length;
             if (conflictCount > 0) {
                 Swal.fire({ title: 'Timpa Data Lama?', text: `${conflictCount} tanggal akan ditimpa. Lanjutkan?`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#4f46e5', confirmButtonText: 'Ya' })
@@ -1987,66 +2017,88 @@
             } else doSave();
         }
 
-        function populateTemplateDropdown() {
-            const select = document.getElementById('form-template-id'); const currentVal = select.value;
-            select.innerHTML = '<option value="">-- Pilih Master Ibadah Reguler --</option>';
-            regularTemplates.forEach(tpl => select.appendChild(new Option(tpl.name, tpl.id)));
-            if(currentVal) select.value = currentVal;
+        function toggleFinanceAttendanceFields() {
+            const status = document.getElementById('form-event-status').value;
+            const lock = status === 'Terjadwal';
+            ['form-attendance', 'form-new-visitors'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) {
+                    el.disabled = lock;
+                    el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-400', lock); el.classList.toggle('cursor-not-allowed', lock);
+                    if (lock) el.placeholder = 'Isi setelah terlaksana'; else el.placeholder = '0';
+                }
+            });
+            document.getElementById('finance-lock-hint')?.classList.toggle('hidden', !lock);
+
+            const attModeGroup = document.getElementById('attendance-checklist-group');
+            document.querySelectorAll('input[name="attendance-mode"]').forEach(r => r.disabled = lock);
+            if (lock) { attModeGroup?.classList.add('hidden'); } else { toggleAttendanceMode(); }
         }
 
-        function applyTemplateData() {
-            const tplId = document.getElementById('form-template-id').value;
-            if (!tplId) { populateScheduledDates(); return; }
-            const tpl = regularTemplates.find(t => t.id === tplId);
-            if (tpl) {
-                document.getElementById('form-event-name').value = tpl.name; document.getElementById('form-location').value = tpl.defaultLocation || ''; document.getElementById('form-time').value = tpl.defaultTime || '';
-                const komisiSelect = document.getElementById('form-komisi-id');
-                if (komisiSelect) { komisiSelect.value = tpl.komisiId || ''; renderAttendanceChecklist(); }
+        function checkBackdateStatus() {
+            const dateInput = document.getElementById('form-date');
+            const statusSelect = document.getElementById('form-event-status');
+            const hint = document.getElementById('backdate-status-hint');
+            const dateVal = dateInput.value;
+            const isMultiDay = document.getElementById('form-is-multiday').checked;
+            const endDateVal = document.getElementById('form-end-date').value;
+
+            if (!dateVal) {
+                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.add('hidden'); return;
             }
-            populateScheduledDates();
+            
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            let referenceDate = new Date(dateVal + 'T00:00:00');
+            if (isMultiDay && endDateVal) {
+                const eDate = new Date(endDateVal + 'T00:00:00');
+                if (!isNaN(eDate)) referenceDate = eDate;
+            }
+
+            if (!isNaN(referenceDate) && referenceDate < today) {
+                statusSelect.value = 'Selesai'; statusSelect.disabled = true;
+                statusSelect.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.remove('hidden');
+            } else {
+                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                if (hint) hint.classList.add('hidden');
+            }
+            toggleFinanceAttendanceFields();
+            updateSessionDateBounds();
         }
-        function populateScheduledDates() {
-            const group = document.getElementById('scheduled-date-group'); const select = document.getElementById('form-scheduled-date');
-            const tplId = document.getElementById('form-template-id').value; const currentFormId = document.getElementById('form-id').value;
-            if (currentFormId || !tplId) { group.classList.add('hidden'); return; }
-            const tpl = regularTemplates.find(t => t.id === tplId);
-            if (!tpl) { group.classList.add('hidden'); return; }
-            const scheduled = eventsData.filter(ev => ev.ibadahType === 'reguler' && ev.eventStatus === 'Terjadwal' && ev.eventName === tpl.name).sort((a, b) => new Date(a.date) - new Date(b.date));
-            if (scheduled.length === 0) {
-                group.classList.add('hidden');
-                document.getElementById('form-date').readOnly = false; document.getElementById('form-date').classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
-                return;
-            }
-            select.innerHTML = '<option value="">-- Tanggal Baru (Belum Ada di Jadwal) --</option>';
-            scheduled.forEach(ev => select.appendChild(new Option(`${formatDate(ev.date)}${ev.time ? ' • ' + ev.time : ''}`, ev.id)));
-            select.value = scheduled[0].id; group.classList.remove('hidden'); applyScheduledDate();
+
+        function updateSessionDateBounds() {
+            const startVal = document.getElementById('form-date').value;
+            const endVal = document.getElementById('form-end-date').value;
+            document.querySelectorAll('.session-date').forEach(inp => {
+                if (startVal) inp.min = startVal; else inp.removeAttribute('min');
+                if (endVal) inp.max = endVal; else inp.removeAttribute('max');
+            });
         }
-        function applyScheduledDate() {
-            const val = document.getElementById('form-scheduled-date').value;
-            if (!val) {
-                document.getElementById('form-id').value = ''; lockScheduleFields(false); document.getElementById('form-date').value = '';
-                document.getElementById('modal-title').innerText = 'Tambah Laporan Ibadah'; checkBackdateStatus(); return;
-            }
-            const ev = eventsData.find(e => e.id === val);
-            if (ev) {
-                document.getElementById('form-id').value = ev.id; document.getElementById('form-date').value = ev.date;
-                if (ev.time) document.getElementById('form-time').value = ev.time;
-                if (ev.location) document.getElementById('form-location').value = ev.location;
-                if (ev.komisiId) document.getElementById('form-komisi-id').value = ev.komisiId;
-                renderAttendanceChecklist();
-                lockScheduleFields(true);
-                document.getElementById('modal-title').innerText = 'Lengkapi Laporan Ibadah (Terjadwal)'; checkBackdateStatus();
+
+        function validateSessionDate(inp) {
+            const startVal = document.getElementById('form-date').value;
+            const endVal = document.getElementById('form-end-date').value;
+            if (!inp.value) return;
+            if ((startVal && inp.value < startVal) || (endVal && inp.value > endVal)) {
+                Swal.fire('Perhatian', `Tanggal sesi harus berada dalam rentang ${formatDate(startVal)} s/d ${formatDate(endVal)}.`, 'warning');
+                inp.value = '';
             }
         }
 
-        // ========================================================================
-        // FORM IBADAH
-        // ========================================================================
+        function lockScheduleFields(lock) {
+            ['form-date', 'form-time', 'form-location', 'form-end-date'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { el.readOnly = lock; el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-500', lock); el.classList.toggle('cursor-not-allowed', lock); }
+            });
+        }
+
         function toggleFormType() {
             const type = document.querySelector('input[name="form-type"]:checked').value;
             const tplContainer = document.getElementById('template-selector-group');
             const nameInput = document.getElementById('form-event-name');
             const durationGroup = document.getElementById('duration-selector-group');
+            
             if (type === 'reguler') {
                 tplContainer.classList.remove('hidden'); 
                 nameInput.readOnly = true; nameInput.classList.add('bg-gray-100', 'text-gray-600', 'cursor-not-allowed');
@@ -2069,6 +2121,7 @@
             const singlePreacherWrapper = document.getElementById('single-preacher-wrapper');
             const multiSessionsWrapper = document.getElementById('multi-day-sessions-wrapper');
             const labelStartDate = document.getElementById('label-start-date');
+
             if (isMultiDay) {
                 endDateWrapper.classList.remove('hidden');
                 document.getElementById('form-end-date').required = true;
@@ -2087,79 +2140,20 @@
             checkBackdateStatus();
         }
 
-        function toggleFinanceAttendanceFields() {
-            const status = document.getElementById('form-event-status').value;
-            const lock = status === 'Terjadwal';
-            ['form-attendance', 'form-new-visitors'].forEach(id => {
-                const el = document.getElementById(id);
-                if(el) {
-                    el.disabled = lock;
-                    el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-400', lock); el.classList.toggle('cursor-not-allowed', lock);
-                    if (lock) el.placeholder = 'Isi setelah terlaksana'; else el.placeholder = '0';
-                }
-            });
-            document.getElementById('finance-lock-hint')?.classList.toggle('hidden', !lock);
-            const attModeGroup = document.getElementById('attendance-checklist-group');
-            document.querySelectorAll('input[name="attendance-mode"]').forEach(r => r.disabled = lock);
-            if (lock) { attModeGroup?.classList.add('hidden'); } else { toggleAttendanceMode(); }
-        }
-
-        function checkBackdateStatus() {
-            const dateInput = document.getElementById('form-date');
-            const statusSelect = document.getElementById('form-event-status');
-            const hint = document.getElementById('backdate-status-hint');
-            const dateVal = dateInput.value;
-            const isMultiDay = document.getElementById('form-is-multiday').checked;
-            const endDateVal = document.getElementById('form-end-date').value;
-            if (!dateVal) {
-                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
-                if (hint) hint.classList.add('hidden'); return;
-            }
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-            let referenceDate = new Date(dateVal + 'T00:00:00');
-            if (isMultiDay && endDateVal) {
-                const eDate = new Date(endDateVal + 'T00:00:00');
-                if (!isNaN(eDate)) referenceDate = eDate;
-            }
-            if (!isNaN(referenceDate) && referenceDate < today) {
-                statusSelect.value = 'Selesai'; statusSelect.disabled = true;
-                statusSelect.classList.add('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
-                if (hint) hint.classList.remove('hidden');
-            } else {
-                statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
-                if (hint) hint.classList.add('hidden');
-            }
-            toggleFinanceAttendanceFields();
-            updateSessionDateBounds();
-        }
-
-        function lockScheduleFields(lock) {
-            ['form-date', 'form-time', 'form-location', 'form-end-date'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) { el.readOnly = lock; el.classList.toggle('bg-gray-100', lock); el.classList.toggle('text-gray-500', lock); el.classList.toggle('cursor-not-allowed', lock); }
-            });
-        }
-
-        function updateSessionDateBounds() {
-            const startVal = document.getElementById('form-date').value;
-            const endVal = document.getElementById('form-end-date').value;
-            document.querySelectorAll('.session-date').forEach(inp => {
-                if (startVal) inp.min = startVal; else inp.removeAttribute('min');
-                if (endVal) inp.max = endVal; else inp.removeAttribute('max');
-            });
-        }
-
         function addSessionField(session = {}) {
             const container = document.getElementById('sessions-container');
             const emptyHint = document.getElementById('sessions-empty');
             if(emptyHint) emptyHint.style.display = 'none';
+
             const div = document.createElement('div');
             div.className = 'session-row bg-white p-3.5 rounded-lg border border-indigo-200 shadow-sm relative group transition hover:border-indigo-400';
+
             const existingServersHtml = (session.servers ? session.servers.split(', ').filter(Boolean) : []).map(s => {
                 let role = ''; let name = s;
                 if (s.includes(': ')) { const parts = s.split(': '); role = parts[0]; name = parts.slice(1).join(': '); }
                 return sessionServerRowHtml(role, name);
             }).join('');
+
             div.innerHTML = `
                 <button type="button" onclick="this.closest('.session-row').remove(); if(document.querySelectorAll('.session-row').length===0) document.getElementById('sessions-empty').style.display='block';" class="absolute top-2 right-2 text-red-300 hover:text-red-600 transition p-1 cursor-pointer"><i class="fa-solid fa-circle-xmark text-lg"></i></button>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3 pr-6">
@@ -2215,6 +2209,61 @@
             container.insertAdjacentHTML('beforeend', sessionServerRowHtml());
         }
 
+        function populateTemplateDropdown() {
+            const select = document.getElementById('form-template-id'); const currentVal = select.value;
+            select.innerHTML = '<option value="">-- Pilih Master Ibadah Reguler --</option>';
+            regularTemplates.forEach(tpl => select.appendChild(new Option(tpl.name, tpl.id)));
+            if(currentVal) select.value = currentVal;
+        }
+
+        function applyTemplateData() {
+            const tplId = document.getElementById('form-template-id').value;
+            if (!tplId) { populateScheduledDates(); return; }
+            const tpl = regularTemplates.find(t => t.id === tplId);
+            if (tpl) {
+                document.getElementById('form-event-name').value = tpl.name; document.getElementById('form-location').value = tpl.defaultLocation || ''; document.getElementById('form-time').value = tpl.defaultTime || '';
+                const komisiSelect = document.getElementById('form-komisi-id');
+                if (komisiSelect) { komisiSelect.value = tpl.komisiId || ''; renderAttendanceChecklist(); }
+            }
+            populateScheduledDates();
+        }
+
+        function populateScheduledDates() {
+            const group = document.getElementById('scheduled-date-group'); const select = document.getElementById('form-scheduled-date');
+            const tplId = document.getElementById('form-template-id').value; const currentFormId = document.getElementById('form-id').value;
+            if (currentFormId || !tplId) { group.classList.add('hidden'); return; }
+            const tpl = regularTemplates.find(t => t.id === tplId);
+            if (!tpl) { group.classList.add('hidden'); return; }
+
+            const scheduled = eventsData.filter(ev => ev.ibadahType === 'reguler' && ev.eventStatus === 'Terjadwal' && ev.eventName === tpl.name).sort((a, b) => new Date(a.date) - new Date(b.date));
+            if (scheduled.length === 0) {
+                group.classList.add('hidden');
+                document.getElementById('form-date').readOnly = false; document.getElementById('form-date').classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+                return;
+            }
+            select.innerHTML = '<option value="">-- Tanggal Baru (Belum Ada di Jadwal) --</option>';
+            scheduled.forEach(ev => select.appendChild(new Option(`${formatDate(ev.date)}${ev.time ? ' • ' + ev.time : ''}`, ev.id)));
+            select.value = scheduled[0].id; group.classList.remove('hidden'); applyScheduledDate();
+        }
+
+        function applyScheduledDate() {
+            const val = document.getElementById('form-scheduled-date').value;
+            if (!val) {
+                document.getElementById('form-id').value = ''; lockScheduleFields(false); document.getElementById('form-date').value = '';
+                document.getElementById('modal-title').innerText = 'Tambah Laporan Ibadah'; checkBackdateStatus(); return;
+            }
+            const ev = eventsData.find(e => e.id === val);
+            if (ev) {
+                document.getElementById('form-id').value = ev.id; document.getElementById('form-date').value = ev.date;
+                if (ev.time) document.getElementById('form-time').value = ev.time;
+                if (ev.location) document.getElementById('form-location').value = ev.location;
+                if (ev.komisiId) document.getElementById('form-komisi-id').value = ev.komisiId;
+                renderAttendanceChecklist();
+                lockScheduleFields(true);
+                document.getElementById('modal-title').innerText = 'Lengkapi Laporan Ibadah (Terjadwal)'; checkBackdateStatus();
+            }
+        }
+
         function addOtherServerField(role = '', name = '') {
             const container = document.getElementById('other-servers-container');
             const row = document.createElement('div'); row.className = 'flex gap-2 other-server-row items-center mt-2';
@@ -2234,21 +2283,28 @@
             const statusSelect = document.getElementById('form-event-status');
             statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
             document.getElementById('backdate-status-hint')?.classList.add('hidden');
+            
             document.getElementById('form-is-multiday').checked = false;
             document.getElementById('sessions-container').innerHTML = '';
             document.getElementById('sessions-empty').style.display = 'block';
             toggleDurationType();
+
             toggleFinanceAttendanceFields();
+
             selectedAttendeeIds = new Set();
             const manualModeRadio = document.querySelector('input[name="attendance-mode"][value="manual"]');
             if (manualModeRadio) manualModeRadio.checked = true;
             const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = '';
             const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
             toggleAttendanceMode();
+
+            // Reset komisi dropdown
             document.getElementById('form-komisi-id').value = '';
             populateKomisiDropdown();
+
             const radio = document.querySelector(`input[name="form-type"][value="${defaultType}"]`);
             if(radio) { radio.checked = true; toggleFormType(); }
+
             const backdrop = document.getElementById('modal-backdrop'); const modal = document.getElementById('modal');
             backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
         }
@@ -2275,17 +2331,20 @@
                 const rangeStart = startDateVal ? new Date(startDateVal + 'T00:00:00') : null;
                 const rangeEnd = endDate ? new Date(endDate + 'T00:00:00') : null;
                 let sessionDateError = false;
+
                 document.querySelectorAll('.session-row').forEach(row => {
                     const sessDate = row.querySelector('.session-date').value;
                     if (sessDate) {
                         const d = new Date(sessDate + 'T00:00:00');
                         if ((rangeStart && d < rangeStart) || (rangeEnd && d > rangeEnd)) sessionDateError = true;
                     }
+
                     let sessionServersArray = [];
                     row.querySelectorAll('.session-server-row').forEach(srow => {
                         const role = srow.querySelector('.session-server-role').value.trim(), name = srow.querySelector('.session-server-name').value.trim();
                         if (role && name) sessionServersArray.push(`${role}: ${name}`); else if (name) sessionServersArray.push(name); else if (role) sessionServersArray.push(role);
                     });
+
                     sessions.push({
                         date: sessDate,
                         startTime: row.querySelector('.session-start').value,
@@ -2296,6 +2355,7 @@
                         servers: sessionServersArray.join(', ')
                     });
                 });
+
                 if (sessionDateError) {
                     return Swal.fire('Perhatian', `Tanggal setiap sesi harus berada dalam rentang ${formatDate(startDateVal)} s/d ${formatDate(endDate)}. Silakan periksa kembali tanggal sesi.`, 'warning');
                 }
@@ -2312,10 +2372,19 @@
             const attendeeIds = attendanceMode === 'checklist' ? Array.from(selectedAttendeeIds) : [];
             const attendanceGuests = attendanceMode === 'checklist' ? (parseInt(document.getElementById('form-attendance-guests').value) || 0) : 0;
 
+            // Pengaman: dbJemaat.html sengaja MENYEMBUNYIKAN acara berstatus "Terjadwal" dari
+            // riwayat kehadiran jemaat (karena dianggap belum terlaksana). Kalau kehadiran/checklist
+            // sudah diisi tapi status lupa diubah dari "Terjadwal", data itu akan tersimpan tapi
+            // TIDAK PERNAH muncul di manapun sebagai kehadiran. Jadi kalau ada data kehadiran yang
+            // sudah diisi, status otomatis dipromosikan ke "Selesai" supaya konsisten.
+            let finalEventStatus = document.getElementById('form-event-status').value;
+            const hasAttendanceFilled = attendeeIds.length > 0 || attendanceGuests > 0 || (parseInt(document.getElementById('form-attendance').value) || 0) > 0;
+            if (finalEventStatus === 'Terjadwal' && hasAttendanceFilled) finalEventStatus = 'Selesai';
+
             const id = document.getElementById('form-id').value;
             const newData = {
                 id: id ? id : Date.now().toString(),
-                ibadahType: typeRadio, eventStatus: document.getElementById('form-event-status').value,
+                ibadahType: typeRadio, eventStatus: finalEventStatus,
                 eventName: document.getElementById('form-event-name').value, location: document.getElementById('form-location').value,
                 date: document.getElementById('form-date').value, time: document.getElementById('form-time').value,
                 attendance: document.getElementById('form-attendance').value || 0, newVisitors: document.getElementById('form-new-visitors').value || 0,
@@ -2327,7 +2396,7 @@
                 isMultiDay: isMultiDay,
                 endDate: endDate,
                 sessions: sessions,
-                komisiId: document.getElementById('form-komisi-id').value || ''
+                komisiId: document.getElementById('form-komisi-id').value || '' // <-- BARU
             };
 
             if (id) {
@@ -2335,10 +2404,9 @@
                 if (existing) { newData.income = existing.income || 0; newData.expense = existing.expense || 0; }
             }
             upsertRawEvent(newData);
-            closeModal();
-            updateUI();
-            forceSyncNow(); // <<< Sinkronisasi setelah simpan
+            closeModal(); updateUI();
 
+            // Jika laporan sudah lengkap (bukan Terjadwal), tawarkan cetak laporan langsung
             if (newData.eventStatus !== 'Terjadwal') {
                 Swal.fire({
                     title: 'Laporan Tersimpan',
@@ -2354,27 +2422,30 @@
             }
         }
 
-        // ========================================================================
-        // TABEL & EDIT / DELETE IBADAH
-        // ========================================================================
         function renderTable() {
             const tbody = document.getElementById('table-body'); const emptyState = document.getElementById('empty-state');
             tbody.innerHTML = '';
+            
             const filterValue = document.getElementById('month-filter').value;
             let filteredEvents = eventsData;
             if (filterValue !== 'all') filteredEvents = eventsData.filter(item => item.date && item.date.startsWith(filterValue));
+
             if (filteredEvents.length === 0) { emptyState.style.display = 'flex'; return; } 
             else { emptyState.style.display = 'none'; }
+
             filteredEvents.forEach(item => {
                 const isScheduled = item.eventStatus === 'Terjadwal', isReg = item.ibadahType === 'reguler';
+                
                 let dateDisplay = formatDate(item.date);
                 let timeDisplay = `<i class="fa-regular fa-clock mr-1 w-3 text-center"></i> ${item.time || '-'}`;
                 if (item.isMultiDay && item.endDate) {
                     dateDisplay = `<span class="whitespace-normal block text-xs bg-indigo-50 border border-indigo-100 rounded px-2 py-1 mb-1"><b>${formatDate(item.date)}</b><br><span class="text-indigo-400">s/d</span><br><b>${formatDate(item.endDate)}</b></span>`;
                     timeDisplay = `<i class="fa-solid fa-list-ul mr-1 w-3 text-center"></i> ${item.sessions ? item.sessions.length : 0} Sesi`;
                 }
+
                 let preacherDisplay = item.preacher ? `<i class="fa-solid fa-microphone text-blue-500 mr-1 w-4 text-center"></i> ${item.preacher}` : (isScheduled ? '' : '<span class="text-gray-400 italic text-xs">Tanpa Khotbah</span>');
                 let themeDisplay = item.sermonTheme ? `<i class="fa-solid fa-book-bible mr-1 text-slate-400 w-3 text-center"></i> ${item.sermonTheme}` : '';
+                
                 if (item.isMultiDay) {
                     themeDisplay = `<i class="fa-solid fa-layer-group mr-1 text-indigo-400 w-3 text-center"></i> Acara Multi-Sesi`;
                     let uniqueSpeakers = [];
@@ -2387,11 +2458,14 @@
                         preacherDisplay = `<i class="fa-solid fa-users-viewfinder text-indigo-500 mr-1 w-4 text-center"></i> Belum ada pembicara`;
                     }
                 }
+
+                // Tampilkan komisi jika ada
                 let komisiDisplay = '';
                 if (item.komisiId) {
                     const komisi = komisiMasterData.find(k => k.name === item.komisiId);
                     komisiDisplay = `<div class="text-[10px] text-indigo-600 mt-1"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : item.komisiId}</div>`;
                 }
+
                 const tr = document.createElement('tr');
                 tr.className = `transition group ${isScheduled ? 'bg-amber-50/30 hover:bg-amber-50' : 'hover:bg-blue-50/50'}`;
                 tr.innerHTML = `
@@ -2441,32 +2515,40 @@
         function editData(id) {
             const data = eventsData.find(item => item.id === id);
             if (!data) return;
+
             document.getElementById('form-id').value = data.id;
             const type = data.ibadahType || 'adhoc';
             const radio = document.querySelector(`input[name="form-type"][value="${type}"]`);
             if(radio) radio.checked = true; toggleFormType();
+
             if(type === 'reguler') {
                 const tpl = regularTemplates.find(t => t.name === data.eventName);
                 if(tpl) document.getElementById('form-template-id').value = tpl.id;
             }
+
             const isMultiDay = data.isMultiDay || false;
             const multiCheck = document.getElementById('form-is-multiday');
             if (multiCheck) multiCheck.checked = isMultiDay;
             toggleDurationType();
+
             document.getElementById('scheduled-date-group').classList.add('hidden'); lockScheduleFields(false);
             const statusSelect = document.getElementById('form-event-status');
             statusSelect.disabled = false; statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
             statusSelect.value = data.eventStatus || 'Selesai';
+
             ['eventName','location','date','time','attendance','newVisitors','preacher','sermonTheme','wl','musicians','notes'].forEach(k => {
                 const el = document.getElementById(`form-${k.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
                 if(el) el.value = data[k] || '';
             });
+
+            // Set komisi
             if (data.komisiId) {
                 document.getElementById('form-komisi-id').value = data.komisiId;
             } else {
                 document.getElementById('form-komisi-id').value = '';
             }
             populateKomisiDropdown();
+
             selectedAttendeeIds = new Set(Array.isArray(data.attendeeIds) ? data.attendeeIds : []);
             const attMode = data.attendanceMode === 'checklist' ? 'checklist' : 'manual';
             const attModeRadio = document.querySelector(`input[name="attendance-mode"][value="${attMode}"]`);
@@ -2474,6 +2556,7 @@
             const guestsInput = document.getElementById('form-attendance-guests'); if (guestsInput) guestsInput.value = data.attendanceGuests || '';
             const checklistSearch = document.getElementById('checklist-search'); if (checklistSearch) checklistSearch.value = '';
             toggleAttendanceMode();
+
             if (isMultiDay) {
                 document.getElementById('form-end-date').value = data.endDate || '';
                 document.getElementById('sessions-container').innerHTML = '';
@@ -2484,8 +2567,10 @@
                     document.getElementById('sessions-empty').style.display = 'block';
                 }
             }
+
             if (data.eventStatus === 'Terjadwal') lockScheduleFields(true);
             checkBackdateStatus();
+
             document.getElementById('other-servers-container').innerHTML = '';
             if (data.otherServers) {
                 data.otherServers.split(', ').forEach(server => {
@@ -2494,6 +2579,7 @@
                     addOtherServerField(role, name);
                 });
             }
+
             document.getElementById('modal-title').innerText = 'Edit Laporan Ibadah';
             const backdrop = document.getElementById('modal-backdrop'); const modal = document.getElementById('modal');
             backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
@@ -2501,33 +2587,57 @@
 
         function confirmDelete(id) {
             Swal.fire({ title: 'Hapus data ibadah?', text: "Data tidak dapat dikembalikan!", icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
-            .then((result) => { if (result.isConfirmed) { deleteRawEvent(id); updateUI(); forceSyncNow(); Swal.fire('Terhapus!', 'Data ibadah dihapus.', 'success'); } });
+            .then((result) => { if (result.isConfirmed) { deleteRawEvent(id); updateUI(); Swal.fire('Terhapus!', 'Data ibadah dihapus.', 'success'); } });
         }
 
-        function clearAllData() {
-            if (eventsData.length === 0) return;
-            Swal.fire({ title: 'Kosongkan Laporan Ibadah?', text:'Master Data tidak akan terhapus.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
-            .then(res => { if (res.isConfirmed) { eventsData.map(ev => ev.id).forEach(deleteRawEvent); updateUI(); forceSyncNow(); Swal.fire('Dikosongkan!', '', 'success'); } });
+        function checkActivityBackdateStatus() {
+            const dateInput = document.getElementById('act-date');
+            const statusSelect = document.getElementById('act-status');
+            const hint = document.getElementById('act-backdate-status-hint');
+            const dateVal = dateInput.value;
+
+            statusSelect.disabled = false; 
+            statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
+
+            if (!dateVal) {
+                if (hint) hint.classList.add('hidden');
+                return;
+            }
+
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const selectedDate = new Date(dateVal + 'T00:00:00');
+            
+            if (!isNaN(selectedDate) && selectedDate < today) {
+                if (hint) {
+                    hint.innerHTML = '<i class="fa-solid fa-circle-exclamation mr-1"></i> Tanggal lewat. Pastikan mengubah status ke "Selesai" jika sudah terjadi.';
+                    hint.className = 'text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded-lg px-3 py-2 mt-2';
+                    hint.classList.remove('hidden');
+                }
+            } else {
+                if (hint) hint.classList.add('hidden');
+            }
         }
 
-        // ========================================================================
-        // KEGIATAN PASTORAL
-        // ========================================================================
         function openActivityModal() {
             document.getElementById('activity-form').reset();
             document.getElementById('act-form-id').value = '';
             document.getElementById('activity-modal-title').innerText = 'Tambah Kegiatan Gereja';
+            
             const nameLabel = document.getElementById('act-name-label');
             if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
             document.getElementById('act-name').placeholder = 'Mis: Kel. Budi Santoso';
+            
             document.getElementById('dynamic-activity-fields').innerHTML = '';
+            
             const statusSelect = document.getElementById('act-status');
             statusSelect.innerHTML = `
                 <option value="Selesai / Terlaksana">Selesai / Terlaksana</option>
                 <option value="Terjadwal / Akan Datang">Terjadwal / Akan Datang</option>
             `;
             statusSelect.value = 'Terjadwal / Akan Datang';
+            
             checkActivityBackdateStatus();
+            
             const backdrop = document.getElementById('activity-modal-backdrop');
             const modal = document.getElementById('activity-modal');
             backdrop.classList.remove('hidden'); modal.classList.remove('hidden', 'modal-leave'); modal.classList.add('modal-enter');
@@ -2545,6 +2655,7 @@
             const nameLabel = document.getElementById('act-name-label');
             const nameInput = document.getElementById('act-name');
             container.innerHTML = '';
+            
             const statusSelect = document.getElementById('act-status');
             const currentStatus = existingData.status || statusSelect.value;
             statusSelect.innerHTML = `
@@ -2556,12 +2667,14 @@
             } else {
                 statusSelect.value = 'Terjadwal / Akan Datang';
             }
+
             if (!type) {
                 if(nameLabel) nameLabel.innerText = 'Nama Jemaat / Keluarga *';
                 if(nameInput) nameInput.placeholder = 'Mis: Kel. Budi Santoso';
                 checkActivityBackdateStatus();
                 return;
             }
+
             let html = '';
             if (type === 'Penyerahan Anak') {
                 if(nameLabel) nameLabel.innerText = 'Nama Keluarga / Orang Tua *';
@@ -2592,30 +2705,6 @@
             checkActivityBackdateStatus();
         }
 
-        function checkActivityBackdateStatus() {
-            const dateInput = document.getElementById('act-date');
-            const statusSelect = document.getElementById('act-status');
-            const hint = document.getElementById('act-backdate-status-hint');
-            const dateVal = dateInput.value;
-            statusSelect.disabled = false; 
-            statusSelect.classList.remove('bg-gray-100', 'text-gray-500', 'cursor-not-allowed');
-            if (!dateVal) {
-                if (hint) hint.classList.add('hidden');
-                return;
-            }
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-            const selectedDate = new Date(dateVal + 'T00:00:00');
-            if (!isNaN(selectedDate) && selectedDate < today) {
-                if (hint) {
-                    hint.innerHTML = '<i class="fa-solid fa-circle-exclamation mr-1"></i> Tanggal lewat. Pastikan mengubah status ke "Selesai" jika sudah terjadi.';
-                    hint.className = 'text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded-lg px-3 py-2 mt-2';
-                    hint.classList.remove('hidden');
-                }
-            } else {
-                if (hint) hint.classList.add('hidden');
-            }
-        }
-
         function saveActivity(e) {
             e.preventDefault();
             const id = document.getElementById('act-form-id').value;
@@ -2644,10 +2733,8 @@
             if (index !== -1) activitiesData[index] = newActivity;
             else activitiesData.push(newActivity);
 
-            updateUI();
-            forceSyncNow(); // <<< Sinkronisasi setelah tambah/edit kegiatan
             Swal.fire({ title: 'Berhasil', text: 'Kegiatan tersimpan.', icon: 'success', timer: 1200, showConfirmButton: false });
-            closeActivityModal();
+            closeActivityModal(); updateUI();
         }
 
         function renderActivityTable() {
@@ -2656,16 +2743,20 @@
             tbody.innerHTML = '';
             if (activitiesData.length === 0) { emptyState.style.display = 'flex'; return; } 
             else { emptyState.style.display = 'none'; }
+
             const today = new Date(); today.setHours(0, 0, 0, 0);
+            
             activitiesData.forEach(act => {
                 let subLabel = 'Sub: ';
                 if (act.type === 'Pemberkatan Nikah') subLabel = 'Mempelai Wnt: ';
                 else if (act.type === 'Penyerahan Anak') subLabel = 'Anak: ';
                 const subNameHtml = act.subName ? `<div class="text-xs text-gray-500 mt-0.5">${subLabel}${act.subName}</div>` : '';
+
                 const actDate = new Date(act.date + 'T00:00:00');
                 const isPast = !isNaN(actDate) && actDate < today;
                 const isTerjadwal = act.status === 'Terjadwal / Akan Datang';
                 const needsUpdate = isPast && isTerjadwal;
+
                 let statusBadge = '';
                 if (needsUpdate) {
                     statusBadge = `<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 font-bold shadow-sm animate-pulse"><i class="fa-solid fa-circle-exclamation mr-1"></i> Perlu Update</span>`;
@@ -2674,6 +2765,7 @@
                 } else {
                     statusBadge = `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 font-medium">Selesai</span>`;
                 }
+
                 let actionButtons = '';
                 if (needsUpdate) {
                     actionButtons = `
@@ -2686,6 +2778,7 @@
                         <button onclick="confirmDeleteActivity('${act.id}')" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition cursor-pointer" title="Hapus"><i class="fa-solid fa-trash"></i></button>
                     `;
                 }
+
                 const tr = document.createElement('tr');
                 tr.className = `transition group ${needsUpdate ? 'bg-red-50/30 hover:bg-red-50' : 'hover:bg-purple-50/50'}`;
                 tr.innerHTML = `
@@ -2712,33 +2805,37 @@
                 tbody.appendChild(tr);
             });
         }
-
+        
         function editActivity(id) {
             const act = activitiesData.find(i => i.id === id);
             if (!act) return;
             document.getElementById('act-form-id').value = act.id;
             ['name','date','minister','notes'].forEach(k => document.getElementById(`act-${k}`).value = act[k] || '');
+            
             document.getElementById('act-type').value = act.type || '';
             onActivityTypeChange({ subName: act.subName, detail1: act.detail1, detail2: act.detail2, status: act.status });
+            
             document.getElementById('activity-modal-title').innerText = 'Edit Kegiatan';
             const b = document.getElementById('activity-modal-backdrop'); const m = document.getElementById('activity-modal');
             b.classList.remove('hidden'); m.classList.remove('hidden', 'modal-leave'); m.classList.add('modal-enter');
         }
-
+        
         function confirmDeleteActivity(id) {
             Swal.fire({ title: 'Hapus kegiatan?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, hapus!' })
-            .then((r) => { if (r.isConfirmed) { activitiesData = activitiesData.filter(i => i.id !== id); updateUI(); forceSyncNow(); } });
+            .then((r) => { if (r.isConfirmed) { activitiesData = activitiesData.filter(i => i.id !== id); updateUI(); } });
         }
 
+        function clearAllData() {
+            if (eventsData.length === 0) return;
+            Swal.fire({ title: 'Kosongkan Laporan Ibadah?', text:'Master Data tidak akan terhapus.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
+            .then(res => { if (res.isConfirmed) { eventsData.map(ev => ev.id).forEach(deleteRawEvent); updateUI(); Swal.fire('Dikosongkan!', '', 'success'); } });
+        }
         function clearAllActivities() {
             if (activitiesData.length === 0) return;
             Swal.fire({ title: 'Kosongkan Kegiatan?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya!' })
-            .then(res => { if (res.isConfirmed) { activitiesData = []; updateUI(); forceSyncNow(); Swal.fire('Dikosongkan!', '', 'success'); } });
+            .then(res => { if (res.isConfirmed) { activitiesData = []; updateUI(); Swal.fire('Dikosongkan!', '', 'success'); } });
         }
 
-        // ========================================================================
-        // EKSPOR / IMPORT EXCEL
-        // ========================================================================
         function exportAllToExcel() {
             if (eventsData.length === 0 && activitiesData.length === 0 && regularTemplates.length === 0) {
                 Swal.fire('Info', 'Tidak ada data untuk diexport.', 'warning'); return;
@@ -2766,14 +2863,17 @@
                 let dateExport = item.date;
                 let timeExport = item.time || '';
                 let komisiExport = item.komisiId || '';
+                
                 if (item.isMultiDay) {
                     dateExport = `${item.date} s/d ${item.endDate}`;
                     timeExport = '(Banyak Sesi)';
                     preacherExport = '(Daftar Sesi di Catatan)';
                     themeExport = 'Acara Multi-Sesi';
+                    
                     const sessionsText = (item.sessions || []).map(s => `[${s.date}] ${s.startTime}-${s.endTime} : ${s.theme} (${s.speaker})`).join(' | ');
                     notesExport += (notesExport ? '\n\n' : '') + 'Detail Sesi: ' + sessionsText;
                 }
+
                 return {
                     'ID (Jangan Diubah)': item.id, 'Kategori': item.ibadahType === 'reguler' ? 'Reguler' : 'Spesial',
                     'Status': item.eventStatus === 'Terjadwal' ? 'Terjadwal' : 'Selesai', 'Tanggal': dateExport, 'Waktu': timeExport,
@@ -2831,6 +2931,7 @@
         function importAllFromExcel(event) {
             const file = event.target.files[0]; if (!file) return;
             const reader = new FileReader(); Swal.fire({ title: 'Memproses file...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+
             reader.onload = function(e) {
                 try {
                     const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, {type: 'array', cellDates: true});
@@ -2888,54 +2989,61 @@
                         });
                     }
 
-                    updateUI(); renderTemplateTable(); forceSyncNow();
-                    Swal.fire('Berhasil', `Import: ${importedTemplates} Master, ${importedEvents} Ibadah, ${importedActivities} Kegiatan.`, 'success');
+                    updateUI(); renderTemplateTable(); Swal.fire('Berhasil', `Import: ${importedTemplates} Master, ${importedEvents} Ibadah, ${importedActivities} Kegiatan.`, 'success');
                 } catch (err) { Swal.fire('Gagal', 'Pastikan format file Excel sesuai dengan template.', 'error'); }
                 event.target.value = '';
             };
             reader.readAsArrayBuffer(file);
         }
 
-        // ========================================================================
-        // PDF REPORT
-        // ========================================================================
         function generatePDFReport() {
             const fVal = document.getElementById('month-filter').value;
             const fText = document.getElementById('month-filter').options[document.getElementById('month-filter').selectedIndex].text;
             let fEvents = eventsData; if (fVal !== 'all') fEvents = eventsData.filter(i => i.date && i.date.startsWith(fVal));
             if (fEvents.length === 0) return Swal.fire('Info', 'Tidak ada data untuk dicetak.', 'info');
+
             const { jsPDF } = window.jspdf; const doc = new jsPDF();
             doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(30, 58, 138); doc.text(`LAPORAN RESMI IBADAH & ANALISIS`, 14, 20);
             doc.setFontSize(12); doc.setTextColor(80, 80, 80); doc.text(`${churchName}`, 14, 27);
             doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.text(`Periode: ${fText} | Dicetak: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date())}`, 14, 34);
             doc.setDrawColor(200, 200, 200); doc.line(14, 38, 196, 38);
+
             doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("1. Ringkasan & Analisis Pelayanan", 14, 46);
             doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.text(`• Total Kehadiran: ${currentAnalyticsData.totalAttendance.toLocaleString('id-ID')} jiwa (${currentAnalyticsData.totalNewVisitors} baru)`, 14, 53);
+
             let yPos = 61;
             if (currentAnalyticsData.suggestionPoints?.length > 0) {
                 currentAnalyticsData.suggestionPoints.forEach(p => { const lines = doc.splitTextToSize(`• ${p}`, 180); doc.text(lines, 14, yPos); yPos += (lines.length * 5) + 2; });
             }
             yPos += 5; doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.text("2. Rincian Ibadah", 14, yPos); yPos += 6;
+
             const tCols = ["Tanggal", "Kategori", "Acara", "Hadir", "Pelayan Utama", "Komisi"];
             const tRows = fEvents.map(i => [ i.date, i.ibadahType === 'reguler' ? 'Reguler' : 'Spesial', i.eventName, `${i.attendance||0}`, `K: ${i.preacher||'-'}\nWL: ${i.wl||'-'}`, i.komisiId || '-' ]);
             doc.autoTable({ startY: yPos, head: [tCols], body: tRows, theme: 'striped', headStyles: { fillColor: [30, 58, 138] }, styles: { fontSize: 8 } });
             doc.save(`${churchName.replace(/\s+/g, '_')}_Laporan.pdf`);
         }
 
+        // ---- Cetak Laporan Ibadah per-Acara (setelah checklist/isi kehadiran) ----
         function generateSingleEventReport(id) {
             const item = eventsData.find(e => e.id === id);
             if (!item) return Swal.fire('Info', 'Data ibadah tidak ditemukan.', 'info');
             if (item.eventStatus === 'Terjadwal') return Swal.fire('Info', 'Lengkapi dulu data kehadiran ibadah ini sebelum mencetak laporan.', 'info');
+
             const { jsPDF } = window.jspdf; const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
+
+            // Header
             doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(30, 58, 138);
             doc.text(`LAPORAN PERIBADATAN`, 14, 18);
             doc.setFontSize(11); doc.setTextColor(80, 80, 80); doc.setFont("helvetica", "normal");
             doc.text(`${churchName}`, 14, 25);
             doc.setDrawColor(200, 200, 200); doc.line(14, 30, pageWidth - 14, 30);
+
+            // Info Acara
             let y = 39;
             doc.setFontSize(13); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
             doc.text(item.eventName || '-', 14, y); y += 7;
+
             doc.setFontSize(9.5); doc.setFont("helvetica", "normal"); doc.setTextColor(60, 60, 60);
             const infoLeft = [
                 `Kategori   : ${item.ibadahType === 'reguler' ? 'Reguler' : 'Adhoc / Spesial'}`,
@@ -2958,6 +3066,7 @@
             });
             y += Math.max(infoLeft.length, infoRight.length) * 5.2 + 6;
 
+            // Ringkasan Kehadiran
             const totalHadir = parseInt(item.attendance) || 0;
             const jemaatChecked = Array.isArray(item.attendeeIds) ? item.attendeeIds.length : 0;
             const tamuCount = parseInt(item.attendanceGuests) || 0;
@@ -2975,19 +3084,24 @@
             }
             y += 30;
 
+            // Daftar Nama Jemaat Hadir (mode checklist)
             if (item.attendanceMode === 'checklist' && jemaatChecked > 0) {
                 doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
                 doc.text("Daftar Jemaat Hadir (Checklist)", 14, y); y += 5;
+
                 const idSet = new Set(item.attendeeIds);
                 const hadirList = (jemaatMasterData || [])
                     .filter(j => idSet.has(j.id))
                     .map(j => j.nama_lengkap || '(Tanpa Nama)')
                     .sort((a, b) => a.localeCompare(b, 'id'));
+
+                // Jika ada id yang tidak ketemu di master data (mis. sudah dihapus), tetap tampilkan jumlahnya
                 const foundCount = hadirList.length;
                 const rows = hadirList.map((nama, idx) => [idx + 1, nama]);
                 if (foundCount < jemaatChecked) {
                     rows.push(['-', `(${jemaatChecked - foundCount} data jemaat lain tidak ditemukan di Database Jemaat)`]);
                 }
+
                 doc.autoTable({
                     startY: y,
                     head: [['No', 'Nama Jemaat']],
@@ -3015,6 +3129,7 @@
                 y = doc.lastAutoTable.finalY + 8;
             }
 
+            // Catatan Tambahan
             if (item.notes) {
                 if (y > 260) { doc.addPage(); y = 20; }
                 doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(20, 20, 20);
@@ -3025,6 +3140,7 @@
                 y += noteLines.length * 5 + 4;
             }
 
+            // Footer
             const pageCount = doc.internal.getNumberOfPages();
             for (let p = 1; p <= pageCount; p++) {
                 doc.setPage(p);
@@ -3032,26 +3148,197 @@
                 doc.text(`Dicetak: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}`, 14, 290);
                 doc.text(`Halaman ${p}/${pageCount}`, pageWidth - 14, 290, { align: 'right' });
             }
+
             const safeDate = (item.date || 'tanpa-tanggal').replace(/[^0-9\-]/g, '');
             const safeName = (item.eventName || 'Laporan').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 40);
             doc.save(`Laporan_Ibadah_${safeDate}_${safeName}.pdf`);
         }
 
+        async function mirrorAllToFirebase() {
+            try {
+                if (!window.acaraDocRef || !window.firestoreSetDocAcara) { setSyncStatus('offline'); return; }
+                // Kirim data MENTAH (termasuk tombstone / record terhapus) untuk semua daftar,
+                // plus pengaturan skalar (nama gereja, ambang batas) dengan jejak waktunya
+                // masing-masing. Kalau yang dikirim cuma versi "aktif saja", info penghapusan
+                // dan info "siapa yang terakhir mengubah" akan hilang, dan device lain bisa
+                // menimpa balik dengan versi yang lebih basi.
+                await window.firestoreSetDocAcara(window.acaraDocRef, {
+                    eventsData: allEventsRaw,
+                    regularTemplates: regularTemplatesRaw,
+                    masterLocations: masterLocationsRaw,
+                    holidaysData: holidaysDataRaw,
+                    settings: {
+                        churchName: churchNameSetting,
+                        attendanceThreshold: attendanceThresholdSetting,
+                        visitThreshold: visitThresholdSetting
+                    },
+                    lastUpdated: new Date().toISOString()
+                });
+                console.log('[Sync] Berhasil kirim data ke Firestore pada', new Date().toLocaleTimeString());
+                setSyncStatus('online');
+            } catch (e) {
+                console.error('[Sync] GAGAL mengirim data ke Firestore:', e);
+                setSyncStatus('offline');
+                // Coba kirim ulang otomatis nanti, supaya perubahan (mis. checklist kehadiran)
+                // tidak "hilang" tersimpan lokal saja selamanya.
+                if (syncRetryTimer) clearTimeout(syncRetryTimer);
+                syncRetryTimer = setTimeout(() => { loadEventsFromFirebase(); }, 15000);
+            }
+        }
+
+        // Tarik SEMUA data (ibadah, master ibadah reguler, master lokasi, tanggal merah, dan
+        // pengaturan tab Parameter) dari Firestore, lalu GABUNG dengan data lokal memakai
+        // Last-Write-Wins PER ITEM / PER FIELD (dibandingkan lewat `updatedAt`), bukan menimpa
+        // total. Dengan cara ini:
+        //  - Device dengan data lebih sedikit/basi TIDAK BISA menghapus data yang lebih baru di device lain.
+        //  - Penghapusan (tombstone) tetap menang kalau memang dilakukan setelah edit terakhir.
+        //  - Ambang batas / nama gereja yang baru saja diubah di satu device tidak akan ketiban
+        //    nilai lama dari device lain — yang menang selalu yang PALING BARU diubah.
+        //
+        // `initialSyncPromise` (di-set dari window.onload) menandai kapan proses tarik+gabung
+        // data awal ini SELESAI. Ini dipakai oleh updateUI() supaya kalau ada perubahan yang
+        // kamu simpan SEBELUM proses ini selesai, perubahan itu TIDAK dibuang diam-diam,
+        // melainkan otomatis ikut terkirim ke Firestore begitu proses ini selesai.
+        let initialSyncPromise = null;
+        async function loadEventsFromFirebase() {
+            isSyncing = true;
+            setSyncStatus('syncing');
+            if (syncRetryTimer) { clearTimeout(syncRetryTimer); syncRetryTimer = null; }
+            let connected = false;
+            try {
+                await waitForFirebaseJemaatReady();
+                if (!window.acaraDocRef || !window.firestoreGetDocJemaat) {
+                    console.warn('[Sync] Firebase belum terhubung (cek koneksi internet / apakah gstatic.com diblokir jaringan Anda). Data hanya tersimpan lokal untuk sesi ini.');
+                } else {
+                    const snap = await window.firestoreGetDocJemaat(window.acaraDocRef);
+                    connected = true;
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        console.log('[Sync] Berhasil tarik data dari Firestore. Terakhir diubah:', data.lastUpdated);
+                        if (Array.isArray(data.eventsData)) allEventsRaw = mergeRawLists(data.eventsData, allEventsRaw);
+                        if (Array.isArray(data.regularTemplates)) regularTemplatesRaw = mergeRawLists(data.regularTemplates, regularTemplatesRaw);
+                        if (Array.isArray(data.masterLocations)) masterLocationsRaw = mergeRawLists(data.masterLocations, masterLocationsRaw);
+                        if (Array.isArray(data.holidaysData)) holidaysDataRaw = mergeRawLists(data.holidaysData, holidaysDataRaw);
+                        if (data.settings) {
+                            churchNameSetting = mergeScalarSetting(data.settings.churchName, churchNameSetting);
+                            churchName = churchNameSetting.value || churchName;
+                            attendanceThresholdSetting = mergeScalarSetting(data.settings.attendanceThreshold, attendanceThresholdSetting);
+                            visitThresholdSetting = mergeScalarSetting(data.settings.visitThreshold, visitThresholdSetting);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Gagal memuat data dari Firebase:', e);
+                connected = false;
+            } finally {
+                updateUI({ skipMirror: true }); // tampilkan dulu hasil gabungan (cepat)
+                if (connected) {
+                    await mirrorAllToFirebase();  // lalu dorong hasil akhirnya ke Firestore
+                    setSyncStatus('online');
+                } else {
+                    // JANGAN diam-diam menyerah: beri tahu user secara jelas, dan coba lagi
+                    // otomatis tiap 15 detik sampai berhasil tersambung ke Firestore.
+                    setSyncStatus('offline');
+                    syncRetryTimer = setTimeout(() => { loadEventsFromFirebase(); }, 15000);
+                }
+                isSyncing = false;
+            }
+        }
+
+        function updateUI(options = {}) {
+            const { skipMirror = false } = options;
+            recomputeActiveEvents(); // pastikan `eventsData` (aktif saja) selalu sinkron dengan `allEventsRaw`
+            regularTemplatesRaw = dedupeRawList(regularTemplatesRaw); regularTemplates = regularTemplatesRaw.filter(e => !e.deleted);
+            masterLocationsRaw = dedupeRawList(masterLocationsRaw); masterLocations = masterLocationsRaw.filter(e => !e.deleted);
+            holidaysDataRaw = dedupeRawList(holidaysDataRaw); holidaysData = holidaysDataRaw.filter(e => !e.deleted);
+
+            document.getElementById('nav-church-name').innerText = churchName;
+            eventsData.sort((a, b) => new Date(`${b.date}T${b.time||'00:00'}`) - new Date(`${a.date}T${a.time||'00:00'}`));
+            activitiesData.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            populateMonthFilter(); renderDashboard(); renderTable(); renderActivityTable();
+            renderCalendar(); renderHolidayTable(); renderParameterTab();
+
+            localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(allEventsRaw)); // simpan data MENTAH (termasuk tombstone) secara lokal
+            localStorage.setItem(STORAGE_KEY_ACTIVITIES, JSON.stringify(activitiesData));
+            localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(regularTemplatesRaw));
+            localStorage.setItem(STORAGE_KEY_LOCATIONS, JSON.stringify(masterLocationsRaw));
+            localStorage.setItem(STORAGE_KEY_HOLIDAYS, JSON.stringify(holidaysDataRaw));
+            localStorage.setItem(CHURCH_NAME_KEY, JSON.stringify(churchNameSetting));
+            localStorage.setItem(STORAGE_KEY_THRESHOLD, JSON.stringify(attendanceThresholdSetting));
+            localStorage.setItem(STORAGE_KEY_VISIT_THRESHOLD, JSON.stringify(visitThresholdSetting));
+
+            if (!skipMirror) {
+                // PENTING: jangan pernah dorong ke Firestore SEBELUM sinkronisasi awal (tarik+gabung
+                // data cloud) selesai — supaya data lokal yang belum digabung tidak menimpa data
+                // yang lebih lengkap di cloud. TAPI perubahan ini juga TIDAK BOLEH hilang diam-diam:
+                // begitu sinkronisasi awal selesai, perubahan ini otomatis ikut terkirim lewat antrian
+                // promise di bawah ini (bukan gerbang boolean yang bisa membuang perubahan permanen).
+                setSyncStatus('pending');
+                (initialSyncPromise || Promise.resolve()).then(mirrorAllToFirebase);
+            }
+        }
+
+        const MAIN_TABS = ['data', 'calendar', 'parameter'];
+        const activeTabClasses = ['bg-blue-600', 'text-white', 'shadow-sm'];
+        const inactiveTabClasses = ['bg-gray-100', 'text-gray-600', 'hover:bg-gray-200'];
+
+        function switchMainTab(tab) {
+            MAIN_TABS.forEach(t => {
+                const panel = document.getElementById(`tab-panel-${t}`);
+                const btn = document.getElementById(`tab-btn-${t}`);
+                if (!panel || !btn) return;
+                if (t === tab) {
+                    panel.classList.remove('hidden');
+                    btn.classList.remove(...inactiveTabClasses); btn.classList.add(...activeTabClasses);
+                } else {
+                    panel.classList.add('hidden');
+                    btn.classList.remove(...activeTabClasses); btn.classList.add(...inactiveTabClasses);
+                }
+            });
+
+            if (tab === 'calendar') { renderCalendar(); }
+            if (tab === 'parameter') { renderHolidayTable(); renderParameterTab(); }
+        }
+
         // ========================================================================
-        // KALENDER
+        // KALENDER ACARA BULANAN & TANGGAL MERAH / HARI LIBUR
         // ========================================================================
+        const STORAGE_KEY_HOLIDAYS = 'jemaatid_holidays_v1';
+        let holidaysDataRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_HOLIDAYS)) || [];
+        let holidaysData = holidaysDataRaw.filter(e => !e.deleted);
+        let calViewDate = new Date();
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function toYMD(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
+        function todayYMD() { const t = new Date(); return toYMD(t.getFullYear(), t.getMonth(), t.getDate()); }
+
+        function calChangeMonth(delta) {
+            calViewDate.setMonth(calViewDate.getMonth() + delta);
+            renderCalendar();
+        }
+
+        function calGoToday() {
+            calViewDate = new Date();
+            renderCalendar();
+        }
+
         function renderCalendar() {
             const grid = document.getElementById('cal-grid');
             const label = document.getElementById('cal-month-label');
             if (!grid || !label) return;
+
             const year = calViewDate.getFullYear();
             const month = calViewDate.getMonth();
             label.innerText = new Intl.DateTimeFormat('id-ID', { month: 'long', year: 'numeric' }).format(calViewDate);
+
             const firstDayOfWeek = new Date(year, month, 1).getDay();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const daysInPrevMonth = new Date(year, month, 0).getDate();
             const todayStr = todayYMD();
+
             let cells = [];
+
             for (let i = 0; i < firstDayOfWeek; i++) {
                 const d = daysInPrevMonth - firstDayOfWeek + i + 1;
                 cells.push({ day: d, inMonth: false, dateStr: null });
@@ -3064,34 +3351,43 @@
                 cells.push({ day: nextDay, inMonth: false, dateStr: null });
                 nextDay++;
             }
+
             grid.innerHTML = cells.map(cell => {
                 if (!cell.inMonth) {
                     return `<div class="min-h-[64px] sm:min-h-[84px] rounded-lg bg-gray-50 text-gray-300 text-xs p-1.5">${cell.day}</div>`;
                 }
+
                 const dayEvents = eventsData.filter(ev => {
                     if (ev.isMultiDay && ev.endDate) {
                         return cell.dateStr >= ev.date && cell.dateStr <= ev.endDate;
                     }
                     return ev.date === cell.dateStr;
                 });
+                
                 const dayActivities = activitiesData.filter(ac => ac.date === cell.dateStr);
                 const dayHoliday = holidaysData.find(h => h.date === cell.dateStr);
                 const isToday = cell.dateStr === todayStr;
+
                 let cellClasses = "min-h-[64px] sm:min-h-[84px] rounded-lg p-1.5 text-left cursor-pointer transition border flex flex-col gap-1 ";
                 if (dayHoliday) cellClasses += "bg-red-50 border-red-200 hover:bg-red-100 ";
                 else cellClasses += "bg-white border-gray-100 hover:bg-gray-50 ";
                 if (isToday) cellClasses += "ring-2 ring-blue-500 ring-offset-1 ";
+
                 const numberClasses = isToday ? "bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-bold" : (dayHoliday ? "text-red-600 font-bold text-xs" : "text-gray-700 font-semibold text-xs");
+
                 let dotsHtml = '';
                 if (dayEvents.length > 0) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" title="${dayEvents.length} Ibadah"></span>`;
                 if (dayActivities.length > 0) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-purple-500 inline-block" title="${dayActivities.length} Kegiatan"></span>`;
                 if (dayHoliday) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" title="Libur"></span>`;
+
                 const threshold = getAttendanceThreshold();
                 if (threshold !== null) {
                     const belowThreshold = dayEvents.some(ev => ev.eventStatus !== 'Terjadwal' && (parseInt(ev.attendance) || 0) < threshold);
                     if (belowThreshold) dotsHtml += `<span class="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block" title="Kehadiran di bawah ambang batas"></span>`;
                 }
+
                 const holidayLabel = dayHoliday ? `<div class="text-[9px] sm:text-[10px] leading-tight text-red-700 font-medium truncate" title="${dayHoliday.name}">${dayHoliday.name}</div>` : '';
+
                 return `
                     <button type="button" onclick="showDayDetail('${cell.dateStr}')" class="${cellClasses}">
                         <div class="flex items-center justify-between">
@@ -3104,6 +3400,15 @@
             }).join('');
         }
 
+        function editFromCalendar(type, id) {
+            Swal.close();
+            if (type === 'event') {
+                editData(id);
+            } else if (type === 'activity') {
+                editActivity(id);
+            }
+        }
+
         function showDayDetail(dateStr) {
             const dayEvents = eventsData.filter(ev => {
                 if (ev.isMultiDay && ev.endDate) {
@@ -3114,10 +3419,12 @@
             const dayActivities = activitiesData.filter(ac => ac.date === dateStr);
             const dayHoliday = holidaysData.find(h => h.date === dateStr);
             const niceDate = formatDate(dateStr);
+
             let html = '';
             if (dayHoliday) {
                 html += `<div class="mb-3 p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-semibold text-left"><i class="fa-solid fa-flag mr-1.5"></i>${dayHoliday.name} <span class="font-normal text-xs">(${dayHoliday.type})</span></div>`;
             }
+
             if (dayEvents.length === 0 && dayActivities.length === 0) {
                 html += `<p class="text-sm text-gray-400 text-left mb-4">Belum ada ibadah atau kegiatan tercatat pada tanggal ini.</p>`;
             } else {
@@ -3125,12 +3432,14 @@
                     html += `<p class="text-xs font-bold text-blue-700 uppercase mt-2 mb-2 text-left tracking-wide">Daftar Ibadah & Acara</p>`;
                     html += dayEvents.map(ev => {
                         const isDone = ev.eventStatus !== 'Terjadwal';
+                        
                         let spanLabel = '';
                         if (ev.isMultiDay && ev.endDate) {
                             if (ev.date === dateStr) spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Hari Pertama</span>`;
                             else if (ev.endDate === dateStr) spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Hari Terakhir</span>`;
                             else spanLabel = `<span class="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded ml-1">Berlangsung</span>`;
                         }
+
                         let statsHtml = '';
                         if (isDone) {
                             const att = parseInt(ev.attendance) || 0;
@@ -3147,11 +3456,13 @@
                         } else {
                             statsHtml = `<div class="mt-1.5"><span class="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold"><i class="fa-solid fa-clock mr-1"></i>Terjadwal (Akan Datang)</span></div>`;
                         }
+
                         let komisiHtml = '';
                         if (ev.komisiId) {
                             const komisi = komisiMasterData.find(k => k.name === ev.komisiId);
                             komisiHtml = `<div class="text-[10px] text-indigo-600 mt-0.5"><i class="fa-solid fa-people-group mr-0.5"></i> ${komisi ? komisi.name : ev.komisiId}</div>`;
                         }
+                        
                         return `
                         <div onclick="editFromCalendar('event', '${ev.id}')" class="text-left text-sm border border-blue-100 bg-white hover:bg-blue-50 hover:border-blue-300 rounded-xl p-3 mb-2 cursor-pointer transition shadow-sm group">
                             <div class="flex justify-between items-start">
@@ -3166,6 +3477,7 @@
                         </div>`;
                     }).join('');
                 }
+
                 if (dayActivities.length > 0) {
                     html += `<p class="text-xs font-bold text-purple-700 uppercase mt-4 mb-2 text-left tracking-wide">Kegiatan Pastoral</p>`;
                     html += dayActivities.map(ac => `
@@ -3181,6 +3493,7 @@
                     `).join('');
                 }
             }
+
             Swal.fire({
                 title: niceDate,
                 html: `<div class="max-h-[60vh] overflow-y-auto pr-1">${html}</div>`,
@@ -3204,6 +3517,7 @@
                 if (dateInput) { dateInput.value = dateStr; checkBackdateStatus(); }
             }, 50);
         }
+
         function quickAddActivity(dateStr) {
             openActivityModal();
             setTimeout(() => {
@@ -3211,17 +3525,189 @@
                 if (dateInput) { dateInput.value = dateStr; checkActivityBackdateStatus(); }
             }, 50);
         }
-        function editFromCalendar(type, id) {
-            Swal.close();
-            if (type === 'event') editData(id);
-            else if (type === 'activity') editActivity(id);
+
+        function renderHolidayTable() {
+            const tbody = document.getElementById('holiday-table-body');
+            const emptyState = document.getElementById('holiday-empty-state');
+            if (!tbody) return;
+
+            const sorted = [...holidaysData].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            if (sorted.length === 0) {
+                tbody.innerHTML = '';
+                emptyState?.classList.remove('hidden'); emptyState?.classList.add('flex');
+                return;
+            }
+            emptyState?.classList.add('hidden'); emptyState?.classList.remove('flex');
+
+            const typeBadge = (type) => {
+                if (type === 'Cuti Bersama') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">Cuti Bersama</span>`;
+                if (type === 'Gereja') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700">Libur Gereja</span>`;
+                return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Nasional</span>`;
+            };
+
+            tbody.innerHTML = sorted.map(h => `
+                <tr class="hover:bg-gray-50">
+                    <td class="p-4 font-medium text-gray-700">${formatDate(h.date)}</td>
+                    <td class="p-4 text-gray-700">${h.name}</td>
+                    <td class="p-4">${typeBadge(h.type)}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="deleteHoliday('${h.id}')" class="text-red-500 hover:text-red-700 transition cursor-pointer" title="Hapus">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
         }
-        function calChangeMonth(delta) { calViewDate.setMonth(calViewDate.getMonth() + delta); renderCalendar(); }
-        function calGoToday() { calViewDate = new Date(); renderCalendar(); }
+
+        function saveHoliday(e) {
+            e.preventDefault();
+            const date = document.getElementById('hol-date').value;
+            const name = document.getElementById('hol-name').value.trim();
+            const type = document.getElementById('hol-type').value;
+            if (!date || !name) return;
+
+            upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), date, name, type });
+            document.getElementById('holiday-form').reset();
+            updateUI();
+            Swal.fire({ title: 'Tersimpan', text: 'Tanggal merah berhasil ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+        }
+
+        function deleteHoliday(id) {
+            Swal.fire({
+                title: 'Hapus Tanggal Merah?', text: 'Data yang dihapus tidak dapat dikembalikan.', icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    deleteFromRawList(holidaysDataRaw, id);
+                    updateUI();
+                }
+            });
+        }
+
+        function clearAllHolidays() {
+            if (holidaysData.length === 0) return;
+            Swal.fire({
+                title: 'Kosongkan Semua Tanggal Merah?', text: 'Seluruh data hari libur akan dihapus permanen.', icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus Semua', cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    holidaysData.map(h => h.id).forEach(deleteFromRawList.bind(null, holidaysDataRaw));
+                    updateUI();
+                    Swal.fire({ title: 'Terhapus', icon: 'success', timer: 1000, showConfirmButton: false });
+                }
+            });
+        }
 
         // ========================================================================
-        // TANGGAL MERAH / HARI LIBUR
+        // TAB PARAMETER: Identitas Gereja, Ambang Batas Kehadiran, Master Lokasi
         // ========================================================================
+        const STORAGE_KEY_THRESHOLD = 'jemaatid_attendance_threshold_v1';
+        const STORAGE_KEY_LOCATIONS = 'jemaatid_master_locations_v1';
+        let attendanceThresholdSetting = loadScalarSetting(STORAGE_KEY_THRESHOLD, null);
+        let masterLocationsRaw = JSON.parse(localStorage.getItem(STORAGE_KEY_LOCATIONS)) || [];
+        let masterLocations = masterLocationsRaw.filter(e => !e.deleted);
+
+        function getAttendanceThreshold() {
+            const val = parseInt(attendanceThresholdSetting.value);
+            return isNaN(val) ? null : val;
+        }
+
+        function saveAttendanceThreshold(e) {
+            e.preventDefault();
+            const val = document.getElementById('param-threshold').value;
+            if (val === '' || isNaN(parseInt(val))) {
+                Swal.fire('Info', 'Masukkan angka ambang batas kehadiran terlebih dahulu.', 'info');
+                return;
+            }
+            attendanceThresholdSetting = makeScalarSetting(parseInt(val));
+            updateUI();
+            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kehadiran diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
+        }
+
+        function clearAttendanceThreshold() {
+            attendanceThresholdSetting = makeScalarSetting(null);
+            document.getElementById('param-threshold').value = '';
+            updateUI();
+            Swal.fire({ title: 'Dinonaktifkan', icon: 'success', timer: 1000, showConfirmButton: false });
+        }
+
+        function saveLocation(e) {
+            e.preventDefault();
+            const input = document.getElementById('param-loc-name');
+            const name = input.value.trim();
+            if (!name) return;
+            if (masterLocations.some(l => l.name.toLowerCase() === name.toLowerCase())) {
+                Swal.fire('Info', 'Lokasi tersebut sudah ada di daftar.', 'info');
+                return;
+            }
+            upsertInRawList(masterLocationsRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name });
+            input.value = '';
+            updateUI();
+        }
+
+        function deleteLocation(id) {
+            deleteFromRawList(masterLocationsRaw, id);
+            updateUI();
+        }
+
+        function clearAllLocations() {
+            if (masterLocations.length === 0) return Swal.fire('Info', 'Belum ada lokasi tersimpan.', 'info');
+            Swal.fire({ title: 'Kosongkan Master Lokasi?', text: 'Semua lokasi tersimpan akan dihapus. Ibadah yang sudah dibuat tidak akan terpengaruh.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
+            .then(result => {
+                if (result.isConfirmed) {
+                    masterLocations.forEach(l => deleteFromRawList(masterLocationsRaw, l.id));
+                    updateUI();
+                    Swal.fire({ title: 'Terhapus', text: 'Semua lokasi berhasil dikosongkan.', icon: 'success', timer: 1200, showConfirmButton: false });
+                }
+            });
+        }
+
+        function renderLocationList() {
+            const container = document.getElementById('param-location-list');
+            const emptyState = document.getElementById('param-location-empty');
+            const datalist = document.getElementById('master-locations-list');
+
+            if (datalist) {
+                datalist.innerHTML = masterLocations.map(l => `<option value="${l.name}">`).join('');
+            }
+
+            if (!container) return;
+
+            if (masterLocations.length === 0) {
+                container.innerHTML = '';
+                emptyState?.classList.remove('hidden');
+                return;
+            }
+            emptyState?.classList.add('hidden');
+
+            container.innerHTML = masterLocations.map(l => `
+                <span class="inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium">
+                    ${l.name}
+                    <button onclick="deleteLocation('${l.id}')" class="w-5 h-5 rounded-full hover:bg-emerald-200 flex items-center justify-center transition cursor-pointer" title="Hapus">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        function renderParameterTab() {
+            const nameEl = document.getElementById('param-church-name');
+            if (nameEl) nameEl.innerText = churchName;
+
+            const thresholdInput = document.getElementById('param-threshold');
+            if (thresholdInput) {
+                const threshold = getAttendanceThreshold();
+                thresholdInput.value = threshold !== null ? threshold : '';
+            }
+
+            renderLocationList();
+            populateHolidayImportYearSelect();
+
+            const visitThresholdInput = document.getElementById('param-visit-threshold');
+            if (visitThresholdInput) visitThresholdInput.value = getVisitThreshold();
+        }
+
         const OFFICIAL_HOLIDAYS_BY_YEAR = {
             2026: [
                 { date: '2026-01-01', name: 'Tahun Baru 2026 Masehi', type: 'Nasional' },
@@ -3252,85 +3738,17 @@
             ]
         };
 
-        function renderHolidayTable() {
-            const tbody = document.getElementById('holiday-table-body');
-            const emptyState = document.getElementById('holiday-empty-state');
-            if (!tbody) return;
-            const sorted = [...holidaysData].sort((a, b) => new Date(a.date) - new Date(b.date));
-            if (sorted.length === 0) {
-                tbody.innerHTML = '';
-                emptyState?.classList.remove('hidden'); emptyState?.classList.add('flex');
-                return;
-            }
-            emptyState?.classList.add('hidden'); emptyState?.classList.remove('flex');
-            const typeBadge = (type) => {
-                if (type === 'Cuti Bersama') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700">Cuti Bersama</span>`;
-                if (type === 'Gereja') return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700">Libur Gereja</span>`;
-                return `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700">Nasional</span>`;
-            };
-            tbody.innerHTML = sorted.map(h => `
-                <tr class="hover:bg-gray-50">
-                    <td class="p-4 font-medium text-gray-700">${formatDate(h.date)}</td>
-                    <td class="p-4 text-gray-700">${h.name}</td>
-                    <td class="p-4">${typeBadge(h.type)}</td>
-                    <td class="p-4 text-center">
-                        <button onclick="deleteHoliday('${h.id}')" class="text-red-500 hover:text-red-700 transition cursor-pointer" title="Hapus">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function saveHoliday(e) {
-            e.preventDefault();
-            const date = document.getElementById('hol-date').value;
-            const name = document.getElementById('hol-name').value.trim();
-            const type = document.getElementById('hol-type').value;
-            if (!date || !name) return;
-            upsertInRawList(holidaysDataRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), date, name, type });
-            document.getElementById('holiday-form').reset();
-            updateUI();
-            forceSyncNow();
-            Swal.fire({ title: 'Tersimpan', text: 'Tanggal merah berhasil ditambahkan.', icon: 'success', timer: 1200, showConfirmButton: false });
-        }
-
-        function deleteHoliday(id) {
-            Swal.fire({
-                title: 'Hapus Tanggal Merah?', text: 'Data yang dihapus tidak dapat dikembalikan.', icon: 'warning',
-                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    deleteFromRawList(holidaysDataRaw, id);
-                    updateUI();
-                    forceSyncNow();
-                }
-            });
-        }
-
-        function clearAllHolidays() {
-            if (holidaysData.length === 0) return;
-            Swal.fire({
-                title: 'Kosongkan Semua Tanggal Merah?', text: 'Seluruh data hari libur akan dihapus permanen.', icon: 'warning',
-                showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Ya, Hapus Semua', cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    holidaysData.map(h => h.id).forEach(deleteFromRawList.bind(null, holidaysDataRaw));
-                    updateUI();
-                    forceSyncNow();
-                    Swal.fire({ title: 'Terhapus', icon: 'success', timer: 1000, showConfirmButton: false });
-                }
-            });
-        }
-
         function populateHolidayImportYearSelect() {
             const select = document.getElementById('hol-import-year');
             const note = document.getElementById('hol-import-note');
             if (!select) return;
+
             const years = Object.keys(OFFICIAL_HOLIDAYS_BY_YEAR).sort();
             select.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+
             const currentYear = new Date().getFullYear().toString();
             if (years.includes(currentYear)) select.value = currentYear;
+
             if (note) {
                 const maxYear = years[years.length - 1];
                 note.innerText = `Data resmi tersedia untuk tahun: ${years.join(', ')}. Tahun berikutnya (mis. ${parseInt(maxYear) + 1}) akan ditambahkan setelah SKB 3 Menteri resmi terbit — sementara itu tambahkan manual lewat form di bawah.`;
@@ -3341,10 +3759,12 @@
             const select = document.getElementById('hol-import-year');
             const year = select ? select.value : null;
             const dataset = OFFICIAL_HOLIDAYS_BY_YEAR[year];
+
             if (!dataset) {
                 Swal.fire('Info', 'Data resmi untuk tahun tersebut belum tersedia. Silakan tambah manual lewat form di bawah.', 'info');
                 return;
             }
+
             Swal.fire({
                 title: `Import Libur Nasional ${year}?`,
                 text: `Akan menambahkan ${dataset.length} tanggal merah resmi (SKB 3 Menteri) untuk tahun ${year}. Tanggal yang sudah ada tidak akan diduplikasi.`,
@@ -3360,182 +3780,13 @@
                     }
                 });
                 updateUI();
-                forceSyncNow();
                 Swal.fire('Berhasil', `${added} tanggal merah baru ditambahkan.`, 'success');
             });
         }
 
-        // ========================================================================
-        // PARAMETER TAB
-        // ========================================================================
-        function renderParameterTab() {
-            const nameEl = document.getElementById('param-church-name');
-            if (nameEl) nameEl.innerText = churchName;
-            const thresholdInput = document.getElementById('param-threshold');
-            if (thresholdInput) {
-                const threshold = getAttendanceThreshold();
-                thresholdInput.value = threshold !== null ? threshold : '';
-            }
-            renderLocationList();
-            populateHolidayImportYearSelect();
-            const visitThresholdInput = document.getElementById('param-visit-threshold');
-            if (visitThresholdInput) visitThresholdInput.value = getVisitThreshold();
-        }
-
-        function saveAttendanceThreshold(e) {
-            e.preventDefault();
-            const val = document.getElementById('param-threshold').value;
-            if (val === '' || isNaN(parseInt(val))) {
-                Swal.fire('Info', 'Masukkan angka ambang batas kehadiran terlebih dahulu.', 'info');
-                return;
-            }
-            attendanceThresholdSetting = makeScalarSetting(parseInt(val));
-            updateUI();
-            forceSyncNow();
-            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kehadiran diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
-        }
-
-        function clearAttendanceThreshold() {
-            attendanceThresholdSetting = makeScalarSetting(null);
-            document.getElementById('param-threshold').value = '';
-            updateUI();
-            forceSyncNow();
-            Swal.fire({ title: 'Dinonaktifkan', icon: 'success', timer: 1000, showConfirmButton: false });
-        }
-
-        function saveVisitThreshold(e) {
-            e.preventDefault();
-            const val = document.getElementById('param-visit-threshold').value;
-            if (!val || parseInt(val) <= 0) { Swal.fire('Info', 'Masukkan angka minggu berturut-turut yang valid.', 'info'); return; }
-            visitThresholdSetting = makeScalarSetting(parseInt(val));
-            updateUI();
-            forceSyncNow();
-            Swal.fire({ title: 'Tersimpan', text: 'Ambang batas kunjungan pastoral diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
-            renderPastoralVisitList();
-        }
-
-        function renderLocationList() {
-            const container = document.getElementById('param-location-list');
-            const emptyState = document.getElementById('param-location-empty');
-            const datalist = document.getElementById('master-locations-list');
-            if (datalist) {
-                datalist.innerHTML = masterLocations.map(l => `<option value="${l.name}">`).join('');
-            }
-            if (!container) return;
-            if (masterLocations.length === 0) {
-                container.innerHTML = '';
-                emptyState?.classList.remove('hidden');
-                return;
-            }
-            emptyState?.classList.add('hidden');
-            container.innerHTML = masterLocations.map(l => `
-                <span class="inline-flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-medium">
-                    ${l.name}
-                    <button onclick="deleteLocation('${l.id}')" class="w-5 h-5 rounded-full hover:bg-emerald-200 flex items-center justify-center transition cursor-pointer" title="Hapus">
-                        <i class="fa-solid fa-xmark text-xs"></i>
-                    </button>
-                </span>
-            `).join('');
-        }
-
-        function saveLocation(e) {
-            e.preventDefault();
-            const input = document.getElementById('param-loc-name');
-            const name = input.value.trim();
-            if (!name) return;
-            if (masterLocations.some(l => l.name.toLowerCase() === name.toLowerCase())) {
-                Swal.fire('Info', 'Lokasi tersebut sudah ada di daftar.', 'info');
-                return;
-            }
-            upsertInRawList(masterLocationsRaw, { id: Date.now().toString() + Math.random().toString(36).substr(2, 5), name });
-            input.value = '';
-            updateUI();
-            forceSyncNow();
-        }
-
-        function deleteLocation(id) {
-            deleteFromRawList(masterLocationsRaw, id);
-            updateUI();
-            forceSyncNow();
-        }
-
-        function clearAllLocations() {
-            if (masterLocations.length === 0) return Swal.fire('Info', 'Belum ada lokasi tersimpan.', 'info');
-            Swal.fire({ title: 'Kosongkan Master Lokasi?', text: 'Semua lokasi tersimpan akan dihapus. Ibadah yang sudah dibuat tidak akan terpengaruh.', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Ya, Kosongkan!' })
-            .then(result => {
-                if (result.isConfirmed) {
-                    masterLocations.forEach(l => deleteFromRawList(masterLocationsRaw, l.id));
-                    updateUI();
-                    forceSyncNow();
-                    Swal.fire({ title: 'Terhapus', text: 'Semua lokasi berhasil dikosongkan.', icon: 'success', timer: 1200, showConfirmButton: false });
-                }
-            });
-        }
-
-        // ========================================================================
-        // SWITCH TAB
-        // ========================================================================
-        const MAIN_TABS = ['data', 'calendar', 'parameter'];
-        const activeTabClasses = ['bg-blue-600', 'text-white', 'shadow-sm'];
-        const inactiveTabClasses = ['bg-gray-100', 'text-gray-600', 'hover:bg-gray-200'];
-
-        function switchMainTab(tab) {
-            MAIN_TABS.forEach(t => {
-                const panel = document.getElementById(`tab-panel-${t}`);
-                const btn = document.getElementById(`tab-btn-${t}`);
-                if (!panel || !btn) return;
-                if (t === tab) {
-                    panel.classList.remove('hidden');
-                    btn.classList.remove(...inactiveTabClasses); btn.classList.add(...activeTabClasses);
-                } else {
-                    panel.classList.add('hidden');
-                    btn.classList.remove(...activeTabClasses); btn.classList.add(...inactiveTabClasses);
-                }
-            });
-            if (tab === 'calendar') { renderCalendar(); }
-            if (tab === 'parameter') { renderHolidayTable(); renderParameterTab(); }
-        }
-
-        function editChurchName() {
-            Swal.fire({
-                title: 'Ubah Nama Gereja',
-                input: 'text',
-                inputValue: churchName,
-                showCancelButton: true,
-                confirmButtonText: 'Simpan',
-                cancelButtonText: 'Batal',
-                inputValidator: (value) => {
-                    if (!value) return 'Nama gereja tidak boleh kosong!';
-                }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    churchName = result.value.trim();
-                    churchNameSetting = makeScalarSetting(churchName);
-                    document.getElementById('nav-church-name').innerText = churchName;
-                    updateUI();
-                    forceSyncNow();
-                    Swal.fire({ title: 'Tersimpan', text: 'Nama gereja diperbarui.', icon: 'success', timer: 1200, showConfirmButton: false });
-                }
-            });
-        }
-
-        // ========================================================================
-        // WINDOW ONLOAD
-        // ========================================================================
         window.onload = function() {
-            // Tampilkan data lokal dulu (cepat)
-            updateUI({ skipMirror: true });
-            // Lalu tarik data dari Firebase dan gabungkan
-            initialSyncPromise = loadEventsFromFirebase()
-                .then(() => {
-                    // Setelah sync selesai, perbarui UI dan kirim data ke Firebase (jika ada perubahan lokal)
-                    updateUI({ skipMirror: false });
-                })
-                .catch((err) => {
-                    console.warn('Gagal sync awal, gunakan data lokal', err);
-                    updateUI({ skipMirror: false });
-                });
-            // Muat data jemaat untuk checklist
+            updateUI({ skipMirror: true }); // tampilkan dulu data lokal cepat, TANPA push (biar tidak menimpa Firestore)
+            initialSyncPromise = loadEventsFromFirebase(); // tarik & gabung data resmi dari Firestore; simpan promise-nya
             loadJemaatMasterData();
         };
     </script>
