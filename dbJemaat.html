@@ -249,12 +249,19 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Total Jemaat Aktif</p>
                     <div class="mt-2 flex items-baseline justify-between">
                         <span id="statTotalJemaat" class="text-2xl font-bold text-slate-900">0</span>
                         <span class="text-[10px] md:text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded"><i class="fa-solid fa-check"></i> Aktif</span>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-[10px] md:text-xs font-medium text-slate-500 uppercase tracking-wider">Jumlah Kepala Keluarga</p>
+                    <div class="mt-2 flex items-baseline justify-between">
+                        <span id="statKepalaKeluarga" class="text-2xl font-bold text-slate-900">0</span>
+                        <span id="statKepalaKeluargaBasisLabel" class="text-[10px] md:text-xs font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded whitespace-nowrap"><i class="fa-solid fa-house-user"></i> Anggota Utama</span>
                     </div>
                 </div>
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
@@ -474,6 +481,28 @@
                         <button onclick="addKomisiCategory()" class="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-medium transition flex items-center space-x-1 whitespace-nowrap"><i class="fa-solid fa-plus"></i> <span>Tambah Komisi</span></button>
                     </div>
                     <div id="listKomisiSettings" class="space-y-3"></div>
+                </div>
+
+                <!-- PENGATURAN BASIS KEPALA KELUARGA -->
+                <div class="pt-4 border-t border-slate-100">
+                    <h3 class="text-sm font-bold text-slate-800 flex items-center mb-1">
+                        <i class="fa-solid fa-house-user text-indigo-500 mr-2 text-lg"></i>
+                        Parameter Kepala Keluarga (Dashboard)
+                    </h3>
+                    <p class="text-xs text-slate-500 mb-3 leading-relaxed">
+                        Setiap gereja punya kebiasaan berbeda dalam menentukan siapa yang dihitung sebagai "Kepala Keluarga" pada statistik dashboard. Pilih basis penghitungan yang sesuai. Pengaturan ini tidak mengubah data jemaat yang sudah tersimpan, hanya cara menghitung jumlahnya di dashboard.
+                    </p>
+                    <div class="max-w-md">
+                        <label class="block text-xs font-medium text-slate-600 mb-1.5">Basis Penghitungan Kepala Keluarga</label>
+                        <select id="inputKepalaKeluargaBasis" class="w-full px-3 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs bg-slate-50">
+                            <option value="anggota_utama">Anggota Utama (Pencatat Awal Kartu Keluarga) — Default</option>
+                            <option value="suami">Suami (hanya keluarga dengan Suami aktif yang dihitung)</option>
+                        </select>
+                        <p class="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                            <b>Anggota Utama:</b> menghitung setiap Kartu Keluarga aktif berdasarkan anggota yang pertama kali didaftarkan sebagai kepala (tidak tergantung status pernikahan/gender).<br>
+                            <b>Suami:</b> menghitung Kartu Keluarga aktif yang memiliki sosok Suami — baik yang berlabel eksplisit "Suami" (ditambahkan lewat menu Tambah Anggota), maupun kepala keluarga (Anggota Utama) yang berjenis kelamin Laki-laki &amp; berstatus Menikah. Keluarga tanpa sosok Suami (mis. janda/single parent) tidak ikut dihitung.
+                        </p>
+                    </div>
                 </div>
 
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center pt-4 border-t border-slate-100 gap-3">
@@ -843,7 +872,7 @@
                 <div class="w-9 h-9 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0"><i class="fa-solid fa-house-chimney-crack"></i></div>
                 <div>
                     <h3 class="text-sm font-bold text-slate-800">Anggota Utama Meninggal Dunia</h3>
-                    <p class="text-[11px] text-slate-500 mt-0.5"><span id="suksesiHeadName" class="font-semibold text-slate-700"></span> adalah Kepala Keluarga. Tentukan status Kartu Keluarga selanjutnya.</p>
+                    <p class="text-[11px] text-slate-500 mt-0.5"><span id="suksesiHeadName" class="font-semibold text-slate-700"></span> adalah Kepala Keluarga. Sistem otomatis merekomendasikan penerus (Pasangan hidup diutamakan, jika tidak ada maka Anak tertua). Tinjau &amp; konfirmasi di bawah ini.</p>
                 </div>
             </div>
             <div class="p-6 space-y-3 text-xs max-h-[50vh] overflow-y-auto" id="suksesiOptions"></div>
@@ -1044,7 +1073,8 @@
                         ucapanUlangTahun: settingsUcapanUlangTahun,
                         ucapanAnniv: settingsUcapanAnniv,
                         demographics: settingsDemographics,
-                        komisi: settingsKomisi
+                        komisi: settingsKomisi,
+                        kepalaKeluargaBasis: settingsKepalaKeluargaBasis
                     },
                     lastUpdated: new Date().toISOString()
                 });
@@ -1089,6 +1119,9 @@
                         if (Array.isArray(parsed.settings.komisi)) {
                             settingsKomisi = parsed.settings.komisi;
                             ensureKomisiFields(); // ⬅️ tambahkan baris ini
+                        }
+                        if (parsed.settings.kepalaKeluargaBasis === 'anggota_utama' || parsed.settings.kepalaKeluargaBasis === 'suami') {
+                            settingsKepalaKeluargaBasis = parsed.settings.kepalaKeluargaBasis;
                         }
                     }
                     if (Array.isArray(parsed.dataJemaat) && parsed.dataJemaat.length > 0) {
@@ -1306,6 +1339,10 @@
             }
         ];
         let settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+
+        // Basis penentuan Kepala Keluarga untuk statistik dashboard: 'anggota_utama' (default) atau 'suami'
+        const DEFAULT_KEPALA_KELUARGA_BASIS = 'anggota_utama';
+        let settingsKepalaKeluargaBasis = DEFAULT_KEPALA_KELUARGA_BASIS;
 
         // Fungsi untuk memastikan semua komisi memiliki field baru (untuk kompatibilitas data lama)
         function ensureKomisiFields() {
@@ -1625,6 +1662,8 @@
         function loadSettingsForm() {
             document.getElementById('inputTemplateUlangTahun').value = settingsUcapanUlangTahun;
             document.getElementById('inputTemplateAnniv').value = settingsUcapanAnniv;
+            let kkBasisEl = document.getElementById('inputKepalaKeluargaBasis');
+            if (kkBasisEl) kkBasisEl.value = settingsKepalaKeluargaBasis;
             renderDemographicsSettings();
             renderKomisiSettings();
         }
@@ -1637,6 +1676,8 @@
             settingsUcapanAnniv = t2;
             settingsDemographics = gatherDemographicsSettings();
             settingsKomisi = gatherKomisiSettings();
+            let kkBasisEl = document.getElementById('inputKepalaKeluargaBasis');
+            settingsKepalaKeluargaBasis = kkBasisEl ? kkBasisEl.value : DEFAULT_KEPALA_KELUARGA_BASIS;
             saveSettingsToLocalStorage();
             renderDashboardIfActive();
             showAlert("Berhasil", "Parameter sistem berhasil disimpan.", "success");
@@ -1647,6 +1688,8 @@
             document.getElementById('inputTemplateAnniv').value = DEFAULT_UCAPAN_ANNIV;
             settingsDemographics = JSON.parse(JSON.stringify(DEFAULT_DEMOGRAPHICS));
             settingsKomisi = JSON.parse(JSON.stringify(DEFAULT_KOMISI));
+            let kkBasisEl = document.getElementById('inputKepalaKeluargaBasis');
+            if (kkBasisEl) kkBasisEl.value = DEFAULT_KEPALA_KELUARGA_BASIS;
             renderDemographicsSettings();
             renderKomisiSettings();
         }
@@ -1813,6 +1856,41 @@
             document.getElementById('statTotalJemaat').innerText = aktif.length;
             document.getElementById('statBaptis').innerText = sdhBaptisAir;
             document.getElementById('statNonAktif').innerText = nonAktif.length;
+
+            // JUMLAH KEPALA KELUARGA (basis sesuai Parameter Sistem: Anggota Utama / Suami)
+            // Catatan: saat pendaftaran awal, kepala keluarga selalu tersimpan sebagai
+            // "Anggota Utama" (bukan "Suami"/"Istri" secara literal) walau dia menikah.
+            // Supaya basis "Suami" tidak salah hitung (mis. 0 padahal banyak keluarga
+            // sudah punya suami), sistem mendeteksi peran suami secara efektif:
+            // seseorang dianggap "Suami" jika berlabel eksplisit "Suami" ATAU dia adalah
+            // "Anggota Utama" berjenis kelamin Laki-laki dan berstatus Menikah.
+            function isEffectiveSuami(m) {
+                if (m.status_keluarga === 'Suami') return true;
+                if (m.status_keluarga === 'Anggota Utama' && m.jenis_kelamin === 'L' && m.status_pernikahan === 'Menikah') return true;
+                return false;
+            }
+            let jumlahKepalaKeluarga = 0;
+            if (settingsKepalaKeluargaBasis === 'suami') {
+                let famMapSuami = new Map();
+                aktif.forEach(j => {
+                    let kkId = j.kepalaKeluargaId || j.id;
+                    if (!famMapSuami.has(kkId)) famMapSuami.set(kkId, []);
+                    famMapSuami.get(kkId).push(j);
+                });
+                famMapSuami.forEach(members => {
+                    if (members.some(isEffectiveSuami)) jumlahKepalaKeluarga++;
+                });
+            } else {
+                jumlahKepalaKeluarga = aktif.filter(j => j.status_keluarga === 'Anggota Utama').length;
+            }
+            let statKkEl = document.getElementById('statKepalaKeluarga');
+            if (statKkEl) statKkEl.innerText = jumlahKepalaKeluarga;
+            let statKkBasisEl = document.getElementById('statKepalaKeluargaBasisLabel');
+            if (statKkBasisEl) {
+                statKkBasisEl.innerHTML = settingsKepalaKeluargaBasis === 'suami'
+                    ? '<i class="fa-solid fa-house-user"></i> Suami'
+                    : '<i class="fa-solid fa-house-user"></i> Anggota Utama';
+            }
             let pctBaptisCard = aktif.length === 0 ? 0 : Math.round((sdhBaptisAir / aktif.length) * 100);
             let statBaptisPctEl = document.getElementById('statBaptisPct');
             if (statBaptisPctEl) statBaptisPctEl.innerText = `(${pctBaptisCard}%)`;
@@ -3274,22 +3352,54 @@
         function openModalSuksesi(headId, anggotaLain) {
             let head = dataJemaat.find(j => j.id === headId);
             document.getElementById('suksesiHeadName').innerText = head ? head.nama_lengkap : '';
+
+            // Hanya anggota yang MASIH AKTIF yang bisa jadi kandidat Kepala Keluarga baru
+            // (anggota yang sudah Meninggal/Pindah sebelumnya tidak boleh dipromosikan).
+            let kandidat = anggotaLain.filter(m => m.status_jemaat === "Aktif");
+
+            // Prioritas otomatis: Pasangan (Suami/Istri) yang masih hidup didahulukan,
+            // baru kemudian Anak. Di antara Anak, yang lahir paling awal (tertua) didahulukan.
             const order = { "Suami": 1, "Istri": 1, "Anak": 2 };
-            let sortedAnggota = [...anggotaLain].sort((a, b) => (order[a.status_keluarga] || 99) - (order[b.status_keluarga] || 99));
+            function ageSortKey(m) {
+                let t = m.tanggal_lahir ? new Date(m.tanggal_lahir).getTime() : NaN;
+                return isNaN(t) ? Infinity : t; // tanpa tanggal lahir -> taruh paling belakang
+            }
+            let sortedKandidat = [...kandidat].sort((a, b) => {
+                let oa = order[a.status_keluarga] || 99;
+                let ob = order[b.status_keluarga] || 99;
+                if (oa !== ob) return oa - ob;
+                return ageSortKey(a) - ageSortKey(b); // tanggal lahir lebih awal = lebih tua = diutamakan
+            });
+
             let el = document.getElementById('suksesiOptions');
+
+            let optsKandidat = sortedKandidat.map((m, idx) => {
+                let isRekomendasi = idx === 0; // kandidat prioritas tertinggi = rekomendasi otomatis
+                let usiaLabel = '';
+                if (m.tanggal_lahir) {
+                    let t = new Date(m.tanggal_lahir).getTime();
+                    if (!isNaN(t)) usiaLabel = `, ${new Date().getFullYear() - new Date(m.tanggal_lahir).getFullYear()} Thn`;
+                }
+                return `
+                    <label class="flex items-start space-x-2 p-3 border ${isRekomendasi ? 'border-indigo-300 bg-indigo-50/60' : 'border-slate-200'} rounded-lg cursor-pointer hover:bg-slate-50">
+                        <input type="radio" name="suksesiPilihan" value="${m.id}" class="mt-0.5" ${isRekomendasi ? 'checked' : ''}>
+                        <span>
+                            <span class="font-semibold text-slate-800 block">Jadikan ${m.nama_lengkap} (${m.status_keluarga}${usiaLabel}) sebagai Kepala Keluarga baru
+                                ${isRekomendasi ? '<span class="ml-1 text-[9px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded align-middle whitespace-nowrap"><i class="fa-solid fa-wand-magic-sparkles"></i> Rekomendasi Otomatis</span>' : ''}
+                            </span>
+                        </span>
+                    </label>
+                `;
+            });
+
             let optTetap = `
                 <label class="flex items-start space-x-2 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
-                    <input type="radio" name="suksesiPilihan" value="tetap" checked class="mt-0.5">
+                    <input type="radio" name="suksesiPilihan" value="tetap" ${sortedKandidat.length === 0 ? 'checked' : ''} class="mt-0.5">
                     <span><span class="font-semibold text-slate-800 block">Tetap — Tidak ada Kepala Keluarga baru</span><span class="text-slate-500">Kartu Keluarga tetap tercatat di bawah almarhum/almarhumah.</span></span>
                 </label>
             `;
-            let optsAnggota = sortedAnggota.map(m => `
-                    <label class="flex items-start space-x-2 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
-                        <input type="radio" name="suksesiPilihan" value="${m.id}" class="mt-0.5">
-                        <span><span class="font-semibold text-slate-800 block">Jadikan ${m.nama_lengkap} (${m.status_keluarga}) sebagai Kepala Keluarga baru</span></span>
-                    </label>
-                `);
-            el.innerHTML = optTetap + optsAnggota.join('');
+
+            el.innerHTML = optsKandidat.join('') + optTetap;
             document.getElementById('modalSuksesi').classList.remove('hidden');
         }
 
